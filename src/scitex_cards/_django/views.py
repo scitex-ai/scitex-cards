@@ -136,6 +136,90 @@ _BOARD_ALIASES = ("board-v3", "board")
 _DM_ALIASES = ("chat", "dm")
 
 
+def _project_picker_library_registered() -> bool:
+    """True when ``{% load scitex_project_picker %}`` can resolve here.
+
+    The check reads the ENGINE's registry rather than asking whether some module
+    imports, because that registry is exactly what ``{% load %}`` consults — and
+    ``{% load %}``ing a library that is not installed is a hard
+    ``TemplateSyntaxError`` raised while the template COMPILES. No runtime flag
+    inside the template can rescue a page that loads the library at its own top
+    level; the only graceful degradation is to not compile it at all, which is
+    why the load lives in ``_project_picker.html`` and every caller reaches that
+    partial through an ``{% include %}`` guarded by this answer.
+
+    scitex-ui ships the library from 0.22.0 onwards. Measured 2026-09-27 against
+    the wheel: 0.20.2 has no ``templatetags/scitex_project_picker.py`` and no
+    ``scitex_ui.project_scope`` at all, while 0.22.0 and 0.23.1 ship both.
+    """
+    from django.template import engines
+
+    return "scitex_project_picker" in engines["django"].engine.template_libraries
+
+
+def _host_project_provider_registered() -> bool:
+    """True when a HOST registered a project provider with the SDK.
+
+    Imported defensively and answered False on every failure: an scitex-ui that
+    predates the project-scope API, and a host that configured no provider, are
+    both deployments this board must still serve (the same graceful-degradation
+    rule ``settings.py`` applies to the element inspector). ``host_project_provider_url``
+    reads settings and reverses a URL name, so it can raise for reasons that are
+    the host's, not ours.
+    """
+    try:
+        from scitex_ui.project_scope import host_project_provider_url
+    except ImportError:  # older scitex-ui: no provider API, so no host picker
+        return False
+    try:
+        return bool(host_project_provider_url())
+    except Exception:  # noqa: BLE001 - an unusable provider is no provider
+        logger.warning(
+            "[scitex-cards] host project provider unusable", exc_info=True
+        )
+        return False
+
+
+def _current_project_id(request) -> str:
+    """The Hub project this request resolves to, or "" so the header hides it.
+
+    The PRECEDENCE is scitex-ui's own, called rather than re-derived
+    (:func:`scitex_ui.project_scope.resolve_project`): an explicit ``?project=``
+    wins, an inaccessible explicit project resolves to ``None`` and NEVER
+    silently falls back to the stored one, otherwise the last visited project if
+    it is still accessible, otherwise ``None``. Re-implementing that here would
+    be the second selector the SDK exists to prevent.
+
+    EVERY failure answers "" rather than raising. This value is read by the
+    SHARED header, which the fleet board and the DM page both render, and
+    neither of those pages is a project surface — so no host provider, an
+    anonymous request, an SDK predating project scope and a provider that raises
+    all have to leave the identity band exactly as it was. A header that 500s
+    takes both pages down with it.
+    """
+    try:
+        from scitex_ui.project_scope import (
+            host_project_provider,
+            resolve_project,
+        )
+    except ImportError:  # older scitex-ui: no project-scope API at all
+        return ""
+    try:
+        provider = host_project_provider()
+        if provider is None:
+            return ""
+        getter = getattr(request, "GET", None)
+        explicit = (getter.get("project") or "").strip() if getter is not None else ""
+        return resolve_project(request, provider, explicit=explicit or None) or ""
+    except Exception:  # noqa: BLE001 - the band renders whatever the host did
+        logger.warning(
+            "[scitex-cards] current project unavailable for %s",
+            getattr(request, "path", "?"),
+            exc_info=True,
+        )
+        return ""
+
+
 def _cards_shell_context(request, api_base: str) -> dict[str, object]:
     """Build the shared SciTeX app shell context for either Cards page."""
     from scitex_ui.branding import shell_context
@@ -168,6 +252,17 @@ def _cards_shell_context(request, api_base: str) -> dict[str, object]:
         "app_name": "scitex-cards",
         "cards_user": cards_user,
         "dm_unread_count": dm_unread_count,
+        # The leaf header's project slot. BOTH keys are required before the
+        # picker renders: the library must resolve (else the include would be a
+        # hard TemplateSyntaxError) AND a host must have registered a provider
+        # (else the SDK's own tag renders nothing and the slot would be empty
+        # chrome). One flag, so the two conditions cannot drift apart in the
+        # template — see `_project_picker.html`.
+        "cards_project_picker_available": (
+            _project_picker_library_registered()
+            and _host_project_provider_registered()
+        ),
+        "cards_current_project_id": _current_project_id(request),
     }
 
 
