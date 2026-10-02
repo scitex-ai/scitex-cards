@@ -51,8 +51,9 @@ The `{% templatetag openblock %} if {% templatetag closeblock %}` is
 AND a host registered a provider". When it is false the band renders exactly as
 it did before the slot existed, so a standalone install and a Hub mount that
 registers no provider are byte-identical to the pre-slot header. The SDK's tag
-independently renders nothing for a viewer who is not signed in or an app that is
-not project-scoped, so nothing here can invent a selector the SDK would withhold.
+independently follows `app_scope` (default user), and renders nothing for an
+unsupported user-scoped app or a viewer who is not signed in. The slot is inside
+the guarded partial and appears only when that canonical tag emits markup.
 {% endcomment %}
 <div class="stx-cards-header{% if api_base != '/' %} stx-cards-header--mounted{% endif %}">
   {% include "scitex_cards/_page_switcher.html" with active=active %}
@@ -62,8 +63,6 @@ not project-scoped, so nothing here can invent a selector the SDK would withhold
     {{ cards_user }}
   </span>
   {% if cards_project_picker_available %}
-  <div class="stx-cards-header__project" data-stx-project-slot>
-    {% include "scitex_cards/_project_picker.html" with current=cards_current_project_id %}
-  </div>
+    {% include "scitex_cards/_project_picker.html" with current=cards_current_project_id picker_scope=app_scope picker_slot=True %}
   {% endif %}
 </div>
