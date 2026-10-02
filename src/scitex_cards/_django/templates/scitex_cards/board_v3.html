@@ -794,6 +794,24 @@
     const API_BASE = "{{ api_base|escapejs }}".replace(/\/+$/, "");
     window.API_BASE = API_BASE;
 
+    // === Board module readiness / first-load phases =======================
+    // This inline boot runs while the parser is still loading. Head scripts
+    // marked defer (including the timeline painter) run afterwards, before
+    // DOMContentLoaded. Fetch and parse graph data now; publish it to the
+    // painters only after those dependencies have had their turn.
+    function markBoardPhase(phase) {
+      const perf = window.performance;
+      const name = "scitex-cards:board-v3:" + phase;
+      if (perf?.mark && !perf.getEntriesByName(name).length) perf.mark(name);
+    }
+    markBoardPhase("shell-dom-ready");
+    const BOARD_MODULES_READY = document.readyState === "loading"
+      ? new Promise(resolve => document.addEventListener(
+          "DOMContentLoaded", resolve, { once: true },
+        ))
+      : Promise.resolve();
+    BOARD_MODULES_READY.then(() => markBoardPhase("modules-ready"));
+
     // === LAYOUT whitelist (SSOT) ==========================================
     // The only layouts that exist. Column + Table were removed 2026-07-13
     // (operator), Stale on 2026-07-10. `const` declarations are NOT hoisted
@@ -921,10 +939,19 @@
     async function loadGraph(opts) {
       const { preserveScroll = false, skipIfUnchanged = false } = opts || {};
       try {
+        markBoardPhase("graph-request-started");
         const r = await fetch(API_BASE + "/graph"); // (hook-bypass: line-limit)
+        // Successful JSON parsing overlaps deferred script download. Error
+        // bodies retain boardStates.js's tolerant reader and named states.
+        const graph = r.ok ? await r.json() : null;
+        if (r.ok) markBoardPhase("graph-data-ready");
+        await BOARD_MODULES_READY;
         if (!r.ok) {
           const payload = await _readJsonBody(r);
-          if (renderLoadState(r.status, payload)) return;
+          if (renderLoadState(r.status, payload)) {
+            markBoardPhase("state-rendered");
+            return;
+          }
           const err = payload && payload.error ? String(payload.error) : "";
           // NOT escaped here. An Error message is a STRING, not markup — the
           // render layer escapes it once, at the point it becomes HTML. Escaping
@@ -933,7 +960,7 @@
           // out. Escape where you interpolate, exactly once.
           throw new Error(`HTTP ${r.status}` + (err ? ` — ${err}` : ""));
         }
-        STATE.graph = await r.json();
+        STATE.graph = graph;
         // Change-detection: if the fresh payload is byte-identical to the
         // last graph we rendered, skip the whole re-render (no flash, no
         // scroll jump). Only honored for the auto-refresh path so an
@@ -951,6 +978,7 @@
         // refresh tick can skip an unchanged empty payload rather than
         // repainting this panel every few seconds.
         if (renderEmptyState(STATE.graph)) {
+          markBoardPhase("state-rendered");
           LAST_GRAPH_JSON = _freshJson;
           return;
         }
@@ -969,6 +997,9 @@
         const _sdBox = document.getElementById("f-showdone");
         if (_sdBox) _sdBox.checked = !!STATE.filters.showDone;
         render();
+        // This dispatch can show Timeline's loading state while its separate
+        // request is pending. It is not a useful-paint or interactive mark.
+        markBoardPhase("render-dispatched");
         // Instant-open: retire the server-painted skeleton (aria-busy on
         // #columns) the moment real cards paint. The named empty /
         // signed-out / error states clear it in boardStates.js, which owns
@@ -987,11 +1018,13 @@
         // instead of freezing the UI for seconds (operator 2026-07-13).
         _prewarmGraph();
       } catch (e) {
+        await BOARD_MODULES_READY;
         // Cause first, full text in a disclosure — see boardStates.js for why.
         // This used to dump `e.message` as one red line, which turned the
         // server's complete, correct diagnosis into a screen the operator read
         // as "nothing displayed" (2026-08-17).
         renderLoadError(e);
+        markBoardPhase("state-rendered");
       }
     }
 
