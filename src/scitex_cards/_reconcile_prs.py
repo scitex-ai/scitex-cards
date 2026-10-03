@@ -131,6 +131,7 @@ ACTION_SKIP_NO_PR = "skip-no-pr"  # no pr_url to check
 ACTION_SKIP_NOT_OPEN = "skip-not-open"  # status not in OPEN_STATUSES
 ACTION_SKIP_NOT_MERGED = "skip-not-merged"  # PR still open
 ACTION_SKIP_UNKNOWN = "skip-unknown"  # merge-state could not be determined
+ACTION_REPORT_DELIVERY = "report-delivery"  # enrolled work needs observed delivery
 
 #: GitHub PR URL → owner / repo / number. Accepts the canonical
 #: ``https://github.com/<owner>/<repo>/pull/<n>`` and tolerates a trailing
@@ -229,6 +230,10 @@ def decide_reconcile_action(task: dict, merge_state: str) -> str:
         return ACTION_SKIP_DONE
     if status not in OPEN_STATUSES:
         return ACTION_SKIP_NOT_OPEN
+    from ._delivery_policy import enrolled_delivery
+
+    if enrolled_delivery(task):
+        return ACTION_REPORT_DELIVERY
     if parse_pr_url(task.get("pr_url")) is None:
         return ACTION_SKIP_NO_PR
     if merge_state == MERGED:
@@ -350,6 +355,7 @@ class ReconcileResult:
     closed: list[dict] = field(default_factory=list)  # cards flipped to done
     would_close: list[dict] = field(default_factory=list)  # dry-run candidates
     skipped: dict[str, int] = field(default_factory=dict)  # action → count
+    delivery_pending: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -357,6 +363,7 @@ class ReconcileResult:
             "closed": self.closed,
             "would_close": self.would_close,
             "skipped": self.skipped,
+            "delivery_pending": self.delivery_pending,
             "closed_count": len(self.closed),
             "would_close_count": len(self.would_close),
         }
@@ -427,6 +434,24 @@ def reconcile_merged_prs(
         # Cheap pre-checks first so we only hit the network for real
         # candidates (open status + a parseable pr_url).
         pre = decide_reconcile_action(task, UNKNOWN)
+        if pre == ACTION_REPORT_DELIVERY:
+            # A merge observation is source evidence only. This read port
+            # cannot accept checkpoints or mutate the enrolled card, even
+            # when a caller opts into legacy source-only auto-closing.
+            from ._store_delivery import read_delivery_stage
+
+            try:
+                stage = read_delivery_stage(resolved, str(task.get("id")))
+            except Exception as exc:
+                stage = {
+                    "allowed": False,
+                    "stage": "read",
+                    "reason": "store-read-unavailable",
+                    "error_type": type(exc).__name__,
+                }
+            result.delivery_pending.append({"id": task.get("id"), **stage})
+            skipped[pre] = skipped.get(pre, 0) + 1
+            continue
         if pre in (ACTION_SKIP_DONE, ACTION_SKIP_NOT_OPEN, ACTION_SKIP_NO_PR):
             skipped[pre] = skipped.get(pre, 0) + 1
             continue

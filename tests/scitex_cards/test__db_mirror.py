@@ -29,11 +29,17 @@ TABLE IS OWNED BY EXACTLY THE THING THAT PRODUCES IT.
 
 from __future__ import annotations
 
-import pytest
+from copy import deepcopy
 
-from scitex_cards._db import connect, init_schema
+import pytest
+from conftest import seed_db_from_doc
+
+from scitex_cards._db import ENV_STORE_DSN, connect, init_schema
 from scitex_cards._db_bootstrap import _DOC_CLEAR_ORDER
+from scitex_cards._db_export import export_doc
 from scitex_cards._db_mirror import _SECTION_KEYS, mirror_doc_incremental
+from scitex_cards._store_single_card import read_card_or_raise, write_card_or_raise
+from scitex_cards._task import TaskValidationError
 
 _RAIL_ROW = (
     "n_rail01",
@@ -231,6 +237,125 @@ class TestTheDocumentDoesNotOwnTheRail:
 
         # Assert
         assert "inbox_recipients" not in tables
+
+
+_DELIVERY_VALUES = [
+    None,
+    {"version": 1, "required": False},
+    {"version": 1, "required": True, "generation": 1,
+     "started_at": "2026-10-03T00:00:00Z", "checkpoints": {}},
+]
+
+
+@pytest.fixture
+def delivery_mirror_store(new_store, env):
+    """Real seeded stores: hashes come only from an ordinary unchanged row write."""
+    def seed(namespace, *, incremental=False):
+        cards = [
+            {"id": "legacy", "title": "Legacy card", "status": "deferred",
+             "assignee": "agent:test-suite"},
+            {"id": "protected", "title": "Protected card", "status": "deferred",
+             "assignee": "agent:test-suite", "_log_meta": {"delivery": deepcopy(namespace)}},
+        ]
+        db = new_store("cards_delivery_mirror", bootstrap=False)
+        seed_db_from_doc({"tasks": cards}, db)
+        env.set(ENV_STORE_DSN, db)
+        if incremental:
+            for task in cards:
+                card, revision = read_card_or_raise(db, task["id"])
+                write_card_or_raise(db, card, expected_revision=revision)
+        return db
+    return seed
+
+
+def _canonical_pair(dsn):
+    """Payload plus SQL revision for each of the two deliberately seeded rows."""
+    return {tid: read_card_or_raise(dsn, tid) for tid in ("legacy", "protected")}
+
+
+@pytest.mark.parametrize("namespace", _DELIVERY_VALUES, ids=["null", "optional", "enrolled"])
+@pytest.mark.parametrize("incoming", ["retained", "namespace-removed", "card-omitted"])
+def test_no_hash_rebuild_refuses_any_canonical_delivery_namespace(delivery_mirror_store, namespace, incoming):
+    """Absence of a hash never licenses replacing the canonical enrolled store."""
+    # Arrange -- seed_db_from_doc does not populate mirror_hashes.
+    target = delivery_mirror_store(namespace)
+    doc = export_doc(target)[0]
+    if incoming == "namespace-removed":
+        protected = next(task for task in doc["tasks"] if task["id"] == "protected")
+        protected["_log_meta"].pop("delivery")
+    elif incoming == "card-omitted":
+        doc["tasks"] = [task for task in doc["tasks"] if task["id"] != "protected"]
+    # Act
+    attempt = lambda: mirror_doc_incremental(doc, target, store_path=target)
+    # Assert
+    with pytest.raises(TaskValidationError):
+        attempt()
+
+
+@pytest.mark.parametrize("namespace", _DELIVERY_VALUES, ids=["null", "optional", "enrolled"])
+def test_refused_no_hash_rebuild_preserves_omitted_canonical_card(delivery_mirror_store, namespace):
+    # Arrange
+    target = delivery_mirror_store(namespace)
+    before = _canonical_pair(target)
+    doc = export_doc(target)[0]
+    doc["tasks"] = [task for task in doc["tasks"] if task["id"] == "legacy"]
+    doc["tasks"][0]["title"] = "Must not land"
+    # Act
+    try:
+        mirror_doc_incremental(doc, target, store_path=target)
+    except TaskValidationError:
+        pass
+    # Assert
+    assert _canonical_pair(target) == before
+
+
+@pytest.mark.parametrize("namespace", _DELIVERY_VALUES, ids=["null", "optional", "enrolled"])
+@pytest.mark.parametrize("change", ["remove", "replace"])
+def test_incremental_mirror_cannot_change_reserved_namespace(delivery_mirror_store, namespace, change):
+    # Arrange
+    target = delivery_mirror_store(namespace, incremental=True)
+    doc = export_doc(target)[0]
+    proposed = next(task for task in doc["tasks"] if task["id"] == "protected")
+    if change == "remove":
+        proposed["_log_meta"].pop("delivery")
+    else:
+        proposed["_log_meta"]["delivery"] = {"injected": True}
+    # Act
+    attempt = lambda: mirror_doc_incremental(doc, target, store_path=target, touched_ids=["protected"])
+    # Assert
+    with pytest.raises(TaskValidationError):
+        attempt()
+
+
+@pytest.mark.parametrize("namespace", _DELIVERY_VALUES, ids=["null", "optional", "enrolled"])
+def test_explicit_mirror_deletion_refuses_any_delivery_namespace(delivery_mirror_store, namespace):
+    # Arrange
+    target = delivery_mirror_store(namespace, incremental=True)
+    doc = export_doc(target)[0]
+    doc["tasks"] = [task for task in doc["tasks"] if task["id"] != "protected"]
+    # Act
+    attempt = lambda: mirror_doc_incremental(doc, target, store_path=target, deleted_ids=["protected"])
+    # Assert
+    with pytest.raises(TaskValidationError):
+        attempt()
+
+
+@pytest.mark.parametrize("namespace", _DELIVERY_VALUES, ids=["null", "optional", "enrolled"])
+def test_refused_explicit_deletion_leaves_earlier_legacy_edit_unwritten(delivery_mirror_store, namespace):
+    """The removal preflight must precede every write in the caller's batch."""
+    # Arrange
+    target = delivery_mirror_store(namespace, incremental=True)
+    before = _canonical_pair(target)
+    doc = export_doc(target)[0]
+    doc["tasks"] = [task for task in doc["tasks"] if task["id"] == "legacy"]
+    doc["tasks"][0]["title"] = "Must not land"
+    # Act
+    try:
+        mirror_doc_incremental(doc, target, store_path=target, deleted_ids=["protected"])
+    except TaskValidationError:
+        pass
+    # Assert
+    assert _canonical_pair(target) == before
 
 
 # EOF

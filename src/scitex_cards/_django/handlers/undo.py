@@ -6,11 +6,12 @@ Extracted from ``crud.py`` (512-line file cap). These two endpoints cannot
 delegate to the ``_store`` verbs: the frontend's Undo round-trips
 ``refs = [{id, field}, ...]`` (which OTHER task pointed at the deleted one,
 and through WHICH field), while ``_store.delete_task`` returns bare id
-strings and ``_store.restore_task`` does not re-apply refs at all. So each
-handler instead holds ``_store_lock`` across a FRESH read-modify-write of
-the global store — the same chokepoint every ``_store`` verb uses — closing
-the old lost-update window (cache read -> in-memory mutate -> whole-list
-save, clobbering any concurrent write in between).
+strings and ``_store.restore_task`` does not re-apply refs at all. The
+legacy delete retains its fresh document write. Restore uses the guarded
+single-row revision/CAS kernel, including each reference it restores. The
+host-local legacy delete lock does not serialize PostgreSQL writers; any
+future enrollment adapter needs an atomic removal/absence port before it
+can be activated alongside that legacy path.
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ def handle_delete(request, board):
         return JsonResponse({"error": "delete requires 'id'"}, status=400)
 
     from scitex_cards import TaskValidationError
+    from scitex_cards._delivery_policy import ABSENT, delivery_namespace
     from scitex_cards._model import _save_doc_unlocked, _store_lock
     from scitex_cards._store import _read_write_doc
 
@@ -52,6 +54,14 @@ def handle_delete(request, board):
         removed = next((t for t in tasks if t.get("id") == task_id), None)
         if removed is None:
             return JsonResponse({"error": f"no task with id {task_id!r}"}, status=404)
+        # Deleting the authoritative marker would make a later browser Undo
+        # capable of recreating an unenrolled row. There is no controlled
+        # delivery-removal operation in this release, so refuse before any
+        # reference or target mutation, including optional/malformed markers.
+        if delivery_namespace(removed) is not ABSENT:
+            return JsonResponse(
+                {"error": "controlled-delivery-removal-unavailable"}, status=400
+            )
 
         # Record the references we scrub from OTHER tasks so an undo (restore)
         # can put them back exactly — making delete fully reversible.
@@ -118,37 +128,59 @@ def handle_restore(request, board):
     tid = task["id"]
 
     from scitex_cards import TaskValidationError
-    from scitex_cards._model import _save_doc_unlocked, _store_lock
-    from scitex_cards._store import _read_write_doc
+    from scitex_cards._delivery_policy import (
+        DeliveryPolicyError,
+        assert_namespace_preserved,
+    )
+    from scitex_cards._store import TaskNotFoundError, restore_task
+    from scitex_cards._store_delivery import mutate_card, prepare_new_card
+    from scitex_cards._task import _is_tombstoned
 
     from ..services import _reset_cache
 
-    with _store_lock(board.store_path):
-        doc, tasks = _read_write_doc(board.store_path)
-        by_id = {t.get("id"): t for t in tasks if isinstance(t, dict)}
-        if tid not in by_id:
-            tasks.append(dict(task))
+    def restore_fresh(current):
+        # The browser may carry a stale pre-delete snapshot. Its delivery
+        # namespace is not evidence and cannot replace the canonical marker.
+        assert_namespace_preserved(current, task)
+        if _is_tombstoned(current):
+            current.clear()
+            current.update(task)
 
+    try:
+        try:
+            mutate_card(board.store_path, tid, restore_fresh, operation="restore")
+        except TaskNotFoundError:
+            # A legacy physical delete has no row left to compare. Inserting
+            # its Undo payload must still refuse reserved namespace injection.
+            restore_task(
+                board.store_path, task=prepare_new_card(task, operation="restore")
+            )
         for ref in payload.get("refs") or []:
             if not isinstance(ref, dict):
                 continue
-            owner = by_id.get(ref.get("id"))
+            owner_id = ref.get("id")
             field = ref.get("field")
-            if owner is None:
+            if not owner_id or field not in ("parent", "depends_on", "blocks"):
                 continue
-            if field == "parent":
-                owner["parent"] = tid
-            elif field in ("depends_on", "blocks"):
-                lst = owner.get(field)
-                lst = list(lst) if isinstance(lst, list) else []
-                if tid not in lst:
-                    lst.append(tid)
-                owner[field] = lst
 
-        try:
-            _save_doc_unlocked(doc, board.store_path, tasks=tasks)
-        except TaskValidationError as exc:
-            return JsonResponse({"error": str(exc)}, status=400)
+            def restore_ref(owner, field=field):
+                if field == "parent":
+                    owner["parent"] = tid
+                else:
+                    lst = owner.get(field)
+                    lst = list(lst) if isinstance(lst, list) else []
+                    if tid not in lst:
+                        lst.append(tid)
+                    owner[field] = lst
+
+            try:
+                mutate_card(
+                    board.store_path, owner_id, restore_ref, operation="update"
+                )
+            except TaskNotFoundError:
+                continue
+    except (TaskValidationError, DeliveryPolicyError) as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
     _reset_cache()
     logger.info("[scitex-cards] restored task %s in %s", tid, board.store_path)
     return JsonResponse({"restored": tid, "store_path": str(board.store_path)})

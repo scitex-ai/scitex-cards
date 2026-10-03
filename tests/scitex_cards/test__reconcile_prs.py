@@ -147,6 +147,68 @@ def test_decide_still_closes_an_in_progress_card():
     assert action == ACTION_CLOSE
 
 
+@pytest.mark.parametrize(
+    "delivery", [{"version": 1, "required": True}, None, "untrusted", {"required": False}]
+)
+def test_merged_pr_does_not_close_an_enrolled_delivery_card(delivery):
+    """A merge describes source readiness; it cannot prove deployed delivery."""
+    # Arrange
+    task = {
+        "status": "in_progress",
+        "pr_url": "https://github.com/o/r/pull/528",
+        "_log_meta": {"delivery": delivery},
+    }
+
+    # Act
+    action = decide_reconcile_action(task, MERGED)
+
+    # Assert
+    assert action == "report-delivery"
+
+
+def test_explicit_source_only_delivery_keeps_legacy_merge_behavior():
+    # Arrange
+    task = {
+        "status": "in_progress",
+        "pr_url": "https://github.com/o/r/pull/528",
+        "_log_meta": {"delivery": {"version": 1, "required": False}},
+    }
+
+    # Act
+    action = decide_reconcile_action(task, MERGED)
+
+    # Assert
+    assert action == ACTION_CLOSE
+
+
+def test_enrolled_delivery_reports_readiness_even_without_a_pr_url():
+    # Arrange
+    task = {
+        "status": "in_progress",
+        "_log_meta": {"delivery": {"version": 1, "required": True}},
+    }
+
+    # Act
+    action = decide_reconcile_action(task, UNKNOWN)
+
+    # Assert
+    assert action == "report-delivery"
+
+
+def test_source_only_without_a_pr_keeps_the_legacy_skip():
+    # Arrange
+    task = {
+        "status": "in_progress",
+        "_log_meta": {"delivery": {"version": 1, "required": False}},
+    }
+
+    # Act
+    action = decide_reconcile_action(task, UNKNOWN)
+
+    # Assert
+    assert action == ACTION_SKIP_NO_PR
+
+
 def test_decide_skip_not_open_for_deferred_card():
     # Arrange
     task = {"status": "deferred", "pr_url": "https://github.com/o/r/pull/1"}

@@ -21,13 +21,17 @@ Same pattern the code already used for ``from . import _model``.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 
 from ._comment_ids import stamp_comment_id
-from ._model import _save_doc_unlocked, _store_lock
+from ._delivery_policy import ABSENT, delivery_namespace
 from ._store_arg import refuse_ineffective_store
+from ._store_delivery import DeliveryGuardError, mutate_card, prepare_new_card
 from ._store_events import _emit_card_event, _emit_unblock_for_dependents
 from ._store_list import _resolved_store
+from ._store_single_card import read_card_or_raise
+from ._store_target import resolve_store_target
 from ._touch import touch_last_activity
 
 #: The ONLY status that means "this work was delivered". ``failed`` and
@@ -91,65 +95,34 @@ def complete_task(
     TaskNotFoundError
         If no task matches ``task_id``.
     """
-    from . import _task  # hook-bypass: line-limit — verb-module split still queued
-    from ._store import _default_agent, _read_write_doc, _task_not_found, _utc_now_iso
+    from . import _task
+    from ._store import _default_agent, _task_not_found, _utc_now_iso
 
     if not task_id:
         raise TypeError("complete_task() requires a non-empty task_id")
     refuse_ineffective_store(store, verb="complete_task")
     resolved = _resolved_store(store)
-    result: dict | None = None
     transitioned = False
-    with _store_lock(resolved):
-        doc, tasks = _read_write_doc(resolved)
-        # `not _task._is_tombstoned(task)`: a tombstoned row is retained on
-        # disk forever but must behave as ABSENT — completing a deleted
-        # card would silently resurrect it.
-        for task in tasks:
-            if task.get("id") == task_id and not _task._is_tombstoned(task):
-                if task.get("status") == "done":
-                    # Idempotent: don't refresh the stamp, just return.
-                    # No unblock emit — re-completing changed nothing.
-                    return dict(task)
-                task["status"] = "done"
-                # CLEAR THE GATE WITH THE STATUS, or the document we are about
-                # to save is INVALID and _validate_tasks refuses the whole save.
-                #
-                # A done card still naming an unresolved blocker is incoherent:
-                # either the gate was cleared, or the card is not done. The
-                # validator says exactly that, and `resolve_task` has always
-                # cleared the blocker for this reason. `complete_task` never
-                # learned it, so the two closing verbs disagreed and this one
-                # produced a document that could not be written back.
-                #
-                # Measured on the live */15 reconcile cron, 2026-08-01:
-                #   TaskValidationError: task 'ci-runner-gitconfig-lock-collision'
-                #   has blocker 'operator-decision' but status is 'done'
-                # That card was legitimately blocked on an operator decision and
-                # its pull request merged anyway — real data, not corruption.
-                # Because validation covers the WHOLE document, that one card
-                # stopped the sweep from closing ANY card.
-                task.pop("blocker", None)
-                log_meta = task.get("_log_meta")
-                if not isinstance(log_meta, dict):
-                    log_meta = {}
-                    task["_log_meta"] = log_meta
-                now = _utc_now_iso()
-                log_meta["completed_at"] = now
-                log_meta["completed_by"] = _default_agent(by)
-                # A COMPLETION IS AN ACT, and every reconciler orders acts by
-                # `last_activity`. Stamping only `completed_at` made the newest
-                # possible change to a card invisible to the field that decides
-                # which copy wins — see `_touch` for the 3-host measurement.
-                # Same `now`, so the completion stamp and the activity stamp
-                # cannot straddle a tick and disagree about when this happened.
-                touch_last_activity(task, now)
-                _save_doc_unlocked(doc, resolved, tasks=tasks, touched_ids=[task_id])
-                result = dict(task)
-                transitioned = True
-                break
-    if result is None:
-        raise _task_not_found(task_id)
+
+    def complete(task: dict) -> None:
+        nonlocal transitioned
+        if _task._is_tombstoned(task):
+            raise _task_not_found(task_id)
+        if task.get("status") == "done":
+            return
+        task["status"] = "done"
+        task.pop("blocker", None)
+        log_meta = task.get("_log_meta")
+        if not isinstance(log_meta, dict):
+            log_meta = {}
+            task["_log_meta"] = log_meta
+        now = _utc_now_iso()
+        log_meta["completed_at"] = now
+        log_meta["completed_by"] = _default_agent(by)
+        touch_last_activity(task, now)
+        transitioned = True
+
+    result = mutate_card(store, task_id, complete, operation="complete", actor=by)
     # Active-unblock DRIVE (ADR-0009) — OUTSIDE the file lock (the emit
     # re-loads the store + may comment on dependents, which take the
     # same lock). Only on a real pending→done transition.
@@ -206,11 +179,16 @@ def delete_task(  # hook-bypass: line-limit — verb-module split still queued
     if not task_id:
         raise ValueError("delete_task: 'task_id' is required")
     with _model._store_lock(tasks_path):
+        current, _revision = read_card_or_raise(resolve_store_target(None), task_id)
+        if current is not None and delivery_namespace(current) is not ABSENT:
+            raise DeliveryGuardError("controlled-delivery-removal-unavailable")
         doc, tasks = _read_write_doc(tasks_path)
         target = _task._find_live_task(tasks, task_id)
         if target is None:
             raise _task_not_found(task_id)
-        original = dict(target)  # pre-tombstone snapshot: the Undo payload
+        if delivery_namespace(target) is not ABSENT:
+            raise DeliveryGuardError("controlled-delivery-removal-unavailable")
+        original = deepcopy(target)  # pre-tombstone snapshot: the Undo payload
         refs: list[str] = []
         for t in tasks:
             if t is target:
@@ -312,36 +290,31 @@ def restore_task(
     if not isinstance(task, dict) or not task.get("id"):
         raise ValueError("restore_task: 'task' must be a dict with 'id'")
     tid = task["id"]
-    with _model._store_lock(tasks_path):
-        doc, tasks = _read_write_doc(tasks_path)
-        # The row we write is a COPY, stamped as a fresh act. `delete_task`
-        # advances `last_activity` when it tombstones (see its body), so a
-        # restore that reused the caller's pre-delete snapshot verbatim would
-        # be strictly OLDER than the tombstone it reverses. On a second host
-        # the reconciler would then read the tombstone as the later act and
-        # re-delete the card — an Undo that undoes itself. We do not mutate
-        # the caller's dict: the Undo payload stays replayable.
-        restored = dict(task)
+    existing, _revision = read_card_or_raise(resolve_store_target(None), tid)
+
+    def restore(current: dict) -> None:
+        if not _task._is_tombstoned(current):
+            raise ValueError(f"restore_task: id {tid!r} already present")
+        restored = deepcopy(task)
         touch_last_activity(restored, _utc_now_iso())
-        existing = next((t for t in tasks if t.get("id") == tid), None)
-        if existing is not None:
-            if not _task._is_tombstoned(existing):
+        current.clear()
+        current.update(restored)
+
+    if existing is not None:
+        restored = mutate_card(store, tid, restore, operation="restore")
+    else:
+        # The legacy missing-row path may restore ordinary cards, but never
+        # enroll or reintroduce evidence from an untrusted Undo payload.
+        restored = prepare_new_card(task, operation="restore")
+        touch_last_activity(restored, _utc_now_iso())
+        with _model._store_lock(tasks_path):
+            doc, tasks = _read_write_doc(tasks_path)
+            if any(t.get("id") == tid for t in tasks):
                 raise ValueError(f"restore_task: id {tid!r} already present")
-            # UN-TOMBSTONE in place: replace with the caller's pre-delete
-            # snapshot, at the SAME list position (an ordinary upsert).
-            tasks[tasks.index(existing)] = restored
-        else:
-            # No row at all — a legacy pre-tombstone-era delete, or an
-            # admin purge. Fall back to the original append behaviour.
             tasks.append(restored)
-        # NAMES THE ONE CARD IT TOUCHED. Both branches above write exactly `tid`
-        # -- un-tombstoning replaces that row in place, the fallback appends it
-        # -- so nothing else in the document is this verb's intent.
-        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks, touched_ids=[tid])
-    # refs are descriptive (the client passes them through so callers can
-    # see which tasks had been mutated; we don't reverse-apply them since
-    # the depends_on / blocks values were just stripped, not stored).
-    return {"task": task, "refs": list(refs or [])}
+            _model._save_doc_unlocked(doc, tasks_path, tasks=tasks, touched_ids=[tid])
+    # refs remain descriptive, matching the existing core Undo contract.
+    return {"task": restored, "refs": list(refs or [])}
 
 
 def resolve_task(
@@ -358,30 +331,28 @@ def resolve_task(
     Idempotent on already-resolved tasks (re-resolves are no-ops, just
     log a "noop" comment).
     """
-    from . import _model, _task  # hook-bypass: line-limit
-    from ._store import TaskNotFoundError, _default_agent, _read_write_doc, _utc_now_iso
+    from . import _task
+    from ._store import TaskNotFoundError, _default_agent, _utc_now_iso
 
     if not task_id:
         raise ValueError("resolve_task: 'task_id' is required")
     who = _default_agent(actor)
     refuse_ineffective_store(store, verb="resolve_task")
     tasks_path = _resolved_store(store)
-    with _model._store_lock(tasks_path):
-        doc, tasks = _read_write_doc(tasks_path)
-        target = _task._find_live_task(tasks, task_id)
-        if target is None:
+    was_done = False
+    prior_status = None
+
+    def resolve(target: dict) -> None:
+        nonlocal was_done, prior_status
+        if _task._is_tombstoned(target):
             raise TaskNotFoundError(f"resolve_task: unknown id {task_id!r}")
         was_done = target.get("status") == "done"
-        prior_status = target.get("status")  # C5: capture for the event
+        prior_status = target.get("status")
         target["status"] = "done"
         target.pop("blocker", None)
         now = _utc_now_iso()
-        # Stamp even on the already-done noop path: this verb ALWAYS appends a
-        # comment, so it always changes the card, and a change that skips the
-        # activity stamp is exactly the lie this invariant exists to prevent.
         touch_last_activity(target, now)
-        comments = target.setdefault("comments", [])
-        comments.append(
+        target.setdefault("comments", []).append(
             stamp_comment_id(
                 {
                     "author": who,
@@ -389,14 +360,16 @@ def resolve_task(
                     "text": (
                         "[resolve (noop — already done)]"
                         if was_done
-                        else "[RESOLVED via mcp.resolve_task] flipped status='blocked'->done, blocker cleared."  # noqa: E501  # hook-bypass: line-limit
+                        else (
+                            "[RESOLVED via mcp.resolve_task] flipped "
+                            "status='blocked'->done, blocker cleared."
+                        )
                     ),
                 }
             )
         )
-        _model._save_doc_unlocked(
-            doc, tasks_path, tasks=tasks, touched_ids=[task_id]
-        )
+
+    target = mutate_card(store, task_id, resolve, operation="resolve", actor=who)
     # Active-unblock DRIVE (ADR-0009) — resolving a blocker card to done
     # can free its dependents too. Outside the lock; skip the noop
     # (already-done) path. Handler token-dedupe keeps it idempotent.
@@ -441,38 +414,36 @@ def reopen_task(
     the false completion survived the correction. A lie outlives its
     retraction if it is written in two places and you only fix one.)
     """
-    from . import _model, _task  # hook-bypass: line-limit
-    from ._store import TaskNotFoundError, _default_agent, _read_write_doc, _utc_now_iso
+    from . import _task
+    from ._store import TaskNotFoundError, _default_agent, _utc_now_iso
 
     if not task_id:
         raise ValueError("reopen_task: 'task_id' is required")
     who = _default_agent(by)
     refuse_ineffective_store(store, verb="reopen_task")
-    tasks_path = _resolved_store(store)
-    with _model._store_lock(tasks_path):
-        doc, tasks = _read_write_doc(tasks_path)
-        target = _task._find_live_task(tasks, task_id)
-        if target is None:
+
+    def reopen(target: dict) -> None:
+        if _task._is_tombstoned(target):
             raise TaskNotFoundError(f"reopen_task: unknown id {task_id!r}")
         target["status"] = "blocked"
         target["blocker"] = "operator-decision"
         cleared = clear_completion_stamp(target)
         now = _utc_now_iso()
-        # An UN-completion is as much an act as a completion. Without this the
-        # reopen is invisible to timestamp comparison and a reconciler happily
-        # re-applies the done copy from the other host, undoing the reopen.
         touch_last_activity(target, now)
-        comments = target.setdefault("comments", [])
         text = (
             "[REOPENED via mcp.reopen_task] flipped status='done'->blocked, "
             "blocker=operator-decision restored."
         )
         if cleared:
-            text += " Cleared _log_meta.completed_{at,by} — the card is no longer completed."  # noqa: E501  # hook-bypass: line-limit
-        comments.append(stamp_comment_id({"author": who, "ts": now, "text": text}))
-        _model._save_doc_unlocked(
-            doc, tasks_path, tasks=tasks, touched_ids=[task_id]
+            text += (
+                " Cleared _log_meta.completed_{at,by} — "
+                "the card is no longer completed."
+            )
+        target.setdefault("comments", []).append(
+            stamp_comment_id({"author": who, "ts": now, "text": text})
         )
+
+    target = mutate_card(store, task_id, reopen, operation="reopen", actor=who)
     return {"task_id": task_id, "by": who, "task": dict(target)}
 
 

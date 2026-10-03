@@ -51,6 +51,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
     from ._backend_connect import StoreConnection
 
+from copy import deepcopy
 from pathlib import Path
 
 from ._db_bootstrap import (
@@ -139,6 +140,27 @@ from ._schema_probe import _sole_value
 _SECTION_KEYS = ()
 
 
+def _preflight_doc_changes(
+    conn: StoreConnection,
+    by_id: dict[str, dict],
+    changed: list[str],
+    deleted_ids: list[str] | None,
+    expected_revision: int | None,
+) -> None:
+    """Refuse illegal generic rows/deletes before any batch row is changed."""
+    from ._store_delivery import _guard_removal, _preflight_generic_row_write
+    from ._store_single_card import _read_card_with_connection
+
+    for tid in changed:
+        before, revision = _read_card_with_connection(conn, tid)
+        _preflight_generic_row_write(
+            before, deepcopy(by_id[tid]), revision, expected_revision
+        )
+    for tid in deleted_ids or []:
+        before, _revision = _read_card_with_connection(conn, tid)
+        _guard_removal(before)
+
+
 
 
 def mirror_doc_incremental(
@@ -158,6 +180,11 @@ def mirror_doc_incremental(
     has no hash table yet). A refused compare-and-set adds ``revision_skipped``
     -- a LIST OF CARD IDS, never a count, because a caller who cannot name the
     row it lost cannot retry it and must re-read the whole batch every round.
+
+    Generic row/deletion policy is preflighted before any batch row effect.
+    Protected late revision refusals raise and roll back the whole transaction;
+    legacy refusal summaries retain their existing behavior. The no-hash rebuild
+    refuses any canonical delivery namespace or incoming namespace injection.
 
     ``expected_revision`` makes the ONE write a compare-and-set. It REQUIRES
     exactly one changed row and is refused on the first-run full rebuild: a guard
@@ -252,6 +279,11 @@ def mirror_doc_incremental(
                     "rebuild (no hash table yet, so every card is rewritten from "
                     "this doc). Mirror once without the guard, then retry."
                 )
+            from ._db_export import export_doc
+            from ._store_delivery import _guard_rebuild
+
+            canonical, _threads = export_doc(conn=conn, repair=False)
+            _guard_rebuild(canonical.get("tasks", []), cards)
             summary = _rebuild_from_doc(conn, doc)
             conn.executemany(
                 f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
@@ -332,6 +364,8 @@ def mirror_doc_incremental(
                 f"via touched_ids, or omit expected_revision for last-writer-wins."
             )
 
+        _preflight_doc_changes(conn, by_id, changed, deleted_ids, expected_revision)
+
         # `written`, never `changed` -- see the docstring. A refused card was NOT
         # written, and stamping its hash would strand it permanently.
         written: list[str] = []
@@ -349,7 +383,7 @@ def mirror_doc_incremental(
             conn.executemany(
                 f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
                 f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
-                [(tid, now_hashes[tid]) for tid in written],
+                [(tid, _card_hash(by_id[tid])) for tid in written],
             )
 
         # EXPLICIT, CALLER-NAMED deletes — the ONE way a row leaves the mirror.

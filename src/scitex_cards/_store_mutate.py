@@ -12,12 +12,10 @@ every name below so ``from ._store import add_task`` keeps working:
                         PAIR moves — never on a passing comment.
     _wip_statuses       Back-compat re-export of ``_throughput.WIP_STATUSES``.
 
-Named ``_store_mutate`` rather than ``_store_write`` because ``_store_write``
-is ALREADY the low-level persistence layer (``_store_lock`` / ``save_tasks`` /
-``_save_doc_unlocked``) that this module writes THROUGH.
+Updates use the revision-bound single-row delivery guard. Creation remains in
+``_store_add`` so its existing ownership and WIP validation stay together.
 
-The shared helpers (``_read_write_doc`` / ``_utc_now_iso`` /
-``_resolve_creator_or_raise`` / ``ENV_AGENT`` / ``TaskNotFoundError``) stay in
+The shared helpers (``_utc_now_iso`` / ``ENV_AGENT`` / ``TaskNotFoundError``) stay in
 ``_store`` and are imported HERE inside the function bodies — a deferred
 import, because ``_store`` imports this module at module level to re-export
 its verbs and a top-level import back would cycle. Same pattern the code
@@ -27,13 +25,10 @@ already used for ``from . import _model``.
 from __future__ import annotations
 
 import os
+from copy import deepcopy
 from pathlib import Path
 
-from ._model import (
-    TaskValidationError,
-    _save_doc_unlocked,
-    _store_lock,
-)
+from ._model import TaskValidationError
 from ._store_add import add_task  # noqa: F401 -- re-export, see module docstring
 from ._store_arg import refuse_ineffective_store
 from ._store_clocks import (
@@ -42,6 +37,7 @@ from ._store_clocks import (
     _stamp_cancellation_attribution,
     _stamp_deferred_at,
 )
+from ._store_delivery import mutate_card
 from ._store_enums import resolve_enum_clears as _resolve_enum_clears
 from ._store_events import _emit_card_event, _emit_unblock_for_dependents
 from ._store_list import _resolved_store
@@ -138,15 +134,9 @@ def update_task(
     is written and :class:`RevisionConflictError` is raised, so a caller re-reads
     and re-applies rather than clobbers.
 
-    IT IS OPT-IN, and that is load-bearing. ``_migrate_v6_to_v7`` records that
-    REJECT-by-default was RULED UNUSABLE -- "an UPDATE from a writer that knows
-    nothing about ``revision`` would ABORT, so fleet writes would fail until every
-    container is current", which this fleet cannot establish. With ``None`` no
-    guard is emitted and the write is byte-identical to before.
-
-    It RAISES here while the bulk path REPORTS, and the predicate is the opt-in
-    rather than the layer: passing a revision IS an assertion, and a violated
-    explicit assertion that returns quietly is an invisible lost update.
+    Every mutation reads the authoritative row and compares its SQL revision
+    when writing. ``expected_revision`` additionally asserts the caller's
+    revision; a mismatch or concurrent write raises without retrying stale data.
 
     The ONE exception is :data:`_CONTROL_KWARGS` -- names that are control
     parameters elsewhere in this stack. Those are REFUSED with a message
@@ -176,7 +166,7 @@ def update_task(
         was passed the ``""`` clear-sentinel (status cannot be cleared).
     """
     from . import _task
-    from ._store import ENV_AGENT, _read_write_doc, _task_not_found, _utc_now_iso
+    from ._store import ENV_AGENT, _task_not_found, _utc_now_iso
 
     if not task_id:
         raise TypeError("update_task() requires a non-empty task_id")
@@ -197,7 +187,6 @@ def update_task(
     fields = _resolve_enum_clears(fields, source="update_task")
     refuse_ineffective_store(store, verb="update_task")
     resolved = _resolved_store(store)
-    result: dict | None = None
     transitioned_to_done = False
     # C5: capture the (from, to) status pair when `status` actually flips
     # so we can emit the matching card-event AFTER the lock. None = no flip.
@@ -210,112 +199,37 @@ def update_task(
     # a place they never looked.
     from ._tolerated import collect as _collect_tolerated
 
-    with _collect_tolerated(task_id) as _tolerated, _store_lock(resolved):
-        doc, tasks = _read_write_doc(resolved)
-        for task in tasks:
-            # See `_task._is_tombstoned`: a deleted card's row is retained
-            # forever but must behave as ABSENT — mutating it here would
-            # silently resurrect it (2026-07-21 tombstone change).
-            if task.get("id") == task_id and not _task._is_tombstoned(task):
-                prior_status = task.get("status")
-                prior_blocker = task.get("blocker")
-                for key, value in fields.items():
-                    if value is None:
-                        task.pop(key, None)
-                    else:
-                        task[key] = value
-                # D11 partial-fix (ADR-0008): auto-stamp ``last_activity``
-                # on every successful mutation (drives the recency-color
-                # signal on the board). Skip if the caller passed an
-                # explicit ``last_activity`` field this call — their
-                # value wins over the auto-stamp.
-                if "last_activity" not in fields:
-                    task["last_activity"] = _utc_now_iso()
-                # Stamp the backlog age clock ONCE, on entry into `deferred`.
-                # Never on a re-defer: `last_activity` above already moved, and
-                # if the age clock moved with it, a card re-deferred every week
-                # would read as permanently young and could never expire. The
-                # rot would be real and invisible at the same time.
-                # LEAVING `done` must drop the completion stamp. Placed with the
-                # other transition clocks, at the one point a status change is
-                # applied, so a future exit from `done` inherits it without its
-                # author knowing the invariant exists. Before this, the only
-                # unstamping path was `reopen_task` — which forces
-                # status=blocked, and is therefore wrong for a card being
-                # deferred or cancelled. So every honest exit kept the stamp.
-                _clear_completion_stamp_on_leaving_done(task, prior_status)
-                _stamp_deferred_at(task, prior_status)
-                # Same lesson, the blocked-check's clock: stamp when the
-                # (status, blocker) PAIR moves, never on a passing comment.
-                _stamp_blocked_at(task, prior_status, prior_blocker)
-                # WHO cancelled this, and when. Added 2026-08-20 after 844
-                # cards — including one titled "three live vulns" and 213 at
-                # priority 1 — were cancelled in a single unattributed
-                # operation that the store cannot identify, because it keeps
-                # no mutation audit at all.
-                #
-                # BEST-EFFORT, DELIBERATELY, and NOT the fail-loud resolver.
-                # `_resolve_creator_or_raise` raises "creator unresolved" —
-                # the exact error a supervisor process with no agent id in its
-                # environment hit 347 times on 2026-08-20. Using it here would
-                # make cancels FAIL for precisely the unattended callers whose
-                # cancellations most need attributing, and the operator has
-                # ruled that a card must always be writable. An unresolvable
-                # actor is therefore WRITTEN DOWN as `unresolved` rather than
-                # omitted: an absent field means the card predates this stamp,
-                # a present `unresolved` means somebody cancelled it and did
-                # not sign. Those are different facts.
-                _stamp_cancellation_attribution(
-                    task, prior_status, os.environ.get(ENV_AGENT)
-                )
-                # DECLARE THE ROW. Without `touched_ids` the mirror treats
-                # "differs from the database" as "the caller meant to write
-                # it" — so this whole-document write re-asserts every card in
-                # the caller's snapshot, silently reverting anything another
-                # agent committed since the read. Both writers are told they
-                # succeeded. Measured by figrecipe 2026-08-10: a
-                # `complete_task` that RETURNED `status=done` was later found
-                # back at `status=blocked`.
-                #
-                # `[task_id]` is sufficient here and that is verified, not
-                # assumed: this function mutates exactly one dict — the card
-                # matched by id — through `fields`, the `last_activity`
-                # auto-stamp, and the three lifecycle clocks, every one of
-                # which takes `task` and writes only `task[...]`. Contrast
-                # `_store_rescore`, which shifts NEIGHBOURING rows and
-                # therefore must declare them too; under-declaring is the way
-                # this parameter goes wrong (see `_store_relations:181`).
-                _mirror = _save_doc_unlocked(
-                    doc,
-                    resolved,
-                    tasks=tasks,
-                    touched_ids=[task_id],
-                    expected_revision=expected_revision,
-                )
-                # RAISE rather than return counts. The mirror reports a refusal as
-                # `revision_skipped`; a caller who does not inspect it is told
-                # nothing and believes the write landed -- the invisible lost
-                # update, reintroduced one layer up from where it was fixed.
-                if _mirror and _mirror.get("revision_skipped"):
-                    from ._store_errors import RevisionConflictError
+    def apply_fields(task: dict) -> None:
+        nonlocal transitioned_to_done, status_change
+        if _task._is_tombstoned(task):
+            raise _task_not_found(task_id)
+        prior_status = task.get("status")
+        prior_blocker = task.get("blocker")
+        for key, value in fields.items():
+            if value is None:
+                task.pop(key, None)
+            else:
+                task[key] = deepcopy(value)
+        if "last_activity" not in fields:
+            task["last_activity"] = _utc_now_iso()
+        _clear_completion_stamp_on_leaving_done(task, prior_status)
+        _stamp_deferred_at(task, prior_status)
+        _stamp_blocked_at(task, prior_status, prior_blocker)
+        _stamp_cancellation_attribution(task, prior_status, os.environ.get(ENV_AGENT))
+        transitioned_to_done = fields.get("status") == "done" and prior_status != "done"
+        new_status = task.get("status")
+        if "status" in fields and new_status != prior_status:
+            status_change = (prior_status, new_status)
 
-                    raise RevisionConflictError(
-                        task_id,
-                        expected_revision,
-                        (_mirror.get("revision_found") or {}).get(task_id),
-                    )
-                result = dict(task)
-                transitioned_to_done = (
-                    fields.get("status") == "done" and prior_status != "done"
-                )
-                # Record a genuine status flip (post-state differs from
-                # prior): `status` present in fields AND changed value.
-                new_status = task.get("status")
-                if "status" in fields and new_status != prior_status:
-                    status_change = (prior_status, new_status)
-                break
-    if result is None:
-        raise _task_not_found(task_id)
+    with _collect_tolerated(task_id) as _tolerated:
+        result = mutate_card(
+            store,
+            task_id,
+            apply_fields,
+            operation="update",
+            actor=_acting_agent(),
+            expected_revision=expected_revision,
+        )
     # Active-unblock DRIVE (ADR-0009) — a direct status→done via
     # update_task() drives the same unblock as complete_task(). Outside
     # the lock; the handler's per-card token dedupe makes a double-path

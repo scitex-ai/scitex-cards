@@ -65,41 +65,24 @@ def handle_resolve(request, board):
         actor = os.environ.get("USER") or "operator"
 
     from scitex_cards import TaskValidationError
-    from scitex_cards._model import _save_doc_unlocked, _store_lock
-    from scitex_cards._store import _read_write_doc
+    from scitex_cards._store import TaskNotFoundError
+    from scitex_cards._store_delivery import mutate_card
 
     from ..services import _reset_cache
 
-    # One flock'd read-modify-write against the GLOBAL store — never the
-    # request-scoped board cache, whose staleness window used to clobber any
-    # concurrent write landing between the cache read and the save. (The GUI's
-    # ``_store.resolve_task`` sibling is not used here: this endpoint's pinned
-    # contract differs — the audit comment names the prior status/blocker, and
-    # the already-done noop must not write at all.)
-    with _store_lock(board.store_path):
-        doc, tasks = _read_write_doc(board.store_path)
-        task = next(
-            (t for t in tasks if isinstance(t, dict) and t.get("id") == task_id),
-            None,
-        )
-        if task is None:
-            return JsonResponse({"error": f"no task with id {task_id!r}"}, status=404)
+    result = {}
 
-        # Idempotent: already-done = no-op success (a double-click on the FE
-        # button shouldn't double-publish or fail-noisily). No write happens.
+    def resolve_fresh(task):
+        # The kernel guards enrolled completion even for a done-shaped row;
+        # this no-op must not turn a stale receipt into success.
         if task.get("status") == "done":
-            return JsonResponse(
-                {
-                    "id": task_id,
-                    "status": "done",
-                    "noop": True,
-                    "store_path": str(board.store_path),
-                }
-            )
+            result["noop"] = True
+            return
 
         # Capture pre-resolve state for the comment trail.
         prior_status = task.get("status")
         prior_blocker = task.get("blocker")
+        result.update(prior_status=prior_status, prior_blocker=prior_blocker)
 
         task["status"] = "done"
         # Pop rather than set-None: the schema validator rejects blocker on
@@ -125,15 +108,32 @@ def handle_resolve(request, board):
         task["comments"] = ([*existing] if isinstance(existing, list) else []) + [
             resolve_comment
         ]
+        result["comment"] = resolve_comment
 
-        try:
-            # Single-card, same shape as the `reopen` handler: one status flip
-            # plus one appended comment, both on `task`.
-            _save_doc_unlocked(
-                doc, board.store_path, tasks=tasks, touched_ids=[task_id]
-            )
-        except TaskValidationError as exc:
-            return JsonResponse({"error": str(exc)}, status=400)
+    try:
+        task = mutate_card(
+            board.store_path,
+            task_id,
+            resolve_fresh,
+            operation="resolve",
+            actor=actor.strip(),
+        )
+    except TaskNotFoundError:
+        return JsonResponse({"error": f"no task with id {task_id!r}"}, status=404)
+    except TaskValidationError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    if result.get("noop"):
+        return JsonResponse(
+            {
+                "id": task_id,
+                "status": "done",
+                "noop": True,
+                "store_path": str(board.store_path),
+            }
+        )
+    prior_status = result["prior_status"]
+    prior_blocker = result["prior_blocker"]
+    resolve_comment = result["comment"]
     _reset_cache()
 
     # Notification publish — uses scitex_cards._adapters.InProcessPubSub default

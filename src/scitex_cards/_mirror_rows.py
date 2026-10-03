@@ -23,7 +23,9 @@ if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
 
 from ._comment_ids import stamp_comment_id
 from ._db_bootstrap import _insert_tasks
+from ._delivery_policy import ABSENT, delivery_namespace
 from ._mirror_hashes import HASH_TABLE
+from ._store_errors import RevisionConflictError
 
 
 def _drop_card_rows(conn: StoreConnection, task_id: str) -> None:
@@ -78,13 +80,21 @@ def _write_card(
     between that read and the write — this pre-check is not a substitute for it,
     it only ensures the DESTRUCTIVE half never runs for a write that was always
     going to be refused.
+
+    The canonical payload is read on this same transaction for the application
+    guard. Generic writes preserve delivery metadata; only the kernel's internal
+    bound transition may carry a prepared generation reset. Protected late CAS
+    refusals raise so supported callers roll back the destructive half as well.
     """
+    from ._store_delivery import _guard_row_write
+    from ._store_single_card import _read_card_with_connection
+
     tid = str(card.get("id"))
+    before, found = _read_card_with_connection(conn, tid)
+    expected_revision = _guard_row_write(
+        conn, before, card, found, expected_revision
+    )
     if expected_revision is not None:
-        row = conn.execute(
-            "SELECT revision FROM tasks WHERE id = ?", (tid,)
-        ).fetchone()
-        found = None if row is None else row["revision"]
         if found != expected_revision:
             # Refuse BEFORE the drop. Nothing has been touched.
             return {
@@ -101,7 +111,15 @@ def _write_card(
     _drop_card_rows(conn, tid)
     # _insert_tasks handles the task row + comments + edges + roles for each
     # card it is given, so a one-element list is exactly one card's worth.
-    return _insert_tasks(conn, [card], expected_revision=expected_revision)
+    counts = _insert_tasks(conn, [card], expected_revision=expected_revision)
+    protected = delivery_namespace(before or {}) is not ABSENT
+    if counts.get("revision_skipped") and protected:
+        # A protected late refusal must reach the caller's rollback boundary;
+        # the earlier revision check cannot serialize the destructive drop.
+        raise RevisionConflictError(
+            tid, expected_revision, counts.get("revision_found")
+        )
+    return counts
 
 
 def _comment_fields(row) -> tuple:
@@ -252,7 +270,16 @@ def _delete_card(conn: StoreConnection, task_id: str) -> None:
     not (that one is for re-writing a card, which owns only its OUTBOUND edges).
     A dangling inbound edge to a card that no longer exists is exactly the kind
     of rot an equivalence check on PRESENT cards would never notice.
+
+    Any present delivery namespace refuses before effects. The legacy path
+    retains its behavior; atomic deletion against future enrollment requires
+    the Infrastructure-owned storage fence.
     """
+    from ._store_delivery import _guard_removal
+    from ._store_single_card import _read_card_with_connection
+
+    before, _revision = _read_card_with_connection(conn, task_id)
+    _guard_removal(before)
     _drop_card_rows(conn, task_id)
     conn.execute("DELETE FROM task_edges WHERE dst_task_id = ?", (task_id,))
     conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))

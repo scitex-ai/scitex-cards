@@ -64,6 +64,14 @@ _STORE_TEXT = (
     "  - id: already-done\n"
     "    title: Already Done\n"
     "    status: done\n"
+    "  - id: delivery-card\n"
+    "    title: Delivery remains unproven\n"
+    "    status: in_progress\n"
+    "    _log_meta: {delivery: {version: 1, required: true, generation: 3}}\n"
+    "  - id: delivery-done\n"
+    "    title: A done-shaped row cannot bypass the delivery guard\n"
+    "    status: done\n"
+    "    _log_meta: {delivery: {version: 1, required: true, generation: 3}}\n"
 )
 
 
@@ -187,6 +195,35 @@ def test_resolve_does_not_append_comment_on_noop(store):
     row = _load(store)["already-done"]
     # Assert — already-done task started with no comments; noop must not add one.
     assert not row.get("comments")
+
+
+def test_resolve_refuses_enrolled_completion_without_trusted_observation(store):
+    # Arrange
+    # Act
+    response = _post("resolve", store, {"id": "delivery-card", "actor": "operator"})
+
+    # Assert
+    assert response.status_code == 400
+
+
+def test_refused_enrolled_resolution_preserves_the_canonical_card(store):
+    # Arrange
+    before = _load(store)["delivery-card"]
+
+    # Act
+    _post("resolve", store, {"id": "delivery-card", "actor": "operator"})
+
+    # Assert
+    assert _load(store)["delivery-card"] == before
+
+
+def test_already_done_enrollee_does_not_return_unproven_noop_success(store):
+    # Arrange
+    # Act
+    response = _post("resolve", store, {"id": "delivery-done", "actor": "operator"})
+
+    # Assert
+    assert response.status_code == 400
 
 
 # === Error paths ============================================================

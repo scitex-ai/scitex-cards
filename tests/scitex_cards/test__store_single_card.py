@@ -22,6 +22,7 @@ schema is dropped CASCADE at teardown and a leaked connection wedges the run.
 from __future__ import annotations
 
 import cProfile
+from copy import deepcopy
 
 import pytest
 from conftest import seed_db_from_doc
@@ -34,6 +35,7 @@ from scitex_cards._store_retirement import StoreRetired, retire_store
 from scitex_cards._store_single_card import read_card_or_raise, write_card_or_raise
 from scitex_cards._store_target import resolve_store_target
 from scitex_cards._store_uuid import ENV_EXPECTED_STORE_UUID, stamp_store_uuid
+from scitex_cards._task import TaskValidationError
 
 IDENTITY_A = "3f2b8c1e-9d4a-4f77-b0c5-1a2e3d4f5a6b"
 IDENTITY_B = "7c9e0d21-5b3f-4a08-9e6d-2f4a6b8c0d1e"
@@ -274,6 +276,137 @@ def test_a_single_card_read_never_exports_the_board(store_db):
         profile.disable()
     # Assert
     assert _frames_named(profile) & {"export_doc", "_read_canonical_db_or_raise"} == set()
+
+
+_ENROLLED = {
+    "version": 1, "required": True, "generation": 1,
+    "started_at": "2026-10-03T00:00:00Z", "checkpoints": {},
+}
+_NAMESPACES = [None, {"version": 1, "required": False}, _ENROLLED]
+_NO_DELIVERY = object()
+
+
+@pytest.fixture
+def delivery_store(new_store, env):
+    """Seed trusted test data; every act uses the ordinary public write door."""
+    def seed(namespace=_NO_DELIVERY, *, status="deferred"):
+        card = {
+            "id": "protected", "title": "Protected card", "status": status,
+            "agent": "agent:test-suite", "assignee": "agent:test-suite",
+            "last_activity": "2026-10-03T00:00:00Z",
+            "_log_meta": {"other": "preserve"}, "comments": [],
+        }
+        if namespace is not _NO_DELIVERY:
+            card["_log_meta"]["delivery"] = deepcopy(namespace)
+        if status == "done":
+            card["_log_meta"].update(
+                completed_at="2026-10-03T00:10:00Z", completed_by="agent:deployer",
+                closed_at="2026-10-03T00:11:00Z", closed_by="agent:deployer",
+            )
+        db = new_store("cards_delivery_one", bootstrap=False)
+        seed_db_from_doc({"tasks": [card]}, db)
+        env.set(ENV_STORE_DSN, db)
+        return db
+    return seed
+
+
+@pytest.mark.parametrize("namespace", _NAMESPACES, ids=["null", "optional", "enrolled"])
+@pytest.mark.parametrize("change", ["remove", "replace"])
+def test_single_card_cannot_replace_or_remove_reserved_namespace(delivery_store, namespace, change):
+    """Optional and explicit null metadata are as reserved as enrollment."""
+    # Arrange
+    target = delivery_store(namespace)
+    proposed, revision = read_card_or_raise(target, "protected")
+    if change == "remove":
+        proposed["_log_meta"].pop("delivery")
+    else:
+        proposed["_log_meta"]["delivery"] = {"injected": True}
+    # Act
+    attempt = lambda: write_card_or_raise(target, proposed, expected_revision=revision)
+    # Assert
+    with pytest.raises(TaskValidationError):
+        attempt()
+
+
+@pytest.mark.parametrize("namespace", _NAMESPACES, ids=["null", "optional", "enrolled"])
+@pytest.mark.parametrize("new_row", [False, True], ids=["existing-legacy", "new-row"])
+def test_single_card_cannot_inject_reserved_namespace(delivery_store, namespace, new_row):
+    # Arrange
+    target = delivery_store()
+    proposed, revision = read_card_or_raise(target, "protected")
+    if new_row:
+        proposed["id"], revision = "injected", None
+    proposed["_log_meta"]["delivery"] = deepcopy(namespace)
+    # Act
+    attempt = lambda: write_card_or_raise(target, proposed, expected_revision=revision)
+    # Assert
+    with pytest.raises(TaskValidationError):
+        attempt()
+
+
+def test_single_card_cannot_complete_enrolled_card_without_observer(delivery_store):
+    # Arrange
+    target = delivery_store(_ENROLLED)
+    proposed, revision = read_card_or_raise(target, "protected")
+    proposed["status"] = "done"
+    # Act
+    attempt = lambda: write_card_or_raise(target, proposed, expected_revision=revision)
+    # Assert
+    with pytest.raises(TaskValidationError):
+        attempt()
+
+
+@pytest.mark.parametrize("clock", ["completed_at", "completed_by", "closed_at", "closed_by"])
+def test_single_card_cannot_rewrite_enrolled_completion_or_archive_clock(delivery_store, clock):
+    # Arrange
+    target = delivery_store(_ENROLLED, status="done")
+    proposed, revision = read_card_or_raise(target, "protected")
+    proposed["_log_meta"][clock] = "2026-10-03T00:12:00Z" if clock.endswith("_at") else "agent:caller"
+    # Act
+    attempt = lambda: write_card_or_raise(target, proposed, expected_revision=revision)
+    # Assert
+    with pytest.raises(TaskValidationError):
+        attempt()
+
+
+def test_refused_single_card_completion_leaves_payload_and_revision_unchanged(delivery_store):
+    # Arrange
+    target = delivery_store(_ENROLLED)
+    before = read_card_or_raise(target, "protected")
+    proposed = deepcopy(before[0])
+    proposed["status"] = "done"
+    # Act
+    try:
+        write_card_or_raise(target, proposed, expected_revision=before[1])
+    except TaskValidationError:
+        pass
+    # Assert
+    assert read_card_or_raise(target, "protected") == before
+
+
+def test_legacy_single_card_edit_still_persists(delivery_store):
+    # Arrange
+    target = delivery_store()
+    proposed, revision = read_card_or_raise(target, "protected")
+    proposed["title"] = "Edited legacy card"
+    # Act
+    write_card_or_raise(target, proposed, expected_revision=revision)
+    # Assert
+    assert read_card_or_raise(target, "protected") == (proposed, revision + 1)
+
+
+def test_done_enrolled_comment_changes_only_comments_activity_and_revision(delivery_store):
+    """Discussion remains append-only without refreshing completion evidence."""
+    # Arrange
+    target = delivery_store(_ENROLLED, status="done")
+    before, revision = read_card_or_raise(target, "protected")
+    expected = deepcopy(before)
+    # Act
+    result = _store.comment_task(None, "protected", "delivery discussion", by="agent:test-suite", entry_points=())
+    expected["comments"].append(result["comment"])
+    expected["last_activity"] = result["comment"]["ts"]
+    # Assert
+    assert read_card_or_raise(target, "protected") == (expected, revision + 1)
 
 
 # EOF

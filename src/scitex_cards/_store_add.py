@@ -28,6 +28,7 @@ from ._model import (
 )
 from ._paths import refuse_ambient_store_creation as _refuse_ambient_store_creation
 from ._store_arg import refuse_ineffective_store
+from ._store_delivery import prepare_new_card
 from ._store_enums import resolve_enum_clears as _resolve_enum_clears
 from ._store_events import _emit_card_event
 from ._store_list import _resolved_store
@@ -195,6 +196,7 @@ def add_task(
     # the result assembly below, and `_tolerated` for what went unseen.
     from ._tolerated import collect as _collect_tolerated
 
+    new = prepare_new_card(new, operation="add")
     with _collect_tolerated(id) as _tolerated, _store_lock(resolved):
         # `missing_ok=True` is gone deliberately. It meant "an absent store
         # yields an empty doc", which against a database feeds an empty doc

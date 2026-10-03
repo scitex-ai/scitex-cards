@@ -25,17 +25,21 @@ replacement):
   - last_activity: current UTC ISO-8601
   - note:          the question text (or a placeholder when empty)
 
-The functions REUSE the package's model store I/O (``load_tasks`` /
-``_save_tasks_unlocked`` / ``_store_lock``) so comment / key-order
-round-tripping and validation are preserved — no bespoke YAML I/O here.
+Existing help cards use the canonical revision-bound delivery guard. Creation
+retains the legacy model writer and no-notification contract.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from ._model import _save_tasks_unlocked, _store_lock, load_tasks
-from ._store import _resolved_store, _utc_now_iso
+from ._model import _save_doc_unlocked, _store_lock
+from ._store import _read_write_doc, _resolved_store, _utc_now_iso
+from ._store_delivery import mutate_card, prepare_new_card
+from ._store_errors import RevisionConflictError
+from ._store_lifecycle import clear_completion_stamp
+from ._store_single_card import read_card_or_raise
+from ._store_target import resolve_store_target
 
 #: Placeholder note when the caller passes no question text. Matches the
 #: dotfiles hook's "no question captured" wording so the card reads the same
@@ -75,9 +79,8 @@ def help_wait(
 
     Idempotent: exactly ONE ``help-<agent>-waiting`` card per agent. A re-run
     refreshes ``note`` + ``last_activity`` (and ``host`` / status / blocker)
-    in place rather than inserting a duplicate. The whole read-decide-write
-    runs under the store lock so two concurrent callers can't both miss the
-    existing card and double-insert.
+    in place rather than inserting a duplicate. Existing-card writes use a
+    fresh canonical read and SQL revision compare-and-set without stale retries.
 
     ``agent`` is taken as already-sanitized by the caller (the hook owns
     sanitization); this only trims surrounding whitespace. Returns the
@@ -93,28 +96,28 @@ def help_wait(
     resolved = _resolved_store(store)
     resolved.parent.mkdir(parents=True, exist_ok=True)
 
-    # Lock the full read-modify-write so a concurrent caller can't also
-    # observe "no card" and double-insert. Doing the existence decision under
-    # one lock makes the upsert atomic.
+    def refresh(existing: dict) -> None:
+        if existing.get("status") == "done":
+            clear_completion_stamp(existing)
+        existing["title"] = title
+        existing["status"] = "blocked"
+        existing["blocker"] = "operator-decision"
+        existing["assignee"] = agent
+        existing["scope"] = f"agent:{agent}"
+        existing["host"] = host_eff
+        existing["note"] = note
+        existing["last_activity"] = _utc_now_iso()
+
+    existing, _revision = read_card_or_raise(resolve_store_target(None), card_id)
+    if existing is not None:
+        return mutate_card(store, card_id, refresh, operation="update", actor=agent)
+
+    # Preserve the legacy creation path and its no-notification behavior.
+    # Atomic expected-absence insertion remains an adapter activation prerequisite.
     with _store_lock(resolved):
-        # Read the canonical DB unconditionally. The old `if resolved.exists()
-        # else []` gated on the YAML store PATH (never a real file), so
-        # this always read [] — re-inserting (regenerating
-        # created_at) instead of upserting, AND writing back only the new card,
-        # which diff-deleted every OTHER agent's cards. load_tasks reads the DB.
-        tasks = load_tasks(resolved)
-        existing = next((t for t in tasks if t.get("id") == card_id), None)
-        if existing is not None:
-            existing["title"] = title
-            existing["status"] = "blocked"
-            existing["blocker"] = "operator-decision"
-            existing["assignee"] = agent
-            existing["scope"] = f"agent:{agent}"
-            existing["host"] = host_eff
-            existing["note"] = note
-            existing["last_activity"] = _utc_now_iso()
-            _save_tasks_unlocked(tasks, resolved)
-            return dict(existing)
+        doc, tasks = _read_write_doc(resolved)
+        if any(t.get("id") == card_id for t in tasks):
+            raise RevisionConflictError(card_id, -1, None)
         stamp = _utc_now_iso()
         new = {
             "id": card_id,
@@ -128,8 +131,9 @@ def help_wait(
             "created_at": stamp,
             "last_activity": stamp,
         }
+        new = prepare_new_card(new, operation="add")
         tasks.append(new)
-        _save_tasks_unlocked(tasks, resolved)
+        _save_doc_unlocked(doc, resolved, tasks=tasks, touched_ids=[card_id])
         return dict(new)
 
 
@@ -150,21 +154,17 @@ def help_clear(
     if not agent:
         raise ValueError("help_clear: 'agent' is required and must be non-empty")
     card_id = help_card_id(agent)
-    resolved = _resolved_store(store)
-    # No YAML-file existence gate: the store is the canonical DB. load_tasks
-    # reads it; an absent card still yields cleared=False below (target None).
-    # The old `if not resolved.exists()` made help_clear a permanent no-op
-    # (the store path is never a real file).
-    with _store_lock(resolved):
-        tasks = load_tasks(resolved)
-        target = next((t for t in tasks if t.get("id") == card_id), None)
-        if target is None:
-            return {"task_id": card_id, "cleared": False}
-        target["status"] = "done"
-        target.pop("blocker", None)
-        target["last_activity"] = _utc_now_iso()
-        _save_tasks_unlocked(tasks, resolved)
-        return {"task_id": card_id, "cleared": True, "task": dict(target)}
+    target, _revision = read_card_or_raise(resolve_store_target(None), card_id)
+    if target is None:
+        return {"task_id": card_id, "cleared": False}
+
+    def clear(task: dict) -> None:
+        task["status"] = "done"
+        task.pop("blocker", None)
+        task["last_activity"] = _utc_now_iso()
+
+    target = mutate_card(store, card_id, clear, operation="resolve", actor=agent)
+    return {"task_id": card_id, "cleared": True, "task": target}
 
 
 __all__ = [

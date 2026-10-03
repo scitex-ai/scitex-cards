@@ -73,6 +73,19 @@ from ._validate import WRITE_SOURCE, _validate_tasks
 CAS_ATTEMPTS = 3
 
 
+def _read_card_with_connection(conn, task_id: str) -> tuple[dict | None, int | None]:
+    """Read the canonical payload/revision on the caller's write transaction."""
+    row = conn.execute(
+        "SELECT card_json, revision, last_activity FROM tasks WHERE id = ?",
+        (str(task_id),),
+    ).fetchone()
+    if row is None:
+        return None, None
+    if row["card_json"] is None:
+        raise missing_payload_refusal(str(task_id), row["last_activity"])
+    return card_from_payload(row["card_json"]), row["revision"]
+
+
 def read_card_or_raise(target: str, task_id: str) -> tuple[dict | None, int | None]:
     """ONE card by id, through the canonical read's own guards.
 
@@ -92,15 +105,7 @@ def read_card_or_raise(target: str, task_id: str) -> tuple[dict | None, int | No
     """
     conn = _guarded_connection(target)
     try:
-        row = conn.execute(
-            "SELECT card_json, revision, last_activity FROM tasks WHERE id = ?",
-            (str(task_id),),
-        ).fetchone()
-        if row is None:
-            return None, None
-        if row["card_json"] is None:
-            raise missing_payload_refusal(str(task_id), row["last_activity"])
-        return card_from_payload(row["card_json"]), row["revision"]
+        return _read_card_with_connection(conn, task_id)
     finally:
         try:
             conn.rollback()
@@ -120,13 +125,14 @@ def write_card_or_raise(
     BEFORE dropping anything), then the same hash-ledger upsert.
 
     ``expected_revision`` is the value :func:`read_card_or_raise` returned.
-    ``None`` is accepted for a caller that has explicitly chosen last-writer-
-    wins; the verbs in this package do not, and should not, because a lost
-    update is invisible and an exception is not.
+    ``None`` retains last-writer-wins for legacy rows. An existing delivery
+    namespace instead uses its canonical revision and cannot bypass the semantic
+    guard. Kernel/comment handoffs are bound internally to this connection;
+    submitted card fields never grant a trusted transition.
 
     RAISES :class:`RevisionConflictError` on a lost race, with the revision the
-    store holds now, and NOTHING has been written when it does — the drop of the
-    card's derived rows never ran. Every other failure propagates from the
+    store holds now, with the transaction rolled back even if a late conditional
+    upsert refused after the derived-row drop. Every other failure propagates from the
     layer that saw it; nothing here is swallowed, because this is the write
     door and the one direction it must never move is quieter.
 
@@ -142,6 +148,9 @@ def write_card_or_raise(
     _validate_tasks([card], source=WRITE_SOURCE, strict=True)
     conn = _guarded_connection(target)
     try:
+        from ._store_delivery import _bind_write
+
+        _bind_write(target, conn, card, expected_revision)
         counts = _write_card(conn, card, expected_revision=expected_revision)
         if counts.get("revision_skipped"):
             conn.rollback()

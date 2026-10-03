@@ -24,6 +24,7 @@ set one row, retried on a lost race.
 from __future__ import annotations
 
 from pathlib import Path
+from copy import deepcopy
 
 from ._comment_ids import stamp_comment_id
 from ._store_arg import refuse_ineffective_store
@@ -61,6 +62,7 @@ def comment_task(
     from . import _model, _task
     from ._store import _default_agent, _task_not_found, _utc_now_iso
     from ._store_errors import RevisionConflictError
+    from ._store_delivery import _comment_write
     from ._store_single_card import (
         CAS_ATTEMPTS,
         read_card_or_raise,
@@ -110,6 +112,7 @@ def comment_task(
             # forever but must behave as ABSENT here.
             if card is None or _task._is_tombstoned(card):
                 raise _task_not_found(task_id)
+            before = deepcopy(card)
             comments = card.setdefault("comments", [])
             # Pre-append snapshot of comment authors — forms the
             # `collaborators` list of the card-message event below.
@@ -125,7 +128,8 @@ def comment_task(
             # flagging a card that had received progress comments minutes earlier.
             card["last_activity"] = entry["ts"]
             try:
-                write_card_or_raise(target, card, expected_revision=revision)
+                with _comment_write(target, before, card, revision) as card:
+                    write_card_or_raise(target, card, expected_revision=revision)
             except RevisionConflictError:
                 if attempt == CAS_ATTEMPTS:
                     raise

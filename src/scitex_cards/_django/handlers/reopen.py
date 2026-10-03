@@ -62,28 +62,17 @@ def handle_reopen(request, board):
         new_blocker = "operator-decision"
 
     from scitex_cards import TaskValidationError
-    from scitex_cards._model import _save_doc_unlocked, _store_lock
-    from scitex_cards._store import _read_write_doc
+    from scitex_cards._store import TaskNotFoundError
+    from scitex_cards._store_delivery import mutate_card
 
     from ..services import _reset_cache
 
-    # One flock'd read-modify-write against the GLOBAL store — never the
-    # request-scoped board cache, whose staleness window used to clobber any
-    # concurrent write landing between the cache read and the save. (The
-    # ``_store.reopen_task`` verb is not used here: it always forces
-    # ``blocked``/``operator-decision``, while this endpoint's pinned contract
-    # restores the caller-supplied prior_status / prior_blocker.)
-    with _store_lock(board.store_path):
-        doc, tasks = _read_write_doc(board.store_path)
-        task = next(
-            (t for t in tasks if isinstance(t, dict) and t.get("id") == task_id),
-            None,
-        )
-        if task is None:
-            return JsonResponse({"error": f"no task with id {task_id!r}"}, status=404)
+    result = {}
 
+    def reopen_fresh(task):
         pre_status = task.get("status")
         pre_blocker = task.get("blocker")
+        result.update(prior_status=pre_status, prior_blocker=pre_blocker)
 
         task["status"] = new_status
         if new_status == "blocked" and new_blocker:
@@ -115,17 +104,23 @@ def handle_reopen(request, board):
         task["comments"] = ([*existing] if isinstance(existing, list) else []) + [
             reopen_comment
         ]
+        result["comment"] = reopen_comment
 
-        try:
-            # Single-card: this handler flips one card's status and appends one
-            # comment to it. Unlike `priority` next door, and unlike the
-            # `delete_task` / `rescore_task` verbs, nothing here reaches
-            # another row.
-            _save_doc_unlocked(
-                doc, board.store_path, tasks=tasks, touched_ids=[task_id]
-            )
-        except TaskValidationError as exc:
-            return JsonResponse({"error": str(exc)}, status=400)
+    try:
+        task = mutate_card(
+            board.store_path,
+            task_id,
+            reopen_fresh,
+            operation="reopen",
+            actor=actor.strip(),
+        )
+    except TaskNotFoundError:
+        return JsonResponse({"error": f"no task with id {task_id!r}"}, status=404)
+    except TaskValidationError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    pre_status = result["prior_status"]
+    pre_blocker = result["prior_blocker"]
+    reopen_comment = result["comment"]
     _reset_cache()
 
     # Mirror the resolve publish path so any in-process subscriber gets the

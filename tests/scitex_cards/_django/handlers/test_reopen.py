@@ -66,6 +66,16 @@ _STORE_TEXT = (
     "    blocker: operator-decision\n"
     "    kind: decision\n"
     "    agent: proj-x\n"
+    "  - id: delivery-done\n"
+    "    title: Delivery done-shaped row\n"
+    "    status: done\n"
+    "    _log_meta:\n"
+    "      completed_at: '2026-10-02T20:00:00Z'\n"
+    "      delivery:\n"
+    "        version: 1\n"
+    "        required: true\n"
+    "        generation: 3\n"
+    "        checkpoints: {live: {claimed: true}}\n"
 )
 
 
@@ -170,6 +180,34 @@ def test_reopen_drops_blocker_when_restoring_to_non_blocked(store):
     _post("reopen", store, body)
     # Assert
     assert "blocker" not in _load(store)["was-pending"]
+
+
+def test_reopen_prior_status_done_cannot_bypass_delivery_guard(store):
+    # Arrange
+    # Act
+    response = _post("reopen", store, {"id": "delivery-done", "prior_status": "done"})
+
+    # Assert
+    assert response.status_code == 400
+
+
+def test_reopen_invalidates_enrolled_generation_and_old_checkpoints(store):
+    # Arrange
+    # Act
+    _post("reopen", store, {"id": "delivery-done", "actor": "operator"})
+
+    delivery = _load(store)["delivery-done"]["_log_meta"]["delivery"]
+    # Assert
+    assert (delivery["generation"], delivery["checkpoints"]) == (4, {})
+
+
+def test_reopen_clears_old_completion_stamp_in_same_card_write(store):
+    # Arrange
+    # Act
+    _post("reopen", store, {"id": "delivery-done", "actor": "operator"})
+
+    # Assert
+    assert "completed_at" not in _load(store)["delivery-done"]["_log_meta"]
 
 
 def test_reopen_uses_caller_prior_blocker_when_restoring_to_blocked(store):

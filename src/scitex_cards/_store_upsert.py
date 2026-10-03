@@ -34,21 +34,25 @@ not show it — the mute would survive the fix and look repaired. Copying
 before, where a working pattern's shape is reproduced without the one constant
 that gave it meaning.
 
-FOLLOW-UP, NAMED RATHER THAN SILENTLY OMITTED: this verb does NOT yet call
-``refuse_ineffective_store``. That guard is landing in a separate PR which wires
-the eight existing write verbs; wiring a ninth from here would duplicate its
-implementation and conflict. Whichever merges second must add this verb to that
-list — it takes ``store`` like every other write verb and is subject to the same
-defect.
+Existing rows use the authoritative single-row delivery guard and SQL revision
+compare-and-set. Creation retains the strict owner gate and refuses delivery
+namespace injection.
 """
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 
+from ._delivery_policy import DeliveryPolicyError, assert_namespace_preserved
 from ._model import _save_doc_unlocked, _store_lock
+from ._store_arg import refuse_ineffective_store
+from ._store_delivery import DeliveryGuardError, mutate_card, prepare_new_card
 from ._store_events import _emit_card_event
+from ._store_lifecycle import clear_completion_stamp
 from ._store_list import _resolved_store
+from ._store_single_card import read_card_or_raise
+from ._store_target import resolve_store_target
 from ._touch import touch_last_activity
 
 __all__ = ["upsert_task"]
@@ -77,10 +81,8 @@ def upsert_task(
     condition re-enters the queue instead of accumulating comments on a closed
     card.
 
-    The whole read-decide-write runs under one store lock, so two concurrent
-    callers cannot both observe "no card" and double-insert. That is
-    ``help_wait``'s guarantee and the reason this is not simply
-    ``add_task`` with a try/except.
+    Existing rows are read and written with a revision-bound compare-and-set.
+    A concurrent mutation is reported as a conflict without a stale retry.
 
     Parameters
     ----------
@@ -124,74 +126,82 @@ def upsert_task(
     from ._store import _read_write_doc, _utc_now_iso
 
     card_id = id.strip()
+    refuse_ineffective_store(store, verb="upsert_task")
     resolved = _resolved_store(store)
     action = "created"
-    result: dict | None = None
+    existing, _revision = read_card_or_raise(resolve_store_target(None), card_id)
 
-    with _store_lock(resolved):
-        doc, tasks = _read_write_doc(resolved)
-        # A TOMBSTONED ROW MUST NOT BE RESURRECTED BY AN UPSERT. `delete_task`
-        # stamps `_log_meta.deleted_at` and every read excludes it; treating
-        # such a row as "existing" here would silently un-delete it, and
-        # treating it as absent would collide on the primary key. Refuse, and
-        # say which it is -- the caller chose this id and deserves to know it
-        # names something deliberately removed.
-        for task in tasks:
-            if task.get("id") != card_id:
-                continue
-            if _task._is_tombstoned(task):
-                raise ValueError(
-                    f"upsert_task: card {card_id!r} was DELETED (tombstoned). "
-                    "Refusing to resurrect it. Use restore_task if the "
-                    "deletion was wrong, or choose a different id."
-                )
-            action = "reopened" if task.get("status") != status else "refreshed"
-            task["status"] = status
-            for key in REFRESHABLE:
-                if key == "title":
-                    task["title"] = title
-                elif key in fields and fields[key] is not None:
-                    task[key] = fields[key]
-            # CLEAR THE BLOCKER WHEN LEAVING A BLOCKED STATE, for the reason
-            # `complete_task` learned the hard way: a card carrying a blocker
-            # while not blocked is incoherent and the validator refuses the
-            # WHOLE document, so one bad card stops every other write.
-            if status != "blocked":
-                task.pop("blocker", None)
-            elif fields.get("blocker"):
-                task["blocker"] = fields["blocker"]
-            touch_last_activity(task, _utc_now_iso())
-            _save_doc_unlocked(doc, resolved, tasks=tasks, touched_ids=[card_id])
-            result = dict(task)
-            break
+    def refuse_deleted(task: dict) -> None:
+        if _task._is_tombstoned(task):
+            raise ValueError(
+                f"upsert_task: card {card_id!r} was DELETED (tombstoned). "
+                "Refusing to resurrect it. Use restore_task if the "
+                "deletion was wrong, or choose a different id."
+            )
 
-        if result is None:
-            # AN UPSERT THAT CREATES IS A SECOND DOOR INTO THE STORE, and it
-            # must not be a laxer one. `add_task` refuses an owner-less card
-            # outright -- "creator+assignee are mandatory ... no silent
-            # fallback" -- and this path appends straight to the document, so
-            # without this check the new verb would mint exactly the cards the
-            # old verb rejects. An owner-less row then fails WHOLE-document
-            # validation, which is how ONE bad card stops every other write.
-            owner = fields.get("assignee") or fields.get("agent")
-            if not (isinstance(owner, str) and owner.strip()):
-                raise _task.TaskValidationError(
-                    "upsert_task: assignee is required when the card does not "
-                    "exist yet — pass assignee=<user> (or agent=<user>). "
-                    "creator+assignee are mandatory and an owner-less card is "
-                    "rejected; this verb creates, so it enforces the same gate "
-                    "as add_task rather than routing around it."
-                )
-            now = _utc_now_iso()
-            new = {"id": card_id, "title": title, "status": status}
-            for key, value in fields.items():
-                if value is not None:
-                    new[key] = value
-            new.setdefault("_log_meta", {})["created_at"] = now
-            touch_last_activity(new, now)
+    def refresh(task: dict) -> None:
+        nonlocal action
+        refuse_deleted(task)
+        # Upsert's short refresh list must not silently accept an attempt to
+        # inject or erase evidence through an otherwise ignored metadata field.
+        if "_log_meta" in fields:
+            requested = deepcopy(task)
+            if fields["_log_meta"] is None:
+                requested.pop("_log_meta", None)
+            else:
+                requested["_log_meta"] = deepcopy(fields["_log_meta"])
+            try:
+                assert_namespace_preserved(task, requested)
+            except DeliveryPolicyError as exc:
+                raise DeliveryGuardError(str(exc)) from exc
+        prior_status = task.get("status")
+        action = "reopened" if prior_status != status else "refreshed"
+        task["status"] = status
+        for key in REFRESHABLE:
+            if key == "title":
+                task["title"] = title
+            elif key in fields and fields[key] is not None:
+                task[key] = fields[key]
+        if status != "blocked":
+            task.pop("blocker", None)
+        elif fields.get("blocker"):
+            task["blocker"] = fields["blocker"]
+        if prior_status == "done" and status != "done":
+            clear_completion_stamp(task)
+        touch_last_activity(task, _utc_now_iso())
+
+    if existing is not None:
+        refuse_deleted(existing)
+        result = mutate_card(store, card_id, refresh, operation="upsert")
+    else:
+        owner = fields.get("assignee") or fields.get("agent")
+        if not (isinstance(owner, str) and owner.strip()):
+            raise _task.TaskValidationError(
+                "upsert_task: assignee is required when the card does not "
+                "exist yet — pass assignee=<user> (or agent=<user>). "
+                "creator+assignee are mandatory and an owner-less card is "
+                "rejected; this verb creates, so it enforces the same gate "
+                "as add_task rather than routing around it."
+            )
+        now = _utc_now_iso()
+        new = {"id": card_id, "title": title, "status": status}
+        for key, value in fields.items():
+            if value is not None:
+                new[key] = value
+        new = prepare_new_card(new, operation="upsert")
+        new.setdefault("_log_meta", {})["created_at"] = now
+        touch_last_activity(new, now)
+        with _store_lock(resolved):
+            doc, tasks = _read_write_doc(resolved)
+            if any(t.get("id") == card_id for t in tasks):
+                # No stale retry: a concurrent create is a conflict, not
+                # permission to refresh a row we did not read authoritatively.
+                from ._store_errors import RevisionConflictError
+
+                raise RevisionConflictError(card_id, -1, None)
             tasks.append(new)
             _save_doc_unlocked(doc, resolved, tasks=tasks, touched_ids=[card_id])
-            result = dict(new)
+        result = dict(new)
 
     # Outside the lock: the emit re-loads the store and may comment on other
     # cards, which take the same lock.
