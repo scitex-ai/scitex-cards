@@ -558,7 +558,9 @@ export function CardsBoard({ internalChromeEnabled = false }: {
           <span className="stx-cards-status__head">
             The board could not load.
           </span>
-          <span className="stx-cards-status__detail">{error}</span>
+          {internalChromeEnabled && (
+            <span className="stx-cards-status__detail">{error}</span>
+          )}
           <button
             type="button"
             className="stx-cards-status__retry"

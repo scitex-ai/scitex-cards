@@ -146,3 +146,136 @@ def test_board_filters_and_fleet_timing_are_preserved():
     )
     # Assert
     assert observed == {"unchanged": [True, True, True], "predicate": True, "fleet": 1}
+
+
+_LOAD_ERROR_AST = r"""
+const fs = require('fs');
+const ts = require(process.argv[1] + '/typescript');
+const p = JSON.parse(fs.readFileSync(0, 'utf8'));
+const parse = text => ts.createSourceFile('CardsBoard.tsx', text,
+  ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const sf = parse(p.source);
+const visit = root => {
+  const nodes = [];
+  const walk = n => { nodes.push(n); ts.forEachChild(n, walk); };
+  walk(root); return nodes;
+};
+const board = file => file.statements.find(n =>
+  ts.isFunctionDeclaration(n) && n.name?.text === 'CardsBoard');
+const isErrorBranch = n => ts.isIfStatement(n) &&
+  ts.isBinaryExpression(n.expression) &&
+  n.expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+  ts.isIdentifier(n.expression.left) && n.expression.left.text === 'error' &&
+  ts.isPrefixUnaryExpression(n.expression.right) &&
+  n.expression.right.operator === ts.SyntaxKind.ExclamationToken &&
+  ts.isIdentifier(n.expression.right.operand) &&
+  n.expression.right.operand.text === 'graph';
+const current = board(sf);
+const branch = current.body.statements.find(isErrorBranch);
+if (!branch) throw Error('Actual error/no-graph branch is required');
+const nodes = visit(branch);
+const attribute = (element, name) => element.openingElement.attributes.properties
+  .find(n => ts.isJsxAttribute(n) && n.name.text === name);
+const className = element => attribute(element, 'className')?.initializer?.text;
+const elements = nodes.filter(ts.isJsxElement);
+const detail = elements.find(n => className(n) === 'stx-cards-status__detail');
+if (!detail) throw Error('Actual diagnostic detail is required');
+const expression = detail.parent;
+const gate = ts.isParenthesizedExpression(expression) ? expression.parent : expression;
+const owner = gate.parent;
+let result;
+if (p.mode === 'gate') {
+  const defaults = current.parameters[0].name.elements.filter(n =>
+    n.name.text === 'internalChromeEnabled').map(n => n.initializer?.kind);
+  const value = detail.children.filter(ts.isJsxExpression)
+    .map(n => ts.isIdentifier(n.expression) ? n.expression.text : null);
+  result = {
+    defaults: defaults.map(n => ts.SyntaxKind[n]),
+    gate: ts.isBinaryExpression(gate) &&
+      gate.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+      ts.isIdentifier(gate.left) ? gate.left.text : null,
+    consumed: ts.isJsxExpression(owner) && owner.expression === gate,
+    values: value,
+    rawHtmlAttributes: nodes.filter(n => ts.isJsxAttribute(n) &&
+      n.name.text === 'dangerouslySetInnerHTML').length,
+    parseErrors: sf.parseDiagnostics.length,
+  };
+} else if (p.mode === 'workflow') {
+  const text = element => element.children.filter(ts.isJsxText)
+    .map(n => n.text.trim()).filter(Boolean).join(' ');
+  const head = elements.find(n => className(n) === 'stx-cards-status__head');
+  const retry = elements.find(n => className(n) === 'stx-cards-status__retry');
+  const click = attribute(retry, 'onClick')?.initializer?.expression;
+  const call = click?.body;
+  result = {
+    lead: text(head), retry: text(retry),
+    type: attribute(retry, 'type')?.initializer?.text,
+    retryCall: ts.isArrowFunction(click) && click.parameters.length === 0 &&
+      ts.isVoidExpression(call) && ts.isCallExpression(call.expression) &&
+      call.expression.arguments.length === 0 ? call.expression.expression.text : null,
+    identity: nodes.filter(n => ts.isJsxExpression(n) &&
+      ts.isIdentifier(n.expression) && n.expression.text === 'band').length,
+    role: elements.map(n => attribute(n, 'role')?.initializer?.text)
+      .filter(n => n !== undefined),
+  };
+} else {
+  const oldFile = parse(p.original);
+  const original = board(oldFile);
+  const printer = ts.createPrinter({removeComments: true});
+  const emit = n => printer.printNode(ts.EmitHint.Unspecified, n, n.getSourceFile());
+  const remaining = functionNode => functionNode.body.statements
+    .filter(n => !isErrorBranch(n)).map(emit);
+  result = {
+    parameters: current.parameters.map(emit).join('') ===
+      original.parameters.map(emit).join(''),
+    remainingBoard: JSON.stringify(remaining(current)) ===
+      JSON.stringify(remaining(original)),
+    otherDeclarations: JSON.stringify(sf.statements.filter(n => n !== current).map(emit)) ===
+      JSON.stringify(oldFile.statements.filter(n => n !== original).map(emit)),
+  };
+}
+process.stdout.write(JSON.stringify(result));
+"""
+
+
+def test_load_error_detail_consumes_default_false_chrome_gate():
+    # Arrange
+    payload = {"mode": "gate", "source": (_SRC / "CardsBoard.tsx").read_text()}
+    # Act
+    observed = json.loads(_node(_LOAD_ERROR_AST, payload))
+    # Assert
+    assert observed == {
+        "defaults": ["FalseKeyword"], "gate": "internalChromeEnabled",
+        "consumed": True, "values": ["error"], "rawHtmlAttributes": 0,
+        "parseErrors": 0,
+    }
+
+
+def test_load_error_keeps_identity_failure_lead_and_real_retry():
+    # Arrange
+    payload = {"mode": "workflow", "source": (_SRC / "CardsBoard.tsx").read_text()}
+    # Act
+    observed = json.loads(_node(_LOAD_ERROR_AST, payload))
+    # Assert
+    assert observed == {
+        "lead": "The board could not load.", "retry": "Retry", "type": "button",
+        "retryCall": "loadBoard", "identity": 1, "role": ["alert"],
+    }
+
+
+def test_load_error_gate_preserves_other_board_states_and_declarations():
+    # Arrange
+    original = subprocess.check_output(
+        ["git", "-C", str(_ROOT), "show", f"1a3815aac3b4162cf3adea29344deea280d3aab8:{_REL_BOARD}"],
+        text=True, timeout=7, env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
+    )
+    payload = {
+        "mode": "preserved", "source": (_SRC / "CardsBoard.tsx").read_text(),
+        "original": original,
+    }
+    # Act
+    observed = json.loads(_node(_LOAD_ERROR_AST, payload))
+    # Assert
+    assert observed == {
+        "parameters": True, "remainingBoard": True, "otherDeclarations": True,
+    }

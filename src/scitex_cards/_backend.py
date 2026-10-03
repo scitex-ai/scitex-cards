@@ -483,11 +483,9 @@ class LocalBackend:
         other = peer or _threads.OPERATOR_NAME
         key = _threads.thread_key(sender, other)
         if ack:
-            _threads.mark_read(key, sender, store=store)
-            # AND THE RECEIPT GOES TO THE STORE, for the same reason the board's
-            # does: the messages below now come from `dm_messages`, so an ack
-            # that only touched the sidecar would leave a thread permanently
-            # unread. Idempotent by `(message_id, reader)`.
+            # The messages and unread state are canonical, so ACK writes only
+            # their receipts. A local sidecar lock must not block this rail.
+            # Idempotent by `(message_id, reader)`.
             from ._dm import write as _dm_write
 
             unread_ids = [

@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+from pathlib import Path
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import pytest
@@ -39,7 +40,7 @@ from scitex_cards._django.handlers.dm import (
 )
 from scitex_cards._dm import read as dm_read
 from scitex_cards._inbox_postgres import poll_inbox
-from scitex_cards._threads import append_message, get_thread
+from scitex_cards._threads import append_message
 
 
 @pytest.fixture()
@@ -322,13 +323,23 @@ def test_thread_view_returns_messages_chronologically(store):
 
 def test_thread_view_mark_read_acks_operator_messages(store):
     # Arrange
-    append_message("agent-x", "operator", "unread ping", store=store)
-    dm_thread_view(_get(f"/dm/thread/agent-x?{_q(store, mark_read='1')}"), "agent-x")
+    from scitex_cards._dm import receipt_state
+
+    message = append_message("agent-x", "operator", "unread ping", store=store)
+    request = _get(f"/dm/thread/agent-x?{_q(store, mark_read='1')}")
     # Act
-    # read back from the sidecar, not just the response.
-    msgs = get_thread("operator", "agent-x", store=store)
+    response = dm_thread_view(request, "agent-x")
+    data = json.loads(response.content)
+    receipts = receipt_state.receipt_state_for_thread(data["thread"], store=store)
+    unread = dm_read.unread_for("operator", store=store, thread_id=data["thread"])
     # Assert
-    assert msgs[0]["read"] is True
+    assert (
+        response.status_code,
+        data["thread"],
+        [m["id"] for m in data["messages"]],
+        receipts[message["id"]]["readers"],
+        unread,
+    ) == (200, "dm:agent-x::operator", [message["id"]], ["operator"], [])
 
 
 # === POST /dm/thread/<peer> ================================================
@@ -744,6 +755,174 @@ def test_a_label_with_an_ambient_store_reads_the_fleet_threads(store, tmp_path):
     response = _threads_for_label(str(label))
     # Assert
     assert [a["name"] for a in _agents_of(response)] == ["agent-x"]
+
+
+# === Canonical ACK isolation ==============================================
+# Managed controls: require the normal owned per-test schema and local root.
+# Source-only readiness is not evidence that these PostgreSQL controls ran.
+
+
+def test_board_plain_get_does_not_ack(store):
+    # Arrange
+    from scitex_cards._dm import write
+    from scitex_cards._threads import threads_path
+
+    message = write.append_pair("agent-x", "operator", "plain GET", store=store)
+    request = _get(f"/dm/thread/agent-x?{_q(store)}")
+    path = threads_path(store)
+    # Act
+    response = dm_thread_view(request, "agent-x")
+    data = json.loads(response.content)
+    unread = dm_read.unread_for("operator", store=store, thread_id=data["thread"])
+    # Assert
+    assert (
+        response.status_code,
+        [m["id"] for m in data["messages"]],
+        [m["id"] for m in unread],
+        path.exists(),
+    ) == (200, [message["id"]], [message["id"]], False)
+
+
+def test_board_ack_isolated_file_lock_failure(store):
+    # Arrange
+    from scitex_cards._threads import threads_path
+
+    path = threads_path(store)
+    if path.parent != Path(os.environ["SCITEX_DIR"]) / "cards":
+        pytest.fail("the sidecar must belong to this test's pinned local root")
+    message = append_message("agent-x", "operator", "unusable own lock", store=store)
+    lock = path.parent / f".{path.name}.lock"
+    lock.unlink(missing_ok=True)
+    lock.mkdir()
+    request = _get(f"/dm/thread/agent-x?{_q(store, mark_read='1')}")
+    # Act
+    response = dm_thread_view(request, "agent-x")
+    data = json.loads(response.content)
+    # Assert
+    assert (
+        response.status_code,
+        [m["id"] for m in data["messages"]],
+        data["receipts"][message["id"]]["readers"],
+        lock.is_dir(),
+    ) == (200, [message["id"]], ["operator"], True)
+
+
+def test_board_repeat_ack_same_receipt(store):
+    # Arrange
+    from scitex_cards._dm import receipt_state, write
+
+    message = write.append_pair("agent-x", "operator", "repeat GET ACK", store=store)
+    url = f"/dm/thread/agent-x?{_q(store, mark_read='1')}"
+    # Act
+    dm_thread_view(_get(url), "agent-x")
+    dm_thread_view(_get(url), "agent-x")
+    new_receipts = write.mark_read([message["id"]], "operator", store=store)
+    receipts = receipt_state.receipt_state_for_thread(message["thread_id"], store=store)
+    unread = dm_read.unread_for("operator", store=store, thread_id=message["thread_id"])
+    # Assert
+    assert (new_receipts, receipts[message["id"]]["readers"], unread) == (
+        0, ["operator"], []
+    )
+
+
+def test_board_reader_pair_and_store_scope_preserved(store, new_store):
+    # Arrange
+    from scitex_cards._dm import receipt_state, write
+
+    target = write.append_pair("agent-x", "operator", "target", store=store)
+    other_pair = write.append_pair("agent-y", "operator", "other pair", store=store)
+    other_reader = write.append_pair("agent-x", "alice", "other reader", store=store)
+    other_store = new_store()
+    write.append_pair(
+        "agent-x", "operator", "other store", store=other_store, msg_id=target["id"]
+    )
+    request = _get(f"/dm/thread/agent-x?{_q(other_store, mark_read='1')}")
+    # The existing trusted scope must win over a query naming the other store.
+    setattr(request, STORE_REQUEST_ATTR, store)
+    # Act
+    dm_thread_view(request, "agent-x")
+    receipts = receipt_state.receipt_state_for_thread(target["thread_id"], store=store)
+    pair_unread = dm_read.unread_for(
+        "operator", store=store, thread_id=other_pair["thread_id"]
+    )
+    reader_unread = dm_read.unread_for(
+        "alice", store=store, thread_id=other_reader["thread_id"]
+    )
+    store_unread = dm_read.unread_for(
+        "operator", store=other_store, thread_id=target["thread_id"]
+    )
+    # Assert
+    assert (
+        receipts[target["id"]]["readers"],
+        [m["id"] for m in pair_unread],
+        [m["id"] for m in reader_unread],
+        [m["id"] for m in store_unread],
+    ) == (["operator"], [other_pair["id"]], [other_reader["id"]], [target["id"]])
+
+
+def test_board_typed_store_refusal_preserved(store, unreachable_dm_store):
+    # Arrange
+    from scitex_cards._threads import threads_path
+
+    path = threads_path(store)
+    if path.parent != Path(os.environ["SCITEX_DIR"]) / "cards":
+        pytest.fail("the sidecar must belong to this test's pinned local root")
+    append_message("agent-x", "operator", "refused GET ACK", store=store)
+    before = path.read_bytes()
+    request = _get(f"/dm/thread/agent-x?{_q(store, mark_read='1')}")
+    setattr(request, STORE_REQUEST_ATTR, unreachable_dm_store)
+    # Act
+    response = dm_thread_view(request, "agent-x")
+    data = json.loads(response.content)
+    # Assert
+    assert (response.status_code, data, path.read_bytes()) == (
+        503,
+        {
+            "error": "The direct-message store is temporarily unavailable.",
+            "reason": "store_unavailable",
+            "status": {
+                "kind": "http",
+                "code": 503,
+                "message": "The direct-message store is temporarily unavailable.",
+            },
+            "check": {
+                "name": "dm_store_read",
+                "ok": False,
+                "detail": "The direct-message store is temporarily unavailable.",
+                "hint": (
+                    "Direct-message store read failed; run `scitex-cards "
+                    "validate-health --json` and retry `/dm/threads` after the "
+                    "store check passes."
+                ),
+                "cause": {
+                    "kind": "http",
+                    "code": 503,
+                    "message": "The direct-message store is temporarily unavailable.",
+                },
+            },
+        },
+        before,
+    )
+
+
+def test_board_ack_preserves_legacy_sidecar(store):
+    # Arrange
+    from scitex_cards._threads import thread_key, threads_path
+
+    path = threads_path(store)
+    if path.parent != Path(os.environ["SCITEX_DIR"]) / "cards":
+        pytest.fail("the sidecar must belong to this test's pinned local root")
+    message = append_message("agent-x", "operator", "legacy copy", store=store)
+    before = path.read_bytes()
+    request = _get(f"/dm/thread/agent-x?{_q(store, mark_read='1')}")
+    # Act
+    dm_thread_view(request, "agent-x")
+    records = json.loads(path.read_bytes())["threads"][
+        thread_key("agent-x", "operator")
+    ]
+    flags = [m["read"] for m in records if m["id"] == message["id"]]
+    # Assert
+    assert (path.read_bytes(), flags) == (before, [False])
 
 
 # EOF

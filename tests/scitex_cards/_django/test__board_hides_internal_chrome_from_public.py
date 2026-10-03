@@ -8,6 +8,7 @@ The actual board and installed shell templates render through Django's loader.
 from __future__ import annotations
 
 import ast
+from html.parser import HTMLParser
 import logging
 from pathlib import Path
 from types import SimpleNamespace
@@ -277,3 +278,50 @@ def test_anonymous_request_defaults_off():
         result = _helper()(request)
     # Assert
     assert result is False
+
+
+def _columns_chrome(html):
+    """Read the decision emitted on the actual board's error-rendering target."""
+    class ColumnsParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.decisions = []
+
+        def handle_starttag(self, tag, attrs):
+            values = dict(attrs)
+            if tag == "div" and values.get("id") == "columns":
+                self.decisions.append(values.get("data-cards-internal-chrome"))
+
+    parser = ColumnsParser()
+    parser.feed(html)
+    return parser.decisions
+
+
+@pytest.mark.parametrize("override,debug,staff,expected", [
+    pytest.param(False, True, True, False, id="explicit-false-beats-debug-staff"),
+    pytest.param(True, False, False, True, id="explicit-true-with-debug-false"),
+    pytest.param(None, False, True, True, id="authenticated-staff-fallback"),
+    pytest.param(None, False, False, False, id="ordinary-user-default-off"),
+    pytest.param(None, True, False, True, id="debug-fallback"),
+])
+def test_real_request_gate_controls_error_columns_transport(
+    override, debug, staff, expected,
+):
+    # Arrange
+    request = RequestFactory().get("/apps/cards/board")
+    request.user = SimpleNamespace(is_authenticated=True, is_staff=staff)
+    # Act
+    with override_settings(DEBUG=debug, SCITEX_UI_ELEMENT_INSPECTOR=override):
+        observed = _columns_chrome(_render(request))
+    # Assert
+    assert observed == [str(expected).lower()]
+
+
+def test_absent_cards_decision_defaults_error_columns_transport_false():
+    # Arrange
+    request = RequestFactory().get("/board")
+    # Act
+    with override_settings(DEBUG=True, SCITEX_UI_ELEMENT_INSPECTOR=True):
+        observed = _columns_chrome(_render(request, include_decision=False))
+    # Assert
+    assert observed == ["false"]
