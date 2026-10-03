@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   pytest-matrix:
-    uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@main
+    uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@8c646081e9f1352077d3d8674052cce7ec75a1b7
     secrets: inherit
     with:
       # GITHUB-HOSTED, not the Spartan pool. Operator ruling 2026-07-31: hosted
