@@ -31,7 +31,10 @@ same browser.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import shutil
+import subprocess
 
 import pytest
 
@@ -174,6 +177,108 @@ def test_the_error_lead_strips_the_http_status_prefix(board_source):
     )
     # Assert
     assert strips_transport_prefix
+
+
+def _render_load_error(decision, message, *, columns_present=True):
+    """Observe the shipped renderer on a minimal DOM carrier, not a browser."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.fail("Node is required for the actual boardStates renderer control")
+    script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+const attrs = {"aria-busy": "true"};
+const columns = {
+  dataset: payload.decision === null ? {} : {cardsInternalChrome: payload.decision},
+  innerHTML: "before",
+  setAttribute(name, value) { attrs[name] = value; },
+};
+const context = {
+  window: {},
+  document: {getElementById(id) {
+    return id === "columns" && payload.columns_present ? columns : null;
+  }},
+};
+vm.runInNewContext(payload.source, context, {timeout: 1000});
+const returned = context.window.renderLoadError(new Error(payload.message));
+process.stdout.write(JSON.stringify({
+  returned, html: columns.innerHTML, aria_busy: attrs["aria-busy"],
+}));
+"""
+    result = subprocess.run(
+        [node, "-e", script],
+        input=json.dumps({
+            "source": _BOARD_STATES_JS.read_text(encoding="utf-8"),
+            "decision": decision, "message": message,
+            "columns_present": columns_present,
+        }),
+        capture_output=True, text=True, timeout=7,
+    )
+    if result.returncode:
+        pytest.fail(result.stderr or result.stdout)
+    return json.loads(result.stdout)
+
+
+@pytest.mark.parametrize("decision", [
+    pytest.param(None, id="missing"),
+    pytest.param("false", id="false"),
+    pytest.param("", id="empty"),
+    pytest.param("True", id="wrong-case"),
+    pytest.param("1", id="numeric"),
+    pytest.param("true ", id="trailing-space"),
+    pytest.param("yes", id="other-string"),
+])
+def test_quiet_error_renderer_omits_cause_and_full_diagnosis(decision):
+    # Arrange
+    message = "HTTP 500 — Cannot read /owned/private/store: <unsafe> & secrets"
+    # Act
+    observed = _render_load_error(decision, message)
+    # Assert
+    assert observed == {
+        "returned": True, "aria_busy": "false",
+        "html": '<div class="loading board-state board-state--error">'
+        '<p class="board-state__lead">The board could not load its cards.</p></div>',
+    }
+
+
+@pytest.mark.parametrize("message,cause,full", [
+    pytest.param(
+        'HTTP 500 — Store <b>unsafe</b> & "quoted" \'value\'. See /owned/store',
+        "Store &lt;b&gt;unsafe&lt;/b&gt; &amp; &quot;quoted&quot; &#39;value&#39;",
+        "HTTP 500 — Store &lt;b&gt;unsafe&lt;/b&gt; &amp; &quot;quoted&quot; "
+        "&#39;value&#39;. See /owned/store", id="html-and-quotes",
+    ),
+    pytest.param(
+        "HTTP 500 — Store &lt;literal&gt;. Retry.", "Store &amp;lt;literal&amp;gt;",
+        "HTTP 500 — Store &amp;lt;literal&amp;gt;. Retry.", id="literal-entities",
+    ),
+])
+def test_enabled_error_renderer_keeps_once_escaped_cause_and_full_text(
+    message, cause, full,
+):
+    # Arrange
+    decision = "true"
+    # Act
+    observed = _render_load_error(decision, message)
+    # Assert
+    assert observed == {
+        "returned": True, "aria_busy": "false",
+        "html": '<div class="loading board-state board-state--error">'
+        '<p class="board-state__lead">The board could not load its cards.</p>'
+        f'<p class="board-state__cause">{cause}</p>'
+        '<details class="board-state__detail"><summary>What the server said</summary>'
+        f'<pre>{full}</pre></details></div>',
+    }
+
+
+def test_error_renderer_missing_columns_returns_false_without_writing():
+    # Arrange
+    message = "HTTP 500 — /owned/private/store"
+    # Act
+    observed = _render_load_error("true", message, columns_present=False)
+    # Assert
+    assert observed == {"returned": False, "html": "before", "aria_busy": "true"}
 
 
 # EOF

@@ -464,7 +464,8 @@
       <button type="button" id="filter-empty-banner-clear"
               style="margin-left:10px; cursor:pointer;">Clear all filters</button>
     </div>
-    <div class="columns" id="columns" aria-busy="true">
+    <div class="columns" id="columns" aria-busy="true"
+         data-cards-internal-chrome="{{ cards_internal_chrome_enabled|yesno:'true,false,false' }}">
       {% comment %}
         Open-first skeleton: the server paints placeholder cards + a spinner
         BEFORE /graph resolves, so first paint carries feedback even when the

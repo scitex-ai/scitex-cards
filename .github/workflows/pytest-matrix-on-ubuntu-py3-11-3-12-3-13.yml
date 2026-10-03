@@ -109,6 +109,8 @@ jobs:
       pre_test_command: |
         git -C "${GITHUB_WORKSPACE:?}" fetch --no-tags --depth=1 origin 65d751e7f6cedf92abdd4e9e1c53aaa477c94e88
         git -C "${GITHUB_WORKSPACE:?}" cat-file -e '65d751e7f6cedf92abdd4e9e1c53aaa477c94e88^{commit}'
+        git -C "${GITHUB_WORKSPACE:?}" fetch --no-tags --depth=1 origin 1a3815aac3b4162cf3adea29344deea280d3aab8
+        git -C "${GITHUB_WORKSPACE:?}" cat-file -e '1a3815aac3b4162cf3adea29344deea280d3aab8^{commit}'
         node --version
         npm --version
         node <<'NODE'
