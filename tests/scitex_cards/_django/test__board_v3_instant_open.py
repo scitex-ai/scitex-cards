@@ -275,6 +275,8 @@ def _run_graph_arrival(case):
 
     Node supplies only DOM/network ports. The native-browser receipt separately
     holds the actual timeline script response and exercises the whole leaf.
+    The columns port explicitly enables internal chrome for the existing
+    technical-error oracles; normal-mode disclosure is qualified separately.
     """
     node = shutil.which("node")
     if node is None:
@@ -296,6 +298,7 @@ def _run_graph_arrival(case):
     globalThis.window = globalThis;
     const calls = [], phases = [], listeners = [];
     const columns = {innerHTML: 'skeleton', busy: 'true',
+      dataset: {cardsInternalChrome: 'true'},
       setAttribute(key, value) { if (key === 'aria-busy') this.busy = value; }};
     globalThis.document = {
       readyState: c.ready || 'loading',

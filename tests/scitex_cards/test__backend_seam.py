@@ -580,7 +580,7 @@ def test_backend_ack_true_isolated_file_lock_failure(store):
 
     path = threads_path(store)
     if path.parent != Path(os.environ["SCITEX_DIR"]) / "cards":
-        pytest.fail("the sidecar must belong to this test's pinned local root")
+        raise RuntimeError("the sidecar must belong to this test's pinned local root")
     message = append_message("alice", "bob", "unusable own lock", store=store)
     lock = path.parent / f".{path.name}.lock"
     lock.unlink(missing_ok=True)
@@ -651,7 +651,7 @@ def test_backend_failure_has_no_file_fallback(store):
 
     path = threads_path(store)
     if path.parent != Path(os.environ["SCITEX_DIR"]) / "cards":
-        pytest.fail("the sidecar must belong to this test's pinned local root")
+        raise RuntimeError("the sidecar must belong to this test's pinned local root")
     append_message("alice", "bob", "refused ACK", store=store)
     before = path.read_bytes()
     parts = urlsplit(store)
@@ -663,7 +663,7 @@ def test_backend_failure_has_no_file_fallback(store):
             )
             break
     else:
-        pytest.fail("the owned schema DSN must carry its search_path options")
+        raise RuntimeError("the owned schema DSN must carry its search_path options")
     refused_store = urlunsplit(
         (*parts[:3], urlencode(query, quote_via=quote), parts.fragment)
     )
@@ -683,7 +683,7 @@ def test_backend_ack_preserves_legacy_sidecar(store):
 
     path = threads_path(store)
     if path.parent != Path(os.environ["SCITEX_DIR"]) / "cards":
-        pytest.fail("the sidecar must belong to this test's pinned local root")
+        raise RuntimeError("the sidecar must belong to this test's pinned local root")
     message = append_message("alice", "bob", "legacy copy", store=store)
     before = path.read_bytes()
     # Act

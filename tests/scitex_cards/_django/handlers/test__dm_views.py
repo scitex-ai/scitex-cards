@@ -789,7 +789,7 @@ def test_board_ack_isolated_file_lock_failure(store):
 
     path = threads_path(store)
     if path.parent != Path(os.environ["SCITEX_DIR"]) / "cards":
-        pytest.fail("the sidecar must belong to this test's pinned local root")
+        raise RuntimeError("the sidecar must belong to this test's pinned local root")
     message = append_message("agent-x", "operator", "unusable own lock", store=store)
     lock = path.parent / f".{path.name}.lock"
     lock.unlink(missing_ok=True)
@@ -866,7 +866,7 @@ def test_board_typed_store_refusal_preserved(store, unreachable_dm_store):
 
     path = threads_path(store)
     if path.parent != Path(os.environ["SCITEX_DIR"]) / "cards":
-        pytest.fail("the sidecar must belong to this test's pinned local root")
+        raise RuntimeError("the sidecar must belong to this test's pinned local root")
     append_message("agent-x", "operator", "refused GET ACK", store=store)
     before = path.read_bytes()
     request = _get(f"/dm/thread/agent-x?{_q(store, mark_read='1')}")
@@ -911,7 +911,7 @@ def test_board_ack_preserves_legacy_sidecar(store):
 
     path = threads_path(store)
     if path.parent != Path(os.environ["SCITEX_DIR"]) / "cards":
-        pytest.fail("the sidecar must belong to this test's pinned local root")
+        raise RuntimeError("the sidecar must belong to this test's pinned local root")
     message = append_message("agent-x", "operator", "legacy copy", store=store)
     before = path.read_bytes()
     request = _get(f"/dm/thread/agent-x?{_q(store, mark_read='1')}")
