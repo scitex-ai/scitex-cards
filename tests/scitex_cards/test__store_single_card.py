@@ -689,19 +689,34 @@ def test_public_insert_absence_records_the_winning_hash(
 
 
 @pytest.fixture(params=["bare", "foreign", "retired"])
-def refused_store(new_store, env, request, row_support):
+def refused_store(new_store, env, request, row_support, record_property):
+    from scitex_cards._db import init_schema
     from scitex_cards._store_errors import StoreNotProvisionedError
     from scitex_cards._store_retirement import StoreRetired, retire_store
-    from scitex_cards._store_uuid import ENV_EXPECTED_STORE_UUID, stamp_store_uuid
+    from scitex_cards._store_uuid import (
+        ENV_EXPECTED_STORE_UUID,
+        read_store_uuid,
+        stamp_store_uuid,
+    )
 
     foreign = "11111111-1111-4111-8111-111111111111"
     expected = "22222222-2222-4222-8222-222222222222"
-    dsn = new_store("cards_primitive_guard", bootstrap=request.param != "bare")
+    dsn = new_store("cards_primitive_guard", bootstrap=request.param == "retired")
     if request.param == "bare":
         return dsn, StoreNotProvisionedError
     with row_support.connection(dsn) as conn:
         if request.param == "foreign":
+            # Choose the first identity through the existing explicit schema
+            # API. The normal fixture has already minted when bootstrap=True.
+            init_schema(conn)
+            row_support.require(
+                read_store_uuid(conn) is None, "foreign-fixture-already-identified"
+            )
             stamp_store_uuid(conn, foreign)
+            row_support.require(
+                read_store_uuid(conn) == foreign, "foreign-fixture-first-mint-refused"
+            )
+            record_property("guard_fixture_first_identity_chosen", True)
             env.set(ENV_EXPECTED_STORE_UUID, expected)
         else:
             retire_store(
