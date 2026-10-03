@@ -12,6 +12,8 @@ import importlib.util
 import os
 from pathlib import Path
 
+from scitex_app.i18n import i18n_settings, with_locale_middleware
+
 BASE_DIR = Path(__file__).resolve().parent
 
 _DEV_SECRET_KEY = "scitex-cards-standalone-dev-key-not-for-production"
@@ -133,6 +135,8 @@ try:
 except ImportError:
     pass
 
+globals().update(i18n_settings())
+
 MIDDLEWARE = [
     # GZip FIRST so it wraps every response below it. /graph is ~5 MB of JSON
     # (measured 2026-07-10: 1180 cards; comments 1.9 MB = 38%, notes 0.84 MB
@@ -153,6 +157,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
 ]
+MIDDLEWARE = with_locale_middleware(MIDDLEWARE)
 
 ROOT_URLCONF = "scitex_cards._django.urls"
 

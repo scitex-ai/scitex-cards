@@ -15,6 +15,8 @@ from scitex_cards._db import resolve_db_path
 from scitex_cards._store_url import BACKEND_UNSUPPORTED
 from scitex_cards._store_target import (
     StoreTargetIsNotAPath,
+    StoreTargetNotConfigured,
+    require_configured_store_target,
     require_db_path,
     resolve_store_backend,
     resolve_store_target,
@@ -218,6 +220,100 @@ class TestAPathTargetIsNoLongerABackend:
 
         # Assert
         assert old == new
+
+
+
+@pytest.fixture
+def isolated_server_store_env():
+    """Use real process environment selection and restore the prior value."""
+    saved = os.environ.get(ENV)
+    os.environ.pop(ENV, None)
+    try:
+        yield os.environ
+    finally:
+        if saved is None:
+            os.environ.pop(ENV, None)
+        else:
+            os.environ[ENV] = saved
+
+
+class TestServerRequiresAStoreChoice:
+    def test_absent_selection_refuses(self, isolated_server_store_env):
+        # Arrange
+        error = None
+        # Act
+        try:
+            require_configured_store_target()
+        except StoreTargetNotConfigured as exc:
+            error = exc
+        # Assert
+        assert type(error) is StoreTargetNotConfigured
+
+    @pytest.mark.parametrize("selection", ["", " \t\n"], ids=["empty", "whitespace"])
+    def test_blank_environment_refuses(self, isolated_server_store_env, selection):
+        # Arrange
+        isolated_server_store_env[ENV] = selection
+        error = None
+        # Act
+        try:
+            require_configured_store_target()
+        except StoreTargetNotConfigured as exc:
+            error = exc
+        # Assert
+        assert type(error) is StoreTargetNotConfigured
+
+    @pytest.mark.parametrize("selection", ["", " \t"], ids=["empty", "whitespace"])
+    def test_blank_explicit_target_does_not_fall_back(self, isolated_server_store_env, selection):
+        # Arrange
+        isolated_server_store_env[ENV] = PG_URL
+        error = None
+        # Act
+        try:
+            require_configured_store_target(selection)
+        except StoreTargetNotConfigured as exc:
+            error = exc
+        # Assert
+        assert type(error) is StoreTargetNotConfigured
+
+    @pytest.mark.parametrize("environment", ["not-a-postgres-dsn", "postgresql://other/db"],
+                             ids=["invalid-env", "different-env"])
+    def test_explicit_target_keeps_precedence(self, isolated_server_store_env, environment):
+        # Arrange
+        isolated_server_store_env[ENV] = environment
+        # Act
+        result = require_configured_store_target(PG_URL)
+        # Assert
+        assert result == PG_URL
+
+    def test_explicit_path_keeps_existing_passthrough(self, isolated_server_store_env, tmp_path):
+        # Arrange
+        target = tmp_path / "not-created.db"
+        # Act
+        result = require_configured_store_target(target)
+        # Assert
+        assert result == str(target)
+
+    def test_configured_environment_uses_genuine_resolver(self, isolated_server_store_env):
+        # Arrange
+        isolated_server_store_env[ENV] = PG_URL
+        # Act
+        result = require_configured_store_target()
+        # Assert
+        assert result == PG_URL
+
+    def test_invalid_environment_keeps_genuine_validation(self, isolated_server_store_env):
+        # Arrange
+        from scitex_dev.store import StoreTargetError
+
+        isolated_server_store_env[ENV] = "not-a-postgres-dsn"
+        error = None
+        # Act
+        try:
+            require_configured_store_target()
+        except StoreTargetError as exc:
+            error = exc
+        # Assert
+        assert type(error) is StoreTargetError
 
 
 # EOF
