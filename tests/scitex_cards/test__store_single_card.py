@@ -410,3 +410,304 @@ def test_done_enrolled_comment_changes_only_comments_activity_and_revision(deliv
 
 
 # EOF
+# Additive canonical row primitives (owned-PG qualification only).
+@pytest.fixture
+def row_rows():
+    from scitex_cards import _store_single_card
+
+    return _store_single_card
+
+
+@pytest.fixture
+def row_support():
+    import _card_row_pg_support
+
+    return _card_row_pg_support
+
+
+@pytest.fixture
+def row_store(new_store, row_support):
+    dsn = new_store("cards_row_api")
+    row_support.seed(dsn)
+    return dsn
+
+
+def test_two_insert_absence_clients_have_exactly_one_winner(
+    new_store, record_property, row_support
+):
+    # Arrange
+    import json
+    import threading
+
+    from scitex_cards._mirror_rows import _write_card
+
+    dsn = new_store("cards_insert_absence")
+    row_support.seed(dsn, present=False)
+    barrier = threading.Barrier(2)
+    outcomes = []
+    pids = []
+
+    def run(name):
+        try:
+            with row_support.connection(dsn) as conn:
+                pids.append(
+                    conn.execute("SELECT pg_backend_pid() AS pid").fetchone()["pid"]
+                )
+                barrier.wait(timeout=5)
+                counts = _write_card(
+                    conn, row_support.card(name), insert_if_absent=True
+                )
+                conn.commit()
+                outcomes.append(
+                    "written" if counts["tasks"] == 1 else "absence-fence-lost"
+                )
+        except Exception as error:
+            outcomes.append(type(error).__name__)
+
+    threads = [
+        threading.Thread(target=run, args=(name,), daemon=True)
+        for name in ("one", "two")
+    ]
+    # Act
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(12)
+        row_support.require(not thread.is_alive(), "insert-race-client-did-not-finish")
+    record_property("insert_client_backend_pids", json.dumps(pids))
+    row_support.require(
+        len(set(pids)) == 2, "insert-race-needs-distinct-actual-backends"
+    )
+    # Assert
+    assert sorted(outcomes) == ["absence-fence-lost", "written"]
+
+
+def test_insert_absence_loser_preserves_existing_parent_children_and_hash(
+    row_store, row_support, row_rows
+):
+    # Arrange
+    expected = row_support.snapshot(row_store)
+    # Act
+    try:
+        row_rows.insert_card_if_absent_or_raise(
+            row_store, row_support.card("duplicate")
+        )
+    except row_rows.CardAlreadyExistsError:
+        pass
+    # Assert
+    assert row_support.snapshot(row_store) == expected
+
+
+def test_matching_revision_delete_removes_parent_children_and_hash(
+    row_store, row_support, row_rows
+):
+    # Arrange
+    revision = row_support.snapshot(row_store)["parent"]["revision"]
+    # Act
+    row_rows.delete_card_if_revision_or_raise(
+        row_store, "alpha", expected_revision=revision
+    )
+    # Assert
+    assert row_support.snapshot(row_store) == {
+        "parent": None,
+        "comments": [],
+        "roles": [],
+        "edges": [],
+        "hash": None,
+    }
+
+
+def test_stale_revision_delete_preserves_all_rows(row_store, row_support, row_rows):
+    # Arrange
+    expected = row_support.snapshot(row_store)
+    # Act
+    try:
+        row_rows.delete_card_if_revision_or_raise(
+            row_store, "alpha", expected_revision=expected["parent"]["revision"] + 1
+        )
+    except RevisionConflictError:
+        pass
+    # Assert
+    assert row_support.snapshot(row_store) == expected
+
+
+def test_missing_revision_delete_reports_absence(row_store, row_rows):
+    # Arrange
+    found = "not-refused"
+    # Act
+    try:
+        row_rows.delete_card_if_revision_or_raise(
+            row_store, "unknown", expected_revision=0
+        )
+    except RevisionConflictError as refusal:
+        found = refusal.found
+    # Assert
+    assert found is None
+
+
+@pytest.mark.parametrize("revision", [None, True, False, -1, 1.5, "1"])
+def test_delete_rejects_nonrevision_before_target_resolution(revision, row_rows):
+    # Arrange
+    # Act
+    # Assert
+    with pytest.raises(ValueError, match="non-negative integer"):
+        row_rows.delete_card_if_revision_or_raise(
+            "not-a-store", "alpha", expected_revision=revision
+        )
+
+
+def test_delivery_enrollment_still_refuses_generic_delete(
+    row_store, row_support, row_rows
+):
+    # Arrange
+    with row_support.connection(row_store) as conn:
+        row_support.enroll(conn)
+    # Act
+    from scitex_cards._store_delivery import DeliveryGuardError
+
+    # Assert
+    with pytest.raises(
+        DeliveryGuardError, match="controlled-delivery-removal-unavailable"
+    ):
+        row_rows.delete_card_if_revision_or_raise(
+            row_store,
+            "alpha",
+            expected_revision=row_support.snapshot(row_store)["parent"]["revision"],
+        )
+
+
+def test_delivery_enrollment_delete_refusal_has_no_mutation(
+    row_store, row_support, row_rows
+):
+    # Arrange
+    with row_support.connection(row_store) as conn:
+        row_support.enroll(conn)
+    expected = row_support.snapshot(row_store)
+    # Act
+    try:
+        row_rows.delete_card_if_revision_or_raise(
+            row_store, "alpha", expected_revision=expected["parent"]["revision"]
+        )
+    except Exception:
+        pass
+    # Assert
+    assert row_support.snapshot(row_store) == expected
+
+
+def test_sql_null_payload_retains_existing_export_refusal(
+    row_store, row_support, row_rows
+):
+    from scitex_cards._db_export import ExportRefused
+
+    # Arrange
+    with row_support.connection(row_store) as conn:
+        conn.execute("UPDATE tasks SET card_json = NULL WHERE id = ?", ("alpha",))
+        conn.commit()
+    # Act
+    # Assert
+    with row_support.connection(row_store) as conn, pytest.raises(ExportRefused):
+        row_rows._read_card_with_connection(conn, "alpha")
+
+
+def test_payload_refusal_does_not_expose_private_payload(
+    row_store, row_support, row_rows
+):
+    # Arrange
+    with row_support.connection(row_store) as conn:
+        conn.execute(
+            "UPDATE tasks SET card_json = ? WHERE id = ?",
+            ('"synthetic-private-marker"', "alpha"),
+        )
+        conn.commit()
+    # Act
+    observed = ""
+    with row_support.connection(row_store) as conn:
+        try:
+            row_rows._read_card_with_connection(conn, "alpha")
+        except row_rows.CardPayloadShapeError as error:
+            observed = str(error)
+    # Assert
+    assert observed and "synthetic-private-marker" not in observed
+
+
+def test_failed_child_encoding_rolls_back_parent_before_caller_commits(
+    row_store, row_support
+):
+    from scitex_cards._mirror_rows import _write_card
+
+    # Arrange
+    expected = row_support.snapshot(row_store)
+    value = deepcopy(row_support.card("must-roll-back"))
+    value["comments"] = [
+        {"author": {"not": "a SQL text value"}, "text": "broken child"}
+    ]
+    # Act: deliberately catch a real driver adaptation failure and commit.
+    with row_support.connection(row_store) as conn:
+        try:
+            _write_card(conn, value, expected_revision=expected["parent"]["revision"])
+        except Exception:
+            pass
+        conn.commit()
+    # Assert
+    assert row_support.snapshot(row_store) == expected
+
+
+def test_public_insert_absence_records_the_winning_hash(
+    new_store, row_support, row_rows
+):
+    # Arrange
+    dsn = new_store("cards_absence_public")
+    row_support.seed(dsn, present=False)
+    value = row_support.card("public-winner")
+    # Act
+    row_rows.insert_card_if_absent_or_raise(dsn, value)
+    # Assert
+    from scitex_cards._mirror_hashes import _card_hash
+
+    assert row_support.snapshot(dsn)["hash"]["hash"] == _card_hash(value)
+
+
+@pytest.fixture(params=["bare", "foreign", "retired"])
+def refused_store(new_store, env, request, row_support):
+    from scitex_cards._store_errors import StoreNotProvisionedError
+    from scitex_cards._store_retirement import StoreRetired, retire_store
+    from scitex_cards._store_uuid import ENV_EXPECTED_STORE_UUID, stamp_store_uuid
+
+    foreign = "11111111-1111-4111-8111-111111111111"
+    expected = "22222222-2222-4222-8222-222222222222"
+    dsn = new_store("cards_primitive_guard", bootstrap=request.param != "bare")
+    if request.param == "bare":
+        return dsn, StoreNotProvisionedError
+    with row_support.connection(dsn) as conn:
+        if request.param == "foreign":
+            stamp_store_uuid(conn, foreign)
+            env.set(ENV_EXPECTED_STORE_UUID, expected)
+        else:
+            retire_store(
+                conn,
+                successor_uuid=expected,
+                by="agent:test-suite",
+                at="2026-10-03T00:00:00Z",
+            )
+        conn.commit()
+    return dsn, RuntimeError if request.param == "foreign" else StoreRetired
+
+
+def test_insert_absence_keeps_all_canonical_store_guards(
+    refused_store, row_support, row_rows
+):
+    # Arrange
+    dsn, refusal = refused_store
+    # Act
+    # Assert
+    with pytest.raises(refusal):
+        row_rows.insert_card_if_absent_or_raise(dsn, row_support.card())
+
+
+def test_guarded_delete_keeps_all_canonical_store_guards(refused_store, row_rows):
+    # Arrange
+    dsn, refusal = refused_store
+    # Act
+    # Assert
+    with pytest.raises(refusal):
+        row_rows.delete_card_if_revision_or_raise(dsn, "alpha", expected_revision=0)
