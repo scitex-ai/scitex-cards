@@ -17,7 +17,7 @@ on:
 
 jobs:
   import-smoke:
-    uses: scitex-ai/.github/.github/workflows/import-smoke.yml@main
+    uses: scitex-ai/.github/.github/workflows/import-smoke.yml@8c646081e9f1352077d3d8674052cce7ec75a1b7
     # PASS THE POOL EXPLICITLY. The reusable workflow's `runs_on` input
     # defaults to the Spartan pool — its own docstring says so ("Defaults to
     # the Spartan pool, i.e. exactly the value hard-coded here before this
