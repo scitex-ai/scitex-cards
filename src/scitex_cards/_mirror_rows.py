@@ -16,13 +16,15 @@ prevent had already happened.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
     from ._backend_connect import StoreConnection
 
 
+from ._card_row_errors import CardAlreadyExistsError
 from ._comment_ids import stamp_comment_id
-from ._db_bootstrap import _insert_tasks
+from ._db_bootstrap import _insert_task_children, _insert_tasks
 from ._delivery_policy import ABSENT, delivery_namespace
 from ._mirror_hashes import HASH_TABLE
 from ._store_errors import RevisionConflictError
@@ -52,48 +54,60 @@ def _write_card(
     card: dict,
     *,
     expected_revision: int | None = None,
+    insert_if_absent: bool = False,
 ) -> dict[str, int]:
-    """Upsert ONE card and its derived rows. Returns the insert counts.
+    """Write one parent and replace only its owned derived rows.
 
-    ``expected_revision`` makes the whole sequence a COMPARE-AND-SET, and the
-    ORDER here is the entire point — get it wrong and the guard destroys data on
-    the path it refuses to take.
+    Read the canonical object and apply the existing delivery guard on this
+    transaction. Explicit revisions use UPDATE-only CAS. Explicit absence uses
+    INSERT DO NOTHING. Legacy None locks an existing parent, or fences insertion
+    when no parent was read, so enrollment cannot race an unconditional UPSERT.
 
-    `_drop_card_rows` DELETES this card's comments, roles and outbound edges
-    before the upsert, because comments key on a sequence and re-inserting
-    without clearing would duplicate every one of them on every write. That drop
-    is load-bearing and cannot simply be removed.
-
-    But it means a naive compare-and-set — drop first, then let `_insert_tasks`
-    check the revision — would:
-
-        1. delete the card's comments, roles and outbound edges
-        2. hit the guard, skip the upsert
-        3. report revision_skipped=1, i.e. "I changed nothing"
-
-    while the WINNER's comments are already gone. A lock that silently destroys
-    the data it was protecting, and then reports success at protecting it, is
-    strictly worse than no lock: the caller has no reason to look.
-
-    So the revision is read and compared BEFORE anything is dropped. The `WHERE`
-    clause inside `_insert_tasks` remains the real guard against the race
-    between that read and the write — this pre-check is not a substitute for it,
-    it only ensures the DESTRUCTIVE half never runs for a write that was always
-    going to be refused.
-
-    The canonical payload is read on this same transaction for the application
-    guard. Generic writes preserve delivery metadata; only the kernel's internal
-    bound transition may carry a prepared generation reset. Protected late CAS
-    refusals raise so supported callers roll back the destructive half as well.
+    Only the parent winner drops comments, roles and outbound edges. Recover
+    table-only comments before that drop using the existing merge rule. A row
+    savepoint rolls back late skips and child-write failures even when a mirror
+    caller catches a refusal and continues its transaction. Protected revision
+    losses remain typed exceptions; legacy revision losses return skip counts.
     """
+    savepoint = "cards_row_" + uuid4().hex
+    conn.execute("SAVEPOINT " + savepoint)
+    try:
+        counts = _write_card_in_savepoint(
+            conn,
+            card,
+            expected_revision=expected_revision,
+            insert_if_absent=insert_if_absent,
+        )
+        if counts.get("revision_skipped") or counts.get("absence_skipped"):
+            conn.execute("ROLLBACK TO SAVEPOINT " + savepoint)
+        return counts
+    except BaseException:
+        conn.execute("ROLLBACK TO SAVEPOINT " + savepoint)
+        raise
+    finally:
+        conn.execute("RELEASE SAVEPOINT " + savepoint)
+
+
+def _write_card_in_savepoint(conn, card, *, expected_revision, insert_if_absent):
     from ._store_delivery import _guard_row_write
     from ._store_single_card import _read_card_with_connection
 
     tid = str(card.get("id"))
-    before, found = _read_card_with_connection(conn, tid)
-    expected_revision = _guard_row_write(
-        conn, before, card, found, expected_revision
+    before, found = _read_card_with_connection(
+        conn,
+        tid,
+        for_update=expected_revision is None,
     )
+    if insert_if_absent and before is not None:
+        return {
+            "tasks": 0,
+            "comments": 0,
+            "edges": 0,
+            "roles": 0,
+            "absence_skipped": 1,
+            "revision_found": found,
+        }
+    expected_revision = _guard_row_write(conn, before, card, found, expected_revision)
     if expected_revision is not None:
         if found != expected_revision:
             # Refuse BEFORE the drop. Nothing has been touched.
@@ -105,20 +119,30 @@ def _write_card(
                 "revision_skipped": 1,
                 "revision_found": found,
             }
-    # THE DROP BELOW DELETES COMMENTS THE DOC MAY NOT KNOW ABOUT. Fill them in
-    # first, or the write silently destroys them — see the docstring.
+    # Recover table-only comments before claiming the parent. This read and
+    # in-memory merge do not mutate the derived rows of a losing write.
     _merge_unseen_comment_rows(conn, tid, card)
-    _drop_card_rows(conn, tid)
-    # _insert_tasks handles the task row + comments + edges + roles for each
-    # card it is given, so a one-element list is exactly one card's worth.
-    counts = _insert_tasks(conn, [card], expected_revision=expected_revision)
+    # Claim exactly one parent first; only the winner replaces its children.
+    counts = _insert_tasks(
+        conn,
+        [card],
+        expected_revision=expected_revision,
+        insert_if_absent=insert_if_absent
+        or (before is None and expected_revision is None),
+        include_children=False,
+    )
+    if counts.get("absence_skipped") and not insert_if_absent:
+        raise CardAlreadyExistsError(tid, counts.get("revision_found"))
     protected = delivery_namespace(before or {}) is not ABSENT
     if counts.get("revision_skipped") and protected:
-        # A protected late refusal must reach the caller's rollback boundary;
-        # the earlier revision check cannot serialize the destructive drop.
+        # Keep the existing protected-row refusal visible to its caller;
+        # legacy mirror callers instead receive a harmless skip outcome.
         raise RevisionConflictError(
             tid, expected_revision, counts.get("revision_found")
         )
+    if not counts.get("revision_skipped") and not counts.get("absence_skipped"):
+        _drop_card_rows(conn, tid)
+        counts.update(_insert_task_children(conn, card))
     return counts
 
 
@@ -263,7 +287,9 @@ def _merge_unseen_comment_rows(conn: StoreConnection, task_id: str, card: dict) 
     return recovered
 
 
-def _delete_card(conn: StoreConnection, task_id: str) -> None:
+def _delete_card(
+    conn: StoreConnection, task_id: str, *, expected_revision: int | None = None
+) -> bool:
     """A card that left the doc must leave the mirror COMPLETELY.
 
     Also drops edges pointing AT it, which ``_drop_card_rows`` deliberately does
@@ -271,19 +297,52 @@ def _delete_card(conn: StoreConnection, task_id: str) -> None:
     A dangling inbound edge to a card that no longer exists is exactly the kind
     of rot an equivalence check on PRESENT cards would never notice.
 
-    Any present delivery namespace refuses before effects. The legacy path
-    retains its behavior; atomic deletion against future enrollment requires
-    the Infrastructure-owned storage fence.
+    Any present delivery namespace refuses before effects. Delete the parent
+    only at the observed (or explicitly supplied) revision before child/hash
+    cleanup, so enrollment after the policy read cannot be physically removed.
     """
+    if expected_revision is not None and (
+        type(expected_revision) is not int or expected_revision < 0
+    ):
+        raise ValueError("expected_revision must be a non-negative integer")
+    savepoint = "cards_delete_" + uuid4().hex
+    conn.execute("SAVEPOINT " + savepoint)
+    try:
+        return _delete_card_in_savepoint(conn, task_id, expected_revision)
+    except BaseException:
+        conn.execute("ROLLBACK TO SAVEPOINT " + savepoint)
+        raise
+    finally:
+        conn.execute("RELEASE SAVEPOINT " + savepoint)
+
+
+def _delete_card_in_savepoint(conn, task_id, expected_revision):
     from ._store_delivery import _guard_removal
     from ._store_single_card import _read_card_with_connection
 
-    before, _revision = _read_card_with_connection(conn, task_id)
+    before, revision = _read_card_with_connection(conn, task_id)
     _guard_removal(before)
+    if before is None:
+        return False
+    expected = revision if expected_revision is None else expected_revision
+    removed = conn.execute(
+        "DELETE FROM tasks WHERE id = ? AND revision = ? RETURNING id",
+        (task_id, expected),
+    ).fetchone()
+    if removed is None:
+        latest = conn.execute(
+            "SELECT revision FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        raise RevisionConflictError(
+            task_id, expected, None if latest is None else latest["revision"]
+        )
     _drop_card_rows(conn, task_id)
     conn.execute("DELETE FROM task_edges WHERE dst_task_id = ?", (task_id,))
-    conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    from ._mirror_hashes import _HASH_DDL
+
+    conn.execute(_HASH_DDL)
     conn.execute(f"DELETE FROM {HASH_TABLE} WHERE task_id = ?", (task_id,))
+    return True
 
 
 __all__ = [

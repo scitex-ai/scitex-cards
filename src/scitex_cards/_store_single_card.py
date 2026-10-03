@@ -6,8 +6,8 @@ WHY THIS MODULE EXISTS, measured rather than argued (2026-09-02, live primary,
 6,542 cards, 15,773 comments, cProfile cumulative)::
 
     comment_task                                              3.013 s
-    ├─ _read_canonical_db_or_raise            x2              2.048 s   whole-board export, twice
-    └─ dispatch_notifications -> get_task                     1.221 s   whole-board export, a third time
+    canonical read                         x2              2.048 s
+    dispatch_notifications -> get_task                      1.221 s
     DB floor, same store:  connect 15.7 ms · SELECT 1 1.9 ms · one-card query 3.1 ms
 
 Appending one dict to one card read the entire board three times, because every
@@ -58,10 +58,11 @@ sidecar path.
 
 from __future__ import annotations
 
+from ._card_row_errors import CardAlreadyExistsError, CardPayloadShapeError
 from ._db_export import missing_payload_refusal
 from ._db_payload import card_from_payload
 from ._mirror_hashes import _HASH_DDL, HASH_TABLE, _card_hash
-from ._mirror_rows import _write_card
+from ._mirror_rows import _delete_card, _write_card
 from ._store_canonical_read import _guarded_connection
 from ._store_errors import RevisionConflictError
 from ._validate import WRITE_SOURCE, _validate_tasks
@@ -73,17 +74,26 @@ from ._validate import WRITE_SOURCE, _validate_tasks
 CAS_ATTEMPTS = 3
 
 
-def _read_card_with_connection(conn, task_id: str) -> tuple[dict | None, int | None]:
+def _read_card_with_connection(
+    conn, task_id: str, *, for_update: bool = False
+) -> tuple[dict | None, int | None]:
     """Read the canonical payload/revision on the caller's write transaction."""
     row = conn.execute(
-        "SELECT card_json, revision, last_activity FROM tasks WHERE id = ?",
+        "SELECT card_json, revision, last_activity FROM tasks WHERE id = ?"
+        + (" FOR UPDATE" if for_update else ""),
         (str(task_id),),
     ).fetchone()
     if row is None:
         return None, None
     if row["card_json"] is None:
         raise missing_payload_refusal(str(task_id), row["last_activity"])
-    return card_from_payload(row["card_json"]), row["revision"]
+    try:
+        card = card_from_payload(row["card_json"])
+    except (ValueError, TypeError):
+        raise CardPayloadShapeError(str(task_id)) from None
+    if not isinstance(card, dict):
+        raise CardPayloadShapeError(str(task_id))
+    return card, row["revision"]
 
 
 def read_card_or_raise(target: str, task_id: str) -> tuple[dict | None, int | None]:
@@ -122,7 +132,7 @@ def write_card_or_raise(
     validator the whole-document writer runs (``_validate_tasks`` over the one
     card), same row primitive the mirror uses (:func:`_write_card`, which merges
     table-only comment rows before its drop and refuses on a stale revision
-    BEFORE dropping anything), then the same hash-ledger upsert.
+    BEFORE replacing derived rows), then the same hash-ledger upsert.
 
     ``expected_revision`` is the value :func:`read_card_or_raise` returned.
     ``None`` retains last-writer-wins for legacy rows. An existing delivery
@@ -131,8 +141,8 @@ def write_card_or_raise(
     submitted card fields never grant a trusted transition.
 
     RAISES :class:`RevisionConflictError` on a lost race, with the revision the
-    store holds now, with the transaction rolled back even if a late conditional
-    upsert refused after the derived-row drop. Every other failure propagates from the
+    store holds now, with the transaction rolled back. Every other failure
+    propagates from the
     layer that saw it; nothing here is swallowed, because this is the write
     door and the one direction it must never move is quieter.
 
@@ -182,6 +192,60 @@ def write_card_or_raise(
         conn.close()
 
 
-__all__ = ["CAS_ATTEMPTS", "read_card_or_raise", "write_card_or_raise"]
+def insert_card_if_absent_or_raise(target: str, card: dict) -> dict:
+    """Insert one canonical card only if absent; preserve legacy None semantics."""
+    task_id = str(card.get("id") or "")
+    if not task_id:
+        raise ValueError("insert_card_if_absent_or_raise: the card has no 'id'")
+    _validate_tasks([card], source=WRITE_SOURCE, strict=True)
+    conn = _guarded_connection(target)
+    try:
+        counts = _write_card(conn, card, insert_if_absent=True)
+        if counts.get("absence_skipped"):
+            raise CardAlreadyExistsError(task_id, counts.get("revision_found"))
+        conn.execute(_HASH_DDL)
+        conn.execute(
+            f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
+            f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
+            (task_id, _card_hash(card)),
+        )
+        conn.commit()
+        return counts
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def delete_card_if_revision_or_raise(
+    target: str, task_id: str, *, expected_revision: int
+) -> bool:
+    """Physical Cards row deletion with the existing delivery-removal guard."""
+    if type(expected_revision) is not int or expected_revision < 0:
+        raise ValueError("expected_revision must be a non-negative integer")
+    if not isinstance(task_id, str) or not task_id.strip():
+        raise ValueError("delete_card_if_revision_or_raise: task_id is required")
+    conn = _guarded_connection(target)
+    try:
+        removed = _delete_card(conn, task_id, expected_revision=expected_revision)
+        if not removed:
+            raise RevisionConflictError(task_id, expected_revision, None)
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+__all__ = [
+    "CAS_ATTEMPTS",
+    "read_card_or_raise",
+    "write_card_or_raise",
+    "insert_card_if_absent_or_raise",
+    "delete_card_if_revision_or_raise",
+]
 
 # EOF

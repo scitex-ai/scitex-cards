@@ -28,8 +28,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
     from ._backend_connect import StoreConnection
 
-import scitex_logging as slogging
 from dataclasses import dataclass
+
+import scitex_logging as slogging
 
 from ._db import SCHEMA_VERSION
 from ._db_payload import CARD_JSON_COL, card_payload_json_or_raise
@@ -183,29 +184,24 @@ def _insert_tasks(
     *,
     replace: bool = True,
     expected_revision: int | None = None,
+    insert_if_absent: bool = False,
+    include_children: bool = True,
 ) -> dict[str, int]:
     """Insert every card + its children.
 
-    ``expected_revision`` turns the upsert into a COMPARE-AND-SET. v6 added
-    ``tasks.revision`` and v7 added the ``tasks_bump_revision`` trigger, so every
-    row already carries a version that advances on write — but until now NO
-    writer compared it, which made every concurrent edit last-write-wins with the
-    loser discarded silently. A lock nobody asserts is not a lock; it is a column
-    that makes the schema look safe.
+    ``expected_revision`` selects UPDATE-only compare-and-set. It cannot
+    recreate an absent row. ``insert_if_absent`` selects INSERT DO NOTHING;
+    this is explicit and never changes the legacy meaning of None.
+    ``include_children=False`` claims the parent before row surgery.
 
-    Pass the revision you READ, and the write lands only if nobody has written
-    since. On a mismatch the row is left ALONE and :class:`RevisionConflictError`
-    is raised, so the caller re-reads and re-applies rather than clobbers. Reject
-    over overwrite: a lost update is invisible, an exception is not.
+    The existing revision trigger advances UPDATEs. Explicit revision writes
+    return a skip outcome if the current parent is absent or has moved. The
+    primitive returns counts; supported one-card verbs turn skips into typed
+    exceptions. The row is claimed before a caller replaces derived rows.
 
-    IT IS OPT-IN BY CONSTRUCTION, and that is load-bearing rather than politeness.
-    ``_migrate_v6_to_v7`` records that scitex-db proposed REJECT semantics for
-    this lock and it was RULED UNUSABLE, because "an UPDATE from a writer that
-    knows nothing about ``revision`` would ABORT, so fleet writes would fail until
-    every container is current" — a condition this fleet cannot establish. So when
-    ``expected_revision`` is None no clause is emitted and the SQL is identical to
-    before: every existing caller, and every older client, is untouched. Only a
-    caller that opts in can fail.
+    None retains the original UPSERT at this low-level bootstrap seam. The
+    canonical row writer additionally locks existing legacy parents and fences
+    absence so a concurrent delivery enrollment cannot be clobbered.
 
     SINGLE CARD ONLY when opting in. A batch cannot report WHICH row lost, and a
     half-applied batch is worse than none, so a longer list is refused up front.
@@ -238,7 +234,15 @@ def _insert_tasks(
     REPLACE would have picked), so ``replace=False`` cannot conflict with itself.
     """
     counts = {"tasks": 0, "comments": 0, "edges": 0, "roles": 0}
+    if insert_if_absent and (
+        not replace or expected_revision is not None or len(tasks) != 1
+    ):
+        raise ValueError(
+            "insert_if_absent requires one card, replace=True and no revision"
+        )
     if expected_revision is not None:
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ValueError("expected_revision must be a non-negative integer")
         if not replace:
             raise ValueError(
                 "expected_revision requires replace=True: with replace=False the "
@@ -277,13 +281,17 @@ def _insert_tasks(
             f"INSERT INTO tasks ({cols}) VALUES ({placeholders}) "
             f"ON CONFLICT(id) DO UPDATE SET {updates}"
         )
-        if expected_revision is not None:
-            # The compare-and-set. A WHERE on ON CONFLICT DO UPDATE makes the
-            # update conditional: when it does not hold, the conflicting row is
-            # left EXACTLY as it was — no write, no trigger, no revision bump.
-            # `tasks.revision` is qualified deliberately; bare `revision` is
-            # ambiguous against `excluded` on both engines.
-            insert_sql += " WHERE tasks.revision = ?"
+        if insert_if_absent:
+            insert_sql = (
+                f"INSERT INTO tasks ({cols}) VALUES ({placeholders}) "
+                "ON CONFLICT(id) DO NOTHING RETURNING id"
+            )
+        elif expected_revision is not None:
+            assignments = ", ".join(f"{c} = ?" for c in TASK_INSERT_COLS if c != "id")
+            insert_sql = (
+                f"UPDATE tasks SET {assignments} "
+                "WHERE id = ? AND revision = ? RETURNING id"
+            )
     else:
         insert_sql = f"INSERT INTO tasks ({cols}) VALUES ({placeholders})"
     for order, row in _dedupe_last_wins(tasks):
@@ -303,59 +311,50 @@ def _insert_tasks(
         # The writer already knows the payload cannot be serialised at this point;
         # refusing costs this one call, storing it costs everyone else.
         values.append(card_payload_json_or_raise(row))
-        if expected_revision is None:
+        if expected_revision is None and not insert_if_absent:
             conn.execute(insert_sql, values)
         else:
             tid_cas = str(row.get("id"))
-            # Read the CURRENT revision first. This is NOT the safety mechanism
-            # — the WHERE clause is, and it is what makes the write atomic. The
-            # SELECT exists so the outcome can report what it lost TO, and so the
-            # row-absent case is reported rather than silently becoming an
-            # INSERT: `ON CONFLICT DO UPDATE ... WHERE` only fires when a
-            # conflicting row exists, so without this a compare-and-set against
-            # a deleted card would quietly re-create it.
-            found_row = conn.execute(
-                "SELECT revision FROM tasks WHERE id = ?", (tid_cas,)
-            ).fetchone()
-            # BY NAME, NOT BY POSITION. `the retired driver.Row` accepted both an index
-            # and a column name, so `found_row[0]` worked for as long as the
-            # store was a file. The server's rows are mapping-shaped and an
-            # integer subscript raises `KeyError: 0` -- here, on the
-            # COMPARE-AND-SET branch of the card write funnel, which is the one
-            # path a caller reaches by asking for safety.
-            #
-            # Same defect that made every commented card read-only fleet-wide
-            # on 2026-08-23. It survived the sweep that left warnings about
-            # `row[0]` in nine other modules because no test had ever run this
-            # branch against a server: the harness handed every test a file.
-            found = None if found_row is None else found_row["revision"]
-            if found != expected_revision:
-                counts["revision_skipped"] = 1
-                counts["revision_found"] = found
-                return counts
-            cur = conn.execute(insert_sql, [*values, expected_revision])
-            if cur.rowcount == 0:
-                # The row moved between the SELECT and the UPDATE — the race the
-                # WHERE exists for. Reaching here means the guard WORKED. Re-read
-                # so the caller is told the truth about where the row is now,
-                # rather than a stale value from before the losing attempt.
+            params = (
+                values
+                if insert_if_absent
+                else [
+                    *(
+                        value
+                        for col, value in zip(TASK_INSERT_COLS, values)
+                        if col != "id"
+                    ),
+                    tid_cas,
+                    expected_revision,
+                ]
+            )
+            cur = conn.execute(insert_sql, params)
+            if cur.fetchone() is None:
+                # The atomic parent fence lost. Report the currently visible
+                # revision by name; no child encoder runs for a losing write.
                 after = conn.execute(
                     "SELECT revision FROM tasks WHERE id = ?", (tid_cas,)
                 ).fetchone()
-                counts["revision_skipped"] = 1
-                # BY NAME, like `found_row` above. #949 converted that read and
-                # left this one — the line that runs exactly when the
-                # compare-and-set LOSES — so a lost race crashed with
-                # `KeyError: 0` instead of being reported. Found by the
-                # package-wide positional-read guard on its first run.
+                counts[
+                    "absence_skipped" if insert_if_absent else "revision_skipped"
+                ] = 1
                 counts["revision_found"] = None if after is None else after["revision"]
                 return counts
         counts["tasks"] += 1
-        tid = row.get("id")
-        counts["comments"] += _insert_comments(conn, tid, row.get("comments"))
-        counts["edges"] += _insert_edges(conn, tid, row)
-        counts["roles"] += _insert_roles(conn, tid, row)
+        if include_children:
+            for key, value in _insert_task_children(conn, row).items():
+                counts[key] += value
     return counts
+
+
+def _insert_task_children(conn: StoreConnection, row: dict) -> dict[str, int]:
+    """Shared derived-row encoding after the caller owns the parent mutation."""
+    tid = row.get("id")
+    return {
+        "comments": _insert_comments(conn, tid, row.get("comments")),
+        "edges": _insert_edges(conn, tid, row),
+        "roles": _insert_roles(conn, tid, row),
+    }
 
 
 def _insert_comments(conn, task_id, comments) -> int:
