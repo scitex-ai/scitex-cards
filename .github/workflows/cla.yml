@@ -69,7 +69,7 @@ permissions:
 
 jobs:
   call:
-    uses: scitex-ai/.github/.github/workflows/cla.yml@f5d19f5b7424fcf985137bb6acff54f5d0e11749 # main@2026-08-30
+    uses: scitex-ai/.github/.github/workflows/cla.yml@8c646081e9f1352077d3d8674052cce7ec75a1b7 # reviewed organization admission
     with:
       # Preserved verbatim from the inline version this replaces.
       owner_allowlist: "bot*,ywatanabe1989"
