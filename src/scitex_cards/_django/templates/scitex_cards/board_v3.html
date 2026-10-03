@@ -577,8 +577,8 @@
               <select class="filt" id="f-status"><option value="">All statuses</option></select>
             </div>
             <div class="details-row details-row--filter">
-              <label for="f-blocker">Blocker</label>
-              <select class="filt" id="f-blocker"><option value="">All blockers</option></select>
+              <label for="f-blocker">Blocked by</label>
+              <select class="filt" id="f-blocker" title="Show what each card is waiting for"><option value="">All blockers</option></select>
             </div>
             <div class="details-row details-row--filter">
               <label for="f-host">Host</label>
@@ -587,7 +587,7 @@
             <div class="details-row details-row--filter">
               <label for="f-date">Date</label>
               <select class="filt" id="f-date"
-                      title="Filter by date proximity (operator TG 440/442)">
+                      title="Show cards by due date">
                 <option value="">All dates</option>
                 <option value="overdue">📅 overdue</option>
                 <option value="today">📅 today</option>
@@ -597,10 +597,10 @@
               </select>
             </div>
             <label class="details-check" for="f-blockingme"
-                   title="Only cards blocked on an operator decision — the 🚧 rows in the legend">
+                   title="Show blocked cards that need your decision">
               <input type="checkbox" id="f-blockingme"
                      onchange="onBlockingMeChange(event)">
-              <span>🚧 blocking me</span>
+              <span>🚧 awaiting your decision</span>
             </label>
             <label class="details-check" for="f-showdone">
               <input type="checkbox" id="f-showdone" onchange="onShowDoneChange(event)">
@@ -684,11 +684,11 @@
             <label for="d-edit-blocker">Blocker</label>
             <select class="d-edit-select" id="d-edit-blocker">
               <option value="">(none)</option>
-              <option value="compute">compute</option>
-              <option value="quota">quota</option>
-              <option value="user-pending">user-pending</option>
-              <option value="task-dependency">task-dependency</option>
-              <option value="operator-decision">operator-decision</option>
+              <option value="compute">Compute</option>
+              <option value="quota">Resource quota</option>
+              <option value="user-pending">Awaiting your response</option>
+              <option value="task-dependency">Task dependency</option>
+              <option value="operator-decision">Awaiting your decision</option>
             </select>
           </div>
         </div>
@@ -1340,11 +1340,16 @@
         `<option value="">All statuses</option>` +
         ["goal", "done", "in_progress", "blocked", "deferred", "failed", "cancelled"]
           .map(s => `<option value="${s}">${s}</option>`).join("");
+      const blockerLabels = {
+        "compute": "Compute", "dependency": "Task dependency", "dep": "Task dependency",
+        "operator-decision": "Awaiting your decision", "agent-wait": "Waiting for an agent",
+        "none": "None",
+      };
       document.getElementById("f-blocker").innerHTML =
         `<option value="">All blockers</option>` +
         ["compute", "dependency", "dep", "operator-decision", "agent-wait", "none"]
-          .map(b => `<option value="${b}">${b}</option>`).join("") +
-        `<option value="__none">no blocker</option>`;
+          .map(b => `<option value="${b}">${blockerLabels[b]}</option>`).join("") +
+        `<option value="__none">No blocker</option>`;
       // P11b rebind — refresh the scitex-ui Combobox layered over each
       // <select.filt> so its item list reflects the freshly-populated
       // option lists. No-op when window.STX.Combobox is unavailable.

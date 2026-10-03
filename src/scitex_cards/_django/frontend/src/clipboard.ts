@@ -1,7 +1,7 @@
 /** Build a copy-to-clipboard text block for one or more tasks.
  *
  * Includes the content (title, note) AND metadata — id, status, priority,
- * repo, parent, dependency edges, comment count, and the store FILE PATH —
+ * repo, parent, dependency edges, and comments —
  * so a pasted card is self-describing. Multiple tasks are separated by `---`.
  */
 
@@ -30,7 +30,6 @@ function formatOne(graph: GraphPayload, id: string): string | null {
     `parent: ${n.parent ?? "-"}`,
     `depends_on: ${dependsOn.length ? dependsOn.join(", ") : "-"}`,
     `blocks: ${blocks.length ? blocks.join(", ") : "-"}`,
-    `file: ${graph.store_path}`,
   ];
   const note = (n.note ?? "").trim();
   if (note && note !== "uncategorized") {
