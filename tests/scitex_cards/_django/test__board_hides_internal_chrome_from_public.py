@@ -68,37 +68,176 @@ def _render(request, *, include_decision=True):
     pytest.param(None, True, False, True, id="debug-fallback"),
 ])
 def test_real_request_gate_controls_footer(override, debug, staff, expected):
+    # Arrange
     request = RequestFactory().get("/apps/cards/board")
     request.user = SimpleNamespace(is_authenticated=True, is_staff=staff)
+    # Act
     with override_settings(DEBUG=debug, SCITEX_UI_ELEMENT_INSPECTOR=override):
         html = _render(request)
+    # Assert
     assert ('<div class="foot">' in html) is expected
+
+
+@pytest.mark.parametrize("override,debug,staff,expected", [
+    pytest.param(False, True, True, False, id="explicit-false-beats-debug-staff"),
+    pytest.param(True, False, False, True, id="explicit-true-with-debug-false"),
+    pytest.param(None, False, True, True, id="authenticated-staff-fallback"),
+    pytest.param(None, False, False, False, id="ordinary-user-default-off"),
+    pytest.param(None, True, False, True, id="debug-fallback"),
+])
+def test_real_request_gate_controls_footer_store_location(override, debug, staff, expected):
+    # Arrange
+    request = RequestFactory().get("/apps/cards/board")
+    request.user = SimpleNamespace(is_authenticated=True, is_staff=staff)
+    # Act
+    with override_settings(DEBUG=debug, SCITEX_UI_ELEMENT_INSPECTOR=override):
+        html = _render(request)
+    # Assert
     assert ('id="store-path"' in html) is expected
+
+
+@pytest.mark.parametrize("override,debug,staff,expected", [
+    pytest.param(False, True, True, False, id="explicit-false-beats-debug-staff"),
+    pytest.param(True, False, False, True, id="explicit-true-with-debug-false"),
+    pytest.param(None, False, True, True, id="authenticated-staff-fallback"),
+    pytest.param(None, False, False, False, id="ordinary-user-default-off"),
+    pytest.param(None, True, False, True, id="debug-fallback"),
+])
+def test_real_request_gate_controls_footer_operator_schema(override, debug, staff, expected):
+    # Arrange
+    request = RequestFactory().get("/apps/cards/board")
+    request.user = SimpleNamespace(is_authenticated=True, is_staff=staff)
+    # Act
+    with override_settings(DEBUG=debug, SCITEX_UI_ELEMENT_INSPECTOR=override):
+        html = _render(request)
+    # Assert
     assert ("operator schema (ADR-0007)" in html) is expected
+
+
+@pytest.mark.parametrize("override,debug,staff,expected", [
+    pytest.param(False, True, True, False, id="explicit-false-beats-debug-staff"),
+    pytest.param(True, False, False, True, id="explicit-true-with-debug-false"),
+    pytest.param(None, False, True, True, id="authenticated-staff-fallback"),
+    pytest.param(None, False, False, False, id="ordinary-user-default-off"),
+    pytest.param(None, True, False, True, id="debug-fallback"),
+])
+def test_real_request_gate_controls_footer_title_action(override, debug, staff, expected):
+    # Arrange
+    request = RequestFactory().get("/apps/cards/board")
+    request.user = SimpleNamespace(is_authenticated=True, is_staff=staff)
+    # Act
+    with override_settings(DEBUG=debug, SCITEX_UI_ELEMENT_INSPECTOR=override):
+        html = _render(request)
+    # Assert
     assert 'id="at-title"' in html
+
+
+@pytest.mark.parametrize("override,debug,staff,expected", [
+    pytest.param(False, True, True, False, id="explicit-false-beats-debug-staff"),
+    pytest.param(True, False, False, True, id="explicit-true-with-debug-false"),
+    pytest.param(None, False, True, True, id="authenticated-staff-fallback"),
+    pytest.param(None, False, False, False, id="ordinary-user-default-off"),
+    pytest.param(None, True, False, True, id="debug-fallback"),
+])
+def test_real_request_gate_controls_footer_assignee_action(override, debug, staff, expected):
+    # Arrange
+    request = RequestFactory().get("/apps/cards/board")
+    request.user = SimpleNamespace(is_authenticated=True, is_staff=staff)
+    # Act
+    with override_settings(DEBUG=debug, SCITEX_UI_ELEMENT_INSPECTOR=override):
+        html = _render(request)
+    # Assert
     assert 'id="at-assignee"' in html
+
+
+@pytest.mark.parametrize("override,debug,staff,expected", [
+    pytest.param(False, True, True, False, id="explicit-false-beats-debug-staff"),
+    pytest.param(True, False, False, True, id="explicit-true-with-debug-false"),
+    pytest.param(None, False, True, True, id="authenticated-staff-fallback"),
+    pytest.param(None, False, False, False, id="ordinary-user-default-off"),
+    pytest.param(None, True, False, True, id="debug-fallback"),
+])
+def test_real_request_gate_controls_footer_status_action(override, debug, staff, expected):
+    # Arrange
+    request = RequestFactory().get("/apps/cards/board")
+    request.user = SimpleNamespace(is_authenticated=True, is_staff=staff)
+    # Act
+    with override_settings(DEBUG=debug, SCITEX_UI_ELEMENT_INSPECTOR=override):
+        html = _render(request)
+    # Assert
     assert 'id="at-status"' in html
+
+
+@pytest.mark.parametrize("override,debug,staff,expected", [
+    pytest.param(False, True, True, False, id="explicit-false-beats-debug-staff"),
+    pytest.param(True, False, False, True, id="explicit-true-with-debug-false"),
+    pytest.param(None, False, True, True, id="authenticated-staff-fallback"),
+    pytest.param(None, False, False, False, id="ordinary-user-default-off"),
+    pytest.param(None, True, False, True, id="debug-fallback"),
+])
+def test_real_request_gate_controls_footer_project_action(override, debug, staff, expected):
+    # Arrange
+    request = RequestFactory().get("/apps/cards/board")
+    request.user = SimpleNamespace(is_authenticated=True, is_staff=staff)
+    # Act
+    with override_settings(DEBUG=debug, SCITEX_UI_ELEMENT_INSPECTOR=override):
+        html = _render(request)
+    # Assert
     assert 'id="at-project"' in html
 
 
 def test_absent_cards_decision_defaults_footer_off():
+    # Arrange
     request = RequestFactory().get("/board")
+    # Act
     with override_settings(DEBUG=True, SCITEX_UI_ELEMENT_INSPECTOR=True):
         html = _render(request, include_decision=False)
+    # Assert
     assert '<div class="foot">' not in html
+
+
+def test_absent_cards_decision_defaults_footer_off_store_location():
+    # Arrange
+    request = RequestFactory().get("/board")
+    # Act
+    with override_settings(DEBUG=True, SCITEX_UI_ELEMENT_INSPECTOR=True):
+        html = _render(request, include_decision=False)
+    # Assert
     assert 'id="store-path"' not in html
 
 
 def test_hidden_footer_retains_safe_javascript_lookup():
+    # Arrange
     request = RequestFactory().get("/board")
+    # Act
     with override_settings(DEBUG=True, SCITEX_UI_ELEMENT_INSPECTOR=False):
         html = _render(request)
+    # Assert
     assert 'const storePath = document.getElementById("store-path");' in html
+
+
+def test_hidden_footer_retains_safe_javascript_lookup_null_guard():
+    # Arrange
+    request = RequestFactory().get("/board")
+    # Act
+    with override_settings(DEBUG=True, SCITEX_UI_ELEMENT_INSPECTOR=False):
+        html = _render(request)
+    # Assert
     assert 'if (storePath) storePath.textContent' in html
+
+
+def test_hidden_footer_retains_safe_javascript_lookup_unguarded_access():
+    # Arrange
+    request = RequestFactory().get("/board")
+    # Act
+    with override_settings(DEBUG=True, SCITEX_UI_ELEMENT_INSPECTOR=False):
+        html = _render(request)
+    # Assert
     assert 'document.getElementById("store-path").textContent' not in html
 
 
 def test_real_sdk_user_failure_hides_diagnostics(caplog):
+    # Arrange
     class UnsupportedUser:
         @property
         def is_authenticated(self):
@@ -106,12 +245,34 @@ def test_real_sdk_user_failure_hides_diagnostics(caplog):
 
     request = RequestFactory().get("/board")
     request.user = UnsupportedUser()
+    # Act
     with override_settings(DEBUG=False, SCITEX_UI_ELEMENT_INSPECTOR=None):
-        assert _helper()(request) is False
+        result = _helper()(request)
+    # Assert
+    assert result is False
+
+
+def test_real_sdk_user_failure_hides_diagnostics_original_log(caplog):
+    # Arrange
+    class UnsupportedUser:
+        @property
+        def is_authenticated(self):
+            raise NotImplementedError("user unavailable on this request")
+
+    request = RequestFactory().get("/board")
+    request.user = UnsupportedUser()
+    # Act
+    with override_settings(DEBUG=False, SCITEX_UI_ELEMENT_INSPECTOR=None):
+        result = _helper()(request)
+    # Assert
     assert "browser diagnostic eligibility unavailable" in caplog.text
 
 
 def test_anonymous_request_defaults_off():
+    # Arrange
     request = RequestFactory().get("/board")
+    # Act
     with override_settings(DEBUG=False, SCITEX_UI_ELEMENT_INSPECTOR=None):
-        assert _helper()(request) is False
+        result = _helper()(request)
+    # Assert
+    assert result is False

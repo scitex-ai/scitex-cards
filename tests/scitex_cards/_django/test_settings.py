@@ -45,24 +45,62 @@ def _source_values(environment):
     pytest.param("TRUE", True, id="upper-true"),
 ])
 def test_present_key_uses_existing_boolean_parser(value, expected):
+    # Arrange
+    # Act
     values = _source_values({"SCITEX_UI_ELEMENT_INSPECTOR": value})
+    # Assert
     assert values["SCITEX_UI_ELEMENT_INSPECTOR"] is expected
+
+
+@pytest.mark.parametrize("value,expected", [
+    pytest.param("false", False, id="lower-false"),
+    pytest.param("False", False, id="mixed-false"),
+    pytest.param("FALSE", False, id="upper-false"),
+    pytest.param("", False, id="empty-present"),
+    pytest.param("0", False, id="zero"),
+    pytest.param("1", False, id="one-is-not-true"),
+    pytest.param("yes", False, id="no-new-yes-parser"),
+    pytest.param(" true ", False, id="no-new-strip-parser"),
+    pytest.param("true", True, id="lower-true"),
+    pytest.param("True", True, id="mixed-true"),
+    pytest.param("TRUE", True, id="upper-true"),
+])
+def test_present_key_uses_existing_boolean_parser_boolean_type(value, expected):
+    # Arrange
+    # Act
+    values = _source_values({"SCITEX_UI_ELEMENT_INSPECTOR": value})
+    # Assert
     assert isinstance(values["SCITEX_UI_ELEMENT_INSPECTOR"], bool)
 
 
 @pytest.mark.parametrize("debug", ["true", "false"])
 def test_absent_key_leaves_setting_absent(debug):
+    # Arrange
+    # Act
     values = _source_values({"DJANGO_DEBUG": debug})
+    # Assert
     assert "SCITEX_UI_ELEMENT_INSPECTOR" not in values
+
+
+@pytest.mark.parametrize("debug", ["true", "false"])
+def test_absent_key_leaves_setting_absent_debug_fallback(debug):
+    # Arrange
+    # Act
+    values = _source_values({"DJANGO_DEBUG": debug})
+    # Assert
     assert values["DEBUG"] is (debug == "true")
 
 
 def test_parsed_false_wins_over_real_debug_and_staff_gate():
+    # Arrange
     values = _source_values({"SCITEX_UI_ELEMENT_INSPECTOR": "False",
                              "DJANGO_DEBUG": "true"})
     request = RequestFactory().get("/board")
     request.user = SimpleNamespace(is_authenticated=True, is_staff=True)
+    # Act
     with override_settings(DEBUG=values["DEBUG"],
                            SCITEX_UI_ELEMENT_INSPECTOR=values.get(
                                "SCITEX_UI_ELEMENT_INSPECTOR")):
-        assert element_inspector_enabled(request) is False
+        result = element_inspector_enabled(request)
+    # Assert
+    assert result is False
