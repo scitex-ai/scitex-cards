@@ -37,10 +37,11 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
-import logging
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+import scitex_logging as slogging
+
+logger = slogging.getLogger(__name__)
 
 #: How many turns in a row one message may block before the hook gives up on
 #: it. Three is a deliberate compromise: one is indistinguishable from a

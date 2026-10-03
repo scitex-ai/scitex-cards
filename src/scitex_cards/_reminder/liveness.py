@@ -14,10 +14,11 @@ sweep state machine) so that module stays under the file-size budget.
 from __future__ import annotations
 
 import datetime as _dt
-import logging
 from typing import Any, Callable
 
-logger = logging.getLogger(__name__)
+import scitex_logging as slogging
+
+logger = slogging.getLogger(__name__)
 
 
 def _owner_liveness(

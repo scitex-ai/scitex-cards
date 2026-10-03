@@ -66,10 +66,11 @@ from whichever population did not match the stamp — measured live on 2026-07-2
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+import scitex_logging as slogging
+
+logger = slogging.getLogger(__name__)
 
 
 def _same_file(a: str | Path, b: str | Path) -> bool:

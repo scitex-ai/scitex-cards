@@ -39,7 +39,6 @@ deployment wiring examples, and the lead-approved Consequences.
 from __future__ import annotations
 
 import importlib.metadata
-import logging
 from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
@@ -50,12 +49,14 @@ from typing import (
     runtime_checkable,
 )
 
+import scitex_logging as slogging
+
 if TYPE_CHECKING:
     # Import-time circular avoidance — Task is the shared payload type;
     # we only need it for static typing here.
     pass
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------

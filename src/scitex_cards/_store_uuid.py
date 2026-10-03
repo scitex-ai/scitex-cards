@@ -44,16 +44,17 @@ merge the two and rule 4b silently becomes "use whatever you were pointed at".
 
 from __future__ import annotations
 
-import logging
 import os
 import re
 import uuid as _uuid_module
 from pathlib import Path
 from typing import Final
 
+import scitex_logging as slogging
+
 from ._store_tx import begin_write_transaction
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: ``schema_meta`` key holding this database's own identity.
 KEY_STORE_UUID: Final[str] = "store_uuid"

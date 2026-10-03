@@ -45,9 +45,9 @@ That ordering is what makes it safe to reason about:
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 __all__ = ["read_doc_tolerating_unreadable_rows"]
 

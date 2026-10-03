@@ -34,12 +34,13 @@ two different answers to "whose card is this".
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Callable, Iterable, Optional
+
+import scitex_logging as slogging
 
 from ._user_row_scope import OWNED_FIELDS
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: The fields a board card renders. Deliberately NOT ``*`` and deliberately not the
 #: payload blob: `note` and `comments[]` are what made the full document 61.6 MB

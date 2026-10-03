@@ -59,12 +59,13 @@ logged to stderr and the guard ALLOWS the stop (exit 0). It fails loud but open.
 from __future__ import annotations
 
 import datetime as _dt
-import logging
 import os
 import sys
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+import scitex_logging as slogging
+
+logger = slogging.getLogger(__name__)
 
 #: Env var naming the current agent (the owner whose claimed work we guard).
 ENV_AGENT = "SCITEX_CARDS_AGENT_ID"
@@ -172,11 +173,10 @@ def main(argv: list[str] | None = None) -> int:
         block, reason = evaluate(agent)
     except Exception as exc:  # noqa: BLE001 — a guard bug must NOT trap the agent
         logger.warning("idle-guard: evaluation failed (%s); allowing stop", exc)
-        print(f"idle-guard: evaluation failed ({exc}); allowing stop", file=sys.stderr)
         return 0
 
     if block:
-        print(reason, file=sys.stderr)
+        logger.warning("%s", reason)
         return 2
     return 0
 

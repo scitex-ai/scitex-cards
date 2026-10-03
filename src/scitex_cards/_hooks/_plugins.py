@@ -54,12 +54,13 @@ from __future__ import annotations
 
 import functools
 import importlib.metadata
-import logging
 import os
 import threading
 from typing import Any, Callable, Iterable
 
-logger = logging.getLogger(__name__)
+import scitex_logging as slogging
+
+logger = slogging.getLogger(__name__)
 
 
 #: Entry-point group external producers register their plugins under.

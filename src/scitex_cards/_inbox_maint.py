@@ -17,8 +17,9 @@ pass (keep the newest unseen digest deliverable, mark the rest seen).
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
+
+import scitex_logging as slogging
 
 from ._inbox import (
     _inboxes_path,
@@ -27,7 +28,7 @@ from ._inbox import (
 )
 from ._model import _store_lock
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 
 def _is_digest(record: dict, *, event_type: str, card_id: str) -> bool:

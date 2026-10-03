@@ -289,9 +289,9 @@ class LocalBackend:
         try:
             touch_user(agent, store=store)
         except Exception:  # noqa: BLE001 — heartbeat must not break the poll
-            import logging
+            import scitex_logging as slogging
 
-            logging.getLogger(__name__).warning(
+            slogging.getLogger(__name__).warning(
                 "poll_notifications: heartbeat failed for %r", agent, exc_info=True
             )
         # Union across keys, de-duplicated by id, first key wins. A record can

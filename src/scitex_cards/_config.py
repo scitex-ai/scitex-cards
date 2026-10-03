@@ -30,14 +30,15 @@ running daemon pick it up on its next tick — no restart.
 
 from __future__ import annotations
 
-import logging
 import os
 from pathlib import Path
 from typing import Any
 
+import scitex_logging as slogging
+
 from ._paths import PKG_SHORT, _find_git_root, _user_root
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: Config file name (in each scope's ``.scitex/cards`` dir).
 CONFIG_NAME = "config.json"

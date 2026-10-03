@@ -49,9 +49,9 @@ def _heartbeat(actor: str | None, store: str | Path | None) -> None:
 
         touch_user(actor, store=store)
     except Exception:  # noqa: BLE001 — heartbeat must never break the write
-        import logging
+        import scitex_logging as slogging
 
-        logging.getLogger(__name__).warning(
+        slogging.getLogger(__name__).warning(
             "heartbeat: failed to stamp last_seen for actor %r",
             actor,
             exc_info=True,
@@ -81,9 +81,9 @@ def _assignee_liveness(
         user = resolve_user(assignee.strip(), store=store)
         return is_alive(user, now=_dt.datetime.now(_dt.timezone.utc))
     except Exception:  # noqa: BLE001 — liveness read must not break the write
-        import logging
+        import scitex_logging as slogging
 
-        logging.getLogger(__name__).warning(
+        slogging.getLogger(__name__).warning(
             "assignee_liveness: failed to classify %r", assignee, exc_info=True
         )
         return {"status": "unknown", "last_seen": None, "age_seconds": None}

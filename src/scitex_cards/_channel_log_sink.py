@@ -30,6 +30,8 @@ import logging
 import os
 from pathlib import Path
 
+import scitex_logging as slogging
+
 __all__ = [
     "ENV_CHANNEL_LOG",
     "install_channel_log_sink",
@@ -82,7 +84,7 @@ def install_channel_log_sink(
     if path is None:
         return None
 
-    logger = logging.getLogger(_PACKAGE_LOGGER)
+    logger = slogging.getLogger(_PACKAGE_LOGGER)
 
     for existing in logger.handlers:
         if getattr(existing, _MARKER, None) == str(path):

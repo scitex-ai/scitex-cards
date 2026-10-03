@@ -11,10 +11,11 @@ and deprecated-env-var tolerance.
 
 from __future__ import annotations
 
-import logging
 import os
 
-logger = logging.getLogger(__name__)
+import scitex_logging as slogging
+
+logger = slogging.getLogger(__name__)
 
 #: Env var carrying the agent identity — same key the rest of the package
 #: uses (``scitex_cards._store.ENV_AGENT``).
