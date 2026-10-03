@@ -8,8 +8,11 @@ import ast
 import inspect
 import json
 import os
+import subprocess
+import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -173,6 +176,45 @@ def test_unresolved_sender_uses_native_http_status(env):
         and payload["status"]["code"] == 400
         and "No DM was persisted" in payload["status"]["message"]
     )
+
+
+def test_first_unresolved_sender_in_fresh_process_emits_only_json(tmp_path):
+    # Arrange
+    code = """
+import json
+from click.testing import CliRunner
+from scitex_cards._cli import main
+result = CliRunner().invoke(main, [
+    "dm", "send", "agent:recipient", "nobody", "--json",
+    "--client-request-id", "req_fresh_identity",
+])
+payload = json.loads(result.output)
+print(json.dumps({"exit_code": result.exit_code, "payload": payload}))
+"""
+    child_env = {
+        "HOME": str(tmp_path),
+        "LANG": "C.UTF-8",
+        "PATH": str(Path(sys.executable).parent) + ":/usr/bin:/bin",
+        "PYTHONPATH": str(Path(subject.__file__).parents[2]),
+        "TMPDIR": str(tmp_path),
+        "TZ": "UTC",
+    }
+    # Act
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=child_env,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    payload = json.loads(result.stdout)
+    # Assert
+    assert (
+        result.returncode,
+        payload["exit_code"],
+        payload["payload"]["status"]["code"],
+        "No DM was persisted" in payload["payload"]["status"]["message"],
+    ) == (0, 1, 400, True)
 
 
 def test_invalid_shared_ledger_target_fails_before_persisting(env):
