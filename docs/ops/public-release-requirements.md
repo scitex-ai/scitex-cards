@@ -309,35 +309,90 @@ environment name only when present, using the existing
 resolution. This presentation eligibility is not authentication, tenancy,
 store-write authority or an authenticated delivery observer.
 
-The first-stage merge does not establish that every browser/shared-leaf
-surface, export/copy flow or working label has been completed. The coherent
-browser follow-up has its own source, build and acceptance evidence. Its
-in-progress source is not evidence of delivery or deployed behavior.
+The browser follow-up has since progressed to delivered source. The current
+merged source is [PR #1059](https://github.com/scitex-ai/scitex-cards/pull/1059),
+commit `dc1a53c587fd7d2fdb5dc90d91304568732fafaf`, tree
+`e7e2faa93df8e12998f86080bd3461729e27e89f`. This includes the preceding
+[PR #1058](https://github.com/scitex-ai/scitex-cards/pull/1058) milestone at
+`88a865d6b6789902a47b66e650c10cbea4fbd78a`, tree
+`966d96d9d4ab589c2fd2cc7dec26172389545b3f`: canonical PostgreSQL DM read-ack
+isolation and quiet load errors in BoardV3 and the React leaf, with the normal
+generated frontend. Ineligible viewers retain a useful generic error lead;
+React retains its real Retry action. Diagnosis requires the existing SDK
+eligibility decision, transported as literal `true`; missing or invalid
+transport is quiet. Machine API error semantics and store fields are retained.
+These bounded changes do not establish every working label or connected workflow.
+
+PR #1059 requires a nonblank explicit store choice or `SCITEX_STORE_DSN` before
+server startup uses the shared resolver. A shared default is not a server
+choice; ordinary non-server resolution is retained. Standalone settings use the
+existing `scitex_app.i18n.i18n_settings()` and `with_locale_middleware()` helpers.
+The declared App minimum is `>=0.26.1`; the required UI minimum remains
+`>=0.11.1`. Hosted CI selected App 0.26.1 and UI 0.23.1. The finite private
+controls retain their recorded source/setup scope; they do not qualify complete
+HTTP routes, rendered Japanese or the current UI runtime.
+
+PR #1058's [natural postmerge tests](https://github.com/scitex-ai/scitex-cards/actions/runs/37134140170)
+succeeded on all three Python jobs at `88a865d6`; each raw summary reports
+7,950 passed, 64 skipped and 4 xfailed. PR #1059's matched premerge matrix also
+succeeded, with 7,968 passed, 64 skipped and 4 xfailed in each raw summary.
+Its [natural postmerge run](https://github.com/scitex-ai/scitex-cards/actions/runs/37137096122)
+at `dc1a53c5` is **not green**: Python 3.11 and 3.13 succeeded, Python 3.12 was
+cancelled after the job's maximum 30-minute execution time, the test workflow
+concluded `cancelled`, and its aggregate failed. All three captured pytest
+summaries report 7,968 passed, 64 skipped and 4 xfailed. Those summaries do not
+override job cancellation or prove post-job cleanup. Quality, docs, import
+smoke and CLA workflows succeeded separately at that exact merged source.
+
+The six normal browser observations remain **UNRUN**: real-fixture BoardV3 entry,
+light mobile, dark mobile with reload, Japanese header, Japanese cookie
+precedence, and the Japanese/theme React leaf at `/legacy`. Source transfer and
+selected private environment readiness are preparation, not a running fixture
+or serving result. A fresh supported same-host managed lease is requested;
+Infra owns the backend/Unix target and managed scope, while Apps owns the normal
+Cards binding, production schema/runtime contract and genuine fixture setup
+through clients. No active fixture is established by this document.
+
+The normal standalone command does not install Django authentication or session
+middleware. Its browser principal falls back to `operator`; a declared Cards
+seed-write actor is separate. The optional board-password cookie provides
+single-password access, not an authenticated Django user/session. The Cards
+user registry and UI project-provider protocol do not establish owning-host
+authentication, project containment or session authority. Normal card events
+enqueue PULL inboxes; separate push callers or actual providers require their
+own legitimate receiver contract. No authenticated delivery observer or new
+SAC, model or harness dependency is introduced by these milestones.
 
 ### Evidence matrix, in the original five-area order
 
 | Requirement area | Current source evidence | Evidence still separate |
 | --- | --- | --- |
-| **1. Persistence** | PR #1056 retains the canonical Board read/build path. Its presentation gate does not choose a store, change persistence or add a write authority. | The old endpoint, 7,122-card count, UUID observation and durability tests are historical. Current restart durability, actual target identity and fork detection need their own current evidence. No UUID risk acceptance is recorded here. |
-| **2. Permissions** | The current package manifest declares `mount_policy.login_required: true`, `audience: "staff"`, `tenant_store: ".scitex/todo/tasks.yaml"`, `tenant_attribute: "scitex_store"` and discarding the `store` query parameter. The merged first stage uses SDK eligibility for the footer and static fallback. | Package declarations do not prove that the deployed Hub consumes or enforces them. Actual mounted-route login/staff behavior, tenant isolation and deployed exposure settings remain distinct evidence. Hiding diagnostics grants no authentication or write permission. |
-| **3. Project linkage** | The manifest declares the server-side tenant attribute and locator. The machine `graph.store_path` field and frontend `GraphPayload.store_path: string` type remain retained; a location is not proof of project ownership. | The 2026-09-10 middleware, containment and `HOME=/root` lane observations are historical. Current Hub project resolution, containment and absence of cross-user/lane leakage require deployed or connected evidence. |
-| **4. Error handling** | The merged static fallback retains the real canonical read/build path and logs failures. Ineligible viewers receive an escaped `StoreUnavailableError.public_summary` or a generic load failure; eligible diagnostics remain available. The machine API error helper is unchanged. | This is bounded footer/fallback coverage, not a claim about every endpoint, all shared-leaf diagnostics or the live fallback. Current served assets, actual normal/error browser behavior and the remaining browser follow-up need matched evidence. |
-| **5. Stable basic workflows** | Exact-head CI and the ordinary merge/pull establish delivery of the bounded first-stage source. The normal browser target remains Hub plus standalone/shared leaf, with CLI/machine behavior preserved. | Historical seeded-store CRUD/DM/timeline/concurrency observations are not replayed as present qualification. Current connected workflows and deployed Hub/standalone behavior need evidence matched to their source and environment. |
+| **1. Persistence** | Current `dc1a53c5` source retains the canonical PostgreSQL Board read/build path. The server-choice refusal prevents startup from silently treating a shared default as its selected store; it grants no write authority. | The old endpoint, 7,122-card count, UUID observation and durability tests are historical. Current restart durability, physical target/schema identity and fork detection need matched evidence. No UUID risk acceptance is recorded here. |
+| **2. Permissions** | The package retains the login/staff/tenant mount declarations. The existing SDK eligibility gate covers the footer, fallback, React store chip/Leaf timing and load-error diagnosis; it is not authentication. | Hub enforcement, actual login/staff behavior, tenant isolation and exposure settings require separate evidence. Normal standalone supplies no authenticated Django user/session; its registry and seed actor do not grant one. |
+| **3. Project linkage** | The server-side tenant attribute/locator and machine `graph.store_path` field/type remain retained. Optional UI project-provider interfaces consume the owning host's accessibility answer; a locator is not project ownership. | Historical middleware/containment/lane observations are not current qualification. Genuine owning-host project resolution, sessions, containment and absence of cross-user/lane leakage remain connected/deployed acceptance. No two-tenant claim is made. |
+| **4. Error handling** | The static fallback retains canonical reads/logs and safe escaped summaries. PR #1058 also gates BoardV3/React load-error diagnosis while preserving useful leads and Retry. The machine API error helper is unchanged. | Isolated renderer/template/compiler and private source controls cover their stated scope. The six normal serving/browser cases are UNRUN; every endpoint and deployed normal/error behavior are not thereby qualified. |
+| **5. Stable basic workflows** | Ordinary merges/pulls deliver the bounded source milestones. PR #1058 includes canonical DM read-ack isolation; PR #1059's source gate and shared locale seam are delivered. CI outcomes are recorded above with the postmerge cancellation intact. | Historical workflow/concurrency evidence and bounded DM/private controls do not establish every public workflow. Current connected persistence, authentication, project and basic workflows plus serving/cleanup/observer acceptance remain separate. |
 
 ### Source references and release boundaries
 
-The merged tree above contains these source references:
+The first-stage references describe its `e4730e07` tree. The following paths
+anchor current merged `dc1a53c5` / `e7e2faa9` source; they do not prove the serving
+incumbent uses this tree:
 
-- `src/scitex_cards/_django/manifest.json`, lines 35–52: mount declarations.
-- `src/scitex_cards/_django/views.py`, lines 91–101 and 348–427:
-  SDK eligibility, BoardV3 context and its shared fallback decision.
-- `src/scitex_cards/_django/views.py`, lines 542–619: unchanged public
-  fallback signature, canonical read/build and escaped presentation.
-- `src/scitex_cards/_django/settings.py`, lines 49–52:
-  presence-only mapping of the existing inspector environment setting.
+- `src/scitex_cards/_django/manifest.json`, lines 35–52: retained mount declarations.
+- `src/scitex_cards/_django/views.py`, line 91: SDK browser eligibility;
+  lines 350–427: BoardV3 context; line 575: safe gated fallback markup.
+- `src/scitex_cards/_django/settings.py`, line 51: presence-only inspector
+  mapping; lines 138 and 160: shared locale settings and middleware.
+- `src/scitex_cards/_store_target.py`, line 251: configured server choice.
+- `src/scitex_cards/_django/_user_scope.py`, line 95: request principal;
+  `_django/settings.py`, lines 122–160: normal apps/middleware.
+- `src/scitex_cards/_django/templates/scitex_cards/board_v3.html`, line 468,
+  and `standalone.html`, line 19: server-derived browser visibility transport.
+- `src/scitex_cards/_django/static/scitex_cards/board_v3/boardStates.js`,
+  line 142, and `frontend/src/CardsBoard.tsx`, line 553: gated error diagnosis.
 - `src/scitex_cards/_django/handlers/graph.py`, line 253, and
-  `src/scitex_cards/_django/frontend/src/types/board.ts`, line 125:
-  retained machine `store_path` field and type.
+  `frontend/src/types/board.ts`, line 125: retained machine store field/type.
 
 The historical suggestion to remove `store_path` from the machine wire is
 not current delivered behavior or a prerequisite introduced by this
