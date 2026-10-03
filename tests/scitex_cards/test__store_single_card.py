@@ -634,6 +634,7 @@ def test_failed_child_encoding_rolls_back_parent_before_caller_commits(
     row_store, row_support, record_property
 ):
     import psycopg
+
     from scitex_cards._mirror_rows import _write_card
 
     # Arrange: no derived comments, so merging cannot reject the bad author
