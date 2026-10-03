@@ -631,22 +631,42 @@ def test_payload_refusal_does_not_expose_private_payload(
 
 
 def test_failed_child_encoding_rolls_back_parent_before_caller_commits(
-    row_store, row_support
+    row_store, row_support, record_property
 ):
+    import psycopg
     from scitex_cards._mirror_rows import _write_card
 
-    # Arrange
+    # Arrange: no derived comments, so merging cannot reject the bad author
+    # before the actual parent write. Its dict remains JSON-serializable.
+    with row_support.connection(row_store) as conn:
+        conn.execute("DELETE FROM task_comments WHERE task_id = ?", ("alpha",))
+        conn.commit()
     expected = row_support.snapshot(row_store)
     value = deepcopy(row_support.card("must-roll-back"))
     value["comments"] = [
         {"author": {"not": "a SQL text value"}, "text": "broken child"}
     ]
-    # Act: deliberately catch a real driver adaptation failure and commit.
+    # Act: catch only the real driver adaptation failure, then commit the
+    # caller transaction to prove the row SAVEPOINT already restored state.
     with row_support.connection(row_store) as conn:
+        observed = row_support.ParentMutationConnection(conn)
         try:
-            _write_card(conn, value, expected_revision=expected["parent"]["revision"])
-        except Exception:
-            pass
+            _write_card(
+                observed, value, expected_revision=expected["parent"]["revision"]
+            )
+        except psycopg.ProgrammingError as error:
+            row_support.require(observed.parent_changed, "parent-mutation-not-observed")
+            row_support.require(
+                "cannot adapt type 'dict'" in str(error),
+                "not-the-expected-dict-adaptation-refusal",
+            )
+            record_property("actual_parent_write_before_error", observed.parent_changed)
+            record_property("child_driver_error_type", type(error).__name__)
+            record_property(
+                "child_driver_error_classification", "dict-adaptation-refused"
+            )
+        else:
+            raise RuntimeError("expected-real-child-adaptation-error-not-observed")
         conn.commit()
     # Assert
     assert row_support.snapshot(row_store) == expected
