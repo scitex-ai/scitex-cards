@@ -89,7 +89,7 @@ dependencies = [
     # SDK), so below the floor the pages degrade to the static-graph fallback
     # and the rich-board rendering tests fail — the silent wrong-board shape
     # the migration gate (test__board_shell_migration.py) exists to surface.
-    "scitex-app>=0.24.0",
+    "scitex-app>=0.26.1",
     # >=0.11.1 is MEASURED, not aspirational -- see the note in the `dev`
     # extra below for what breaks at 0.7.1 and why presence is not currency.
     "scitex-ui>=0.11.1",
