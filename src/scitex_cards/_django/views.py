@@ -318,6 +318,7 @@ def board_page(request):
     """Serve the React SPA inside the scitex-ui shell, or a static fallback."""
     from django.template.loader import render_to_string
 
+    internal_chrome = _cards_internal_chrome_enabled(request)
     built = (_STATIC_DIR / "assets" / "index.js").exists()
 
     if built:
@@ -329,6 +330,7 @@ def board_page(request):
             # same number board_v3 and the DM page print, from the same
             # reader — a bundle that hard-coded it would go stale silently.
             context["scitex_cards_version"] = _cards_version()
+            context["cards_internal_chrome_enabled"] = internal_chrome
             html = render_to_string(
                 "scitex_cards/standalone.html",
                 # DISPLAY string only (operator TG 2026-07-13). ``app_name``
@@ -342,7 +344,7 @@ def board_page(request):
             logger.exception("[scitex-cards] shell render failed; using fallback")
 
     # Fallback: server-rendered static graph (no Node/Vite build available).
-    return HttpResponse(_static_graph_page(request))
+    return HttpResponse(_render_static_graph_page(request, internal_chrome))
 
 
 def board_v3_page(request, *, _announce=None):

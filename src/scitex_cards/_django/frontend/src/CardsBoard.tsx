@@ -63,7 +63,7 @@ function ViewToggle() {
         }`}
         onClick={() => setView("recent")}
         aria-pressed={view === "recent"}
-        title="Recent — newest-first triage (operator TG 513)"
+        title="Recent — review the newest tasks first"
       >
         Recent
       </button>
@@ -74,7 +74,7 @@ function ViewToggle() {
         }`}
         onClick={() => setView("calendar")}
         aria-pressed={view === "calendar"}
-        title="Calendar — month grid by deadline / last_activity (operator TG 13295)"
+        title="Calendar — browse tasks by deadline or latest activity"
       >
         📅 Calendar
       </button>
@@ -88,7 +88,7 @@ function ViewToggle() {
         }`}
         onClick={() => setView("timeline")}
         aria-pressed={view === "timeline"}
-        title="Time View — live raster timeline of the whole fleet (operator-direct ask, lead a2a d0f7a0e3)"
+        title="Time View — follow activity across the fleet"
       >
         ⏱ Time
       </button>
@@ -193,7 +193,7 @@ function Progress({ graph }: { graph: GraphPayload }) {
       {awaitingOperator > 0 && (
         <span
           className="stx-cards-progress__chip stx-cards-progress__chip--awaiting-operator"
-          title="Decision nodes awaiting the operator (kind=decision, status=blocked, blocker=operator-decision). Click a node to open its ADR (adr.md)."
+          title="Awaiting your decision. Open a task to review the request."
         >
           👤 awaiting you {awaitingOperator}
         </span>
@@ -497,7 +497,9 @@ function CountBreakdown({ graph }: { graph: GraphPayload }) {
   );
 }
 
-export function CardsBoard() {
+export function CardsBoard({ internalChromeEnabled = false }: {
+  internalChromeEnabled?: boolean;
+}) {
   const { graph, loading, error, load } = useBoardStore();
   const view = useBoardStore((s) => s.view);
 
@@ -525,7 +527,9 @@ export function CardsBoard() {
   // version, which project" is exactly what a reader needs WHEN something is
   // broken — hiding the identity on a failed load hides it at the moment it
   // matters most, and the operator's report was an unidentified leaf.
-  const band = <LeafHeader graph={graph} />;
+  const band = (
+    <LeafHeader graph={graph} internalChromeEnabled={internalChromeEnabled} />
+  );
 
   // THREE STATES, EACH NAMED. The page used to answer all of them with the
   // same bare sentence — "Loading task graph…" / "No graph." — which reads as
@@ -587,7 +591,7 @@ export function CardsBoard() {
        * It sits ABOVE the board's own header on purpose: the band identifies
        * the APP (the operator's "no Cards leaf title/version/project picker"),
        * the header below identifies the VIEW and the current store. */}
-      <LeafHeader graph={graph} />
+      <LeafHeader graph={graph} internalChromeEnabled={internalChromeEnabled} />
       <header className="stx-cards-board__header">
         {/* "Board" region hint — operator UX 2026-06-06: "canvas/drill/pool/
          * table/board とか UI 上にヒント的に書いておいて" — pairs with the
@@ -603,9 +607,11 @@ export function CardsBoard() {
         >
           Board
         </span>
-        <span className="stx-cards-board__meta">
-          <code>{graph.store_path}</code>
-        </span>
+        {internalChromeEnabled && (
+          <span className="stx-cards-board__meta">
+            <code>{graph.store_path}</code>
+          </span>
+        )}
         <CountBreakdown graph={graph} />
         <Progress graph={graph} />
         {/* Fleet CI-status pills (Phase 1 of FLEET DASHBOARD vision —
