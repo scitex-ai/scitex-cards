@@ -290,3 +290,22 @@ def enrollment_while_paused(dsn, client, record_property):
     require(
         not thread.is_alive() and state["error"] is None, "enrollment-client-failed"
     )
+
+
+class ParentMutationConnection:
+    """Observe successful real parent writes without changing driver results."""
+
+    def __init__(self, conn):
+        self.conn = conn
+        self.parent_changed = False
+
+    def execute(self, sql, params=()):
+        cursor = self.conn.execute(sql, params)
+        if (
+            sql.startswith("UPDATE tasks SET ") or sql.startswith("INSERT INTO tasks ")
+        ) and cursor.rowcount == 1:
+            self.parent_changed = True
+        return cursor
+
+    def __getattr__(self, name):
+        return getattr(self.conn, name)
