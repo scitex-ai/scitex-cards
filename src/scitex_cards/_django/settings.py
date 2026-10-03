@@ -46,6 +46,11 @@ BOARD_PASSWORD = os.environ.get("SCITEX_CARDS_PASSWORD", "").strip()
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 
+if "SCITEX_UI_ELEMENT_INSPECTOR" in os.environ:
+    SCITEX_UI_ELEMENT_INSPECTOR = (
+        os.environ["SCITEX_UI_ELEMENT_INSPECTOR"].lower() == "true"
+    )
+
 ALLOWED_HOSTS = ["127.0.0.1", "localhost", "0.0.0.0"]
 
 if PUBLIC_HOST:

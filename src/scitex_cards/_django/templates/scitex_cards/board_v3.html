@@ -630,10 +630,12 @@
     </aside>
   </div>
 
+  {% if cards_internal_chrome_enabled %}
   <div class="foot">
     <span>v3 LIVE · real data · operator schema (ADR-0007) · GUI→code (ADR-0006)</span>
     <span><code id="store-path">…</code></span>
   </div>
+  {% endif %}
 
   <div class="detail-backdrop" id="detail-backdrop" onclick="closeDetail(event)">
     <div class="detail" onclick="event.stopPropagation()">
@@ -970,7 +972,8 @@
           return;
         }
         const _scrollSnap = preserveScroll ? captureScroll() : null;
-        document.getElementById("store-path").textContent = STATE.graph.store_path || "—";
+        const storePath = document.getElementById("store-path");
+        if (storePath) storePath.textContent = STATE.graph.store_path || "—";
         // A zero-card payload gets a SENTENCE, not a blank canvas. After
         // store-path is set, so the footer still names WHICH store answered —
         // "no cards visible" plus the store identity is a diagnosis; the same
