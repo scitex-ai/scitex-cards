@@ -187,9 +187,9 @@ def comment_task(
             entry_points=entry_points,
         )
     except Exception:  # noqa: BLE001 — bus must not break comment_task
-        import logging
+        import scitex_logging as slogging
 
-        logging.getLogger(__name__).warning(
+        slogging.getLogger(__name__).warning(
             "comment_task: card-message bus dispatch failed for %r",
             task_id,
             exc_info=True,

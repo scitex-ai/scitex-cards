@@ -72,9 +72,10 @@ fine for ``mark_read``; it would NOT be fine for ``append_message``.
 
 from __future__ import annotations
 
-import logging
 import secrets
 from pathlib import Path
+
+import scitex_logging as slogging
 
 from . import _threads_mirror as _mirror
 from ._dm.ids import pair_thread_id, peers_of_pair
@@ -86,7 +87,7 @@ from ._paths import local_store_path
 #: resolving for callers and for the tests that monkeypatch them.
 from ._threads_io import _save_threads_unlocked, _threads_lock  # noqa: F401
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: Sidecar filename, sibling of the resolved task store.
 THREADS_FILENAME = "threads.json"

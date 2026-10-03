@@ -332,7 +332,9 @@ def _main(argv: list[str] | None = None) -> int:
         message = _read(rest[1] if len(rest) > 1 else None)
         card_id = resolve_card_id(branch, message)
         if card_id:
-            print(card_id)
+            import scitex_logging as slogging
+
+            slogging.getPlainConsole(__name__).emit(card_id)
         return 0
 
     if mode == "emit-event":

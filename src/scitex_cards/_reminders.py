@@ -58,10 +58,11 @@ Design
 from __future__ import annotations
 
 import datetime as _dt
-import logging
 import os
 from pathlib import Path
 from typing import Any, Callable
+
+import scitex_logging as slogging
 
 from ._reminder.bodies import (
     DIGEST_CARD_CAP,
@@ -69,6 +70,7 @@ from ._reminder.bodies import (
     _digest_body,
     _escalation_body,
 )
+from ._reminder.cadence import resolve_owner_interval
 from ._reminder.enqueue import (
     _digest_fingerprint,
     _floor_minutes,
@@ -77,11 +79,10 @@ from ._reminder.enqueue import (
     _safe_resolve,
 )
 from ._reminder.liveness import _card_creator, _owner_liveness
-from ._reminder.cadence import resolve_owner_interval
 from ._stale.active import detect_pending_backlog, detect_stale_active
 from ._throughput import _now_utc, _parse_iso
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: Sidecar file (sibling of ``tasks.yaml``) holding the reminder state.
 REMINDER_SIDECAR_NAME = "reminders.yaml"

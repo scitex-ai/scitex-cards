@@ -27,8 +27,9 @@ separation of concerns:
 from __future__ import annotations
 
 import datetime as _dt
-import sys
 from pathlib import Path
+
+import scitex_logging as slogging
 
 from .._inbox import poll_inbox
 from .._inbox_confirm import recipient_keys
@@ -78,7 +79,7 @@ def _drop_superseded_snapshots(notes: list[dict]) -> list[dict]:
 
 def _warn(msg: str) -> None:
     """Surface a per-item delivery fault to stderr (fail-loud)."""
-    print(f"[scitex-cards delivery] WARNING: {msg}", file=sys.stderr)
+    slogging.getLogger(__name__).warning("[scitex-cards delivery] %s", msg)
 
 
 def _resolve_channels(

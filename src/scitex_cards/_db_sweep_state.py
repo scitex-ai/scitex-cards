@@ -61,10 +61,11 @@ observable behaviour matches the file version, and a peer can still tell
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+import scitex_logging as slogging
+
+logger = slogging.getLogger(__name__)
 
 #: Scope values. These are the two sidecars that used to exist.
 SCOPE_REMINDERS = "reminders"

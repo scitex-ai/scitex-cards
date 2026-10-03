@@ -19,6 +19,7 @@ import json
 import sys
 
 import click
+import scitex_logging as slogging
 
 from .._may_stop import may_stop
 
@@ -54,7 +55,7 @@ def may_stop_cmd(agent):
         + (f" (idle {idle}s)" if idle is not None else "")
         + " — an agent does not stop while the board holds work:"
     )
-    print("\n".join([header, *lines]), file=sys.stderr)
+    slogging.getLogger(__name__).warning("%s", "\n".join([header, *lines]))
     sys.exit(2)
 
 

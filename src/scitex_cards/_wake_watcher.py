@@ -53,7 +53,6 @@ from __future__ import annotations
 
 import fcntl
 import json
-import logging
 import os
 import time
 import urllib.error
@@ -62,7 +61,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional, TextIO
 
-logger = logging.getLogger(__name__)
+import scitex_logging as slogging
+
+logger = slogging.getLogger(__name__)
 
 # Anti-spiral defaults (incident-cards-wake-watcher-interval2-spiral-20260708).
 # A 2s interval re-parsed the ~9 MB / ~930-card store faster than the tick

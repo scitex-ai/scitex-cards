@@ -32,15 +32,15 @@ from __future__ import annotations
 
 import datetime
 import json
-import logging
 import os
 from collections import defaultdict
 
+import scitex_logging as slogging
 from django.http import JsonResponse
 
 from ..._comment_ids import stamp_comment_id
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 
 #: A SECOND COPY of `_cli/_stale.py`'s `_DEFAULT_DAYS`. Same number, no shared

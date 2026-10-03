@@ -32,10 +32,11 @@ is a filename. The store itself is reached through :func:`connect` /
 
 from __future__ import annotations
 
-import logging
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+import scitex_logging as slogging
 
 from ._db_dm_schema import DM_TABLES as _DM_TABLES
 from ._db_migrations import table_columns
@@ -43,7 +44,7 @@ from ._db_migrations import table_columns
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ._backend_connect import StoreConnection
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: Historical filename for the retired file-backed store, kept because sidecar
 #: resolution still names it (snapshots and exports sit beside it). It is NOT a

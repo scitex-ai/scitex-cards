@@ -34,6 +34,8 @@ dependencies = [
     "click",
     "ruamel.yaml",
     "scitex_config",
+    # Levelled diagnostics and the byte-preserving CLI protocol console.
+    "scitex-logging>=0.2.2",
     # PROMOTED FROM THE `postgres` EXTRA, 2026-08-02, by this test (scitex-dev):
     # WHEN THIS IS MISSING, DOES THE FAILURE NAME ITSELF?
     #

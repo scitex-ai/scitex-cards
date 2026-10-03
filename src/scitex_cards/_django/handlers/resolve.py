@@ -20,15 +20,15 @@ publish or fail-noisily.
 from __future__ import annotations
 
 import datetime
-import logging
 import os
 
+import scitex_logging as slogging
 from django.http import JsonResponse
 
 from ..._comment_ids import stamp_comment_id
 from .crud import _parse_body
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 
 def handle_resolve(request, board):
