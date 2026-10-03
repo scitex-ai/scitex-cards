@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 from django.conf import settings
 from django.template import Engine, RequestContext
+from django.template.backends.django import get_installed_libraries
 from django.test import RequestFactory, override_settings
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -45,7 +46,7 @@ def _render(request, *, include_decision=True):
     engine = Engine(
         dirs=[TEMPLATES, Path(scitex_app.__file__).parent / "templates",
               Path(scitex_ui.__file__).parent / "templates"],
-        libraries={"static": "django.templatetags.static"},
+        libraries=get_installed_libraries(),
         context_processors=["scitex_ui.context_processors.element_inspector"],
     )
     context = {"api_base": "/apps/cards/", "app_name": "scitex-cards",
