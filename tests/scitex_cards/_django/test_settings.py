@@ -15,7 +15,7 @@ from django.http import HttpResponse
 from django.test import RequestFactory, override_settings
 from django.utils import translation
 from django.utils.module_loading import import_string
-from scitex_ui.context_processors import element_inspector_enabled
+from scitex_sdk.ui.context_processors import element_inspector_enabled
 
 SOURCE = (Path(__file__).resolve().parents[3] /
           "src/scitex_cards/_django/settings.py")
@@ -114,7 +114,7 @@ def _locale_source_values():
     """Execute only the actual shared-language and middleware declarations."""
     tree = ast.parse(SOURCE.read_text(), filename=str(SOURCE))
     nodes = [node for node in tree.body if (
-        isinstance(node, ast.ImportFrom) and node.module == "scitex_app.i18n"
+        isinstance(node, ast.ImportFrom) and node.module == "scitex_sdk.app.i18n"
     ) or (
         isinstance(node, ast.Assign) and any(
             isinstance(target, ast.Name) and target.id == "MIDDLEWARE"

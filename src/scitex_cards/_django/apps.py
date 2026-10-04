@@ -12,7 +12,7 @@ only a degraded-install guard, not a supported configuration).
 
 try:
     from scitex_sdk.app._django import ScitexAppConfig
-except ImportError:  # scitex-app not installed — standalone still works
+except ImportError:  # scitex-sdk not installed — standalone still works
     from django.apps import AppConfig as ScitexAppConfig
 
 

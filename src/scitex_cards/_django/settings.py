@@ -174,11 +174,11 @@ TEMPLATES = [
     },
 ]
 
-# Enable the scitex-ui Alt+I element inspector (DEBUG/staff-gated) on the
+# Enable the SDK Alt+I element inspector (DEBUG/staff-gated) on the
 # board. The shell template already includes the partial; this context
 # processor sets the gating flag it checks. Guard on the module actually
-# existing (scitex-ui>=0.5.0) rather than just scitex-ui being installed,
-# so an older scitex-ui degrades gracefully instead of raising on import.
+# existing rather than just scitex-sdk being installed, so an older SDK
+# degrades gracefully instead of raising on import.
 if importlib.util.find_spec("scitex_sdk.ui.context_processors") is not None:
     TEMPLATES[0]["OPTIONS"]["context_processors"].append(
         "scitex_sdk.ui.context_processors.element_inspector"

@@ -1312,6 +1312,6 @@ def _host_picker_available() -> bool:
     """
     try:
         from scitex_sdk.ui.project_scope import host_project_provider_url
-    except ImportError:  # older scitex-ui: no provider API, so no host picker
+    except ImportError:  # SDK predating provider API: no host picker
         return False
     return bool(host_project_provider_url())
