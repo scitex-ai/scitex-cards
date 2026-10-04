@@ -34,6 +34,8 @@ dependencies = [
     "click",
     "ruamel.yaml",
     "scitex_config",
+    # Levelled diagnostics and the byte-preserving CLI protocol console.
+    "scitex-logging>=0.2.2",
     # PROMOTED FROM THE `postgres` EXTRA, 2026-08-02, by this test (scitex-dev):
     # WHEN THIS IS MISSING, DOES THE FAILURE NAME ITSELF?
     #
@@ -103,16 +105,6 @@ dependencies = [
     # and this line must not outlive that decision.
     "fastmcp>=2.0,<4",
     "pydantic>=2,<3",
-    # The mandated output transport. PS-220 (source-uses-print-not-scitex-
-    # logging) requires every human-facing record in shippable source to go
-    # through scitex-logging, so `import scitex_logging as slogging` is
-    # unguarded module-level code on the package's core paths — a hard
-    # requirement, not an optional capability, and PS-233 requires an unguarded
-    # import to resolve from `[project.dependencies]` rather than an extra.
-    # Floor >=0.2.0 is MEASURED: the version the PS-220 pass (~70 modules
-    # acquiring their logger via `scitex_logging.getLogger` at module top)
-    # was built and tested against.
-    "scitex-logging>=0.2.0",
 ]
 
 [project.optional-dependencies]
