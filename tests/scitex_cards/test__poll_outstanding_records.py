@@ -32,10 +32,12 @@ either, and is safe to land alongside it.
 from __future__ import annotations
 
 import os
+import json
 
 import pytest
 
-from scitex_cards._inbox_receipt import outstanding_records_off_page
+from scitex_cards._inbox_receipt import _file_receipts, outstanding_records_off_page
+from scitex_cards._inbox_record import NOTIFICATION_RECORD_KEYS, notification_record
 
 # ===========================================================================
 # LAYER 1 — HERMETIC: the pure helper
@@ -254,3 +256,71 @@ def test_confirming_moves_it_out_of_outstanding(postgres_mode, _DSN):
 
 
 # EOF
+
+
+@pytest.fixture(params=[
+    ("reminder", "(digest)", "未完了カード c1 — café", "notifyd", None, None),
+    ("stale-active", "(stale-active)", "STALE-ACTIVE: c1 を確認", "notifyd", None, None),
+    ("commented", "c1", "", None, None, None),
+    ("dm", "c1", "元の DM 本文", "peer", "m_fixture", "xch_fixture"),
+])
+def file_recovery_payload(tmp_path, request):
+    """Actual file receipt projection, never a PostgreSQL qualification fixture."""
+    kind, card_id, body, actor, msg_id, exchange_id = request.param
+    record = notification_record(
+        id="n_file_payload", event_type=kind, card_id=card_id, body=body,
+        actor=actor, ts="2026-10-03T03:09:00Z", seen=True,
+        msg_id=msg_id, exchange_id=exchange_id,
+    )
+    record.update(pushed_at="2026-10-03T03:10:00Z", confirmed_at=None)
+    sidecar = tmp_path / "inboxes.json"
+    sidecar.write_text(json.dumps({"inboxes": {"file-owner": [record],
+        "other-owner": [dict(record, id="n_other")]}}), encoding="utf-8")
+    expected = {key: record.get(key) for key in NOTIFICATION_RECORD_KEYS}
+    expected.update(pushed_at=record["pushed_at"], confirmed_at=None)
+    yield tmp_path / "tasks.yaml", sidecar, expected
+
+
+def test_file_projection_reaches_outstanding_with_original_payload(
+    file_recovery_payload,
+):
+    # Arrange
+    store, _sidecar, expected = file_recovery_payload
+    records = _file_receipts("file-owner", store)
+    # Act
+    outstanding = outstanding_records_off_page(
+        [], [expected["id"]], {row["id"]: row for row in records},
+        rotate=lambda row: row,
+    )
+    # Assert
+    assert outstanding == [expected]
+
+
+def test_file_projection_supplies_original_linkage_to_rotation(file_recovery_payload):
+    # Arrange
+    store, _sidecar, expected = file_recovery_payload
+    records = _file_receipts("file-owner", store)
+    observed = []
+
+    def rotate(row):
+        observed.append((row.get("msg_id"), row.get("exchange_id")))
+        return row
+
+    # Act
+    outstanding_records_off_page(
+        [], [expected["id"]], {row["id"]: row for row in records}, rotate=rotate,
+    )
+    # Assert
+    assert observed == [(expected["msg_id"], expected["exchange_id"])]
+
+
+def test_file_projection_reads_leave_input_bytes_unchanged(file_recovery_payload):
+    # Arrange
+    store, sidecar, _expected = file_recovery_payload
+    before = sidecar.read_bytes()
+    # Act
+    _file_receipts("file-owner", store)
+    _file_receipts("file-owner", store)
+    # Assert
+    assert sidecar.read_bytes() == before
+

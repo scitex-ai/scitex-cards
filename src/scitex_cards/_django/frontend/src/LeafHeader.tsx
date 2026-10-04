@@ -43,7 +43,10 @@ function appVersion(): string {
   return version === "?" ? "" : version;
 }
 
-export function LeafHeader({ graph }: { graph?: GraphPayload | null }) {
+export function LeafHeader({ graph, internalChromeEnabled = false }: {
+  graph?: GraphPayload | null;
+  internalChromeEnabled?: boolean;
+}) {
   const activeRepos = useBoardStore((s) => s.activeRepos);
   const setRepos = useBoardStore((s) => s.setRepos);
   const [timings, setTimings] = useState<LeafTiming[]>(() => readTimings());
@@ -99,7 +102,7 @@ export function LeafHeader({ graph }: { graph?: GraphPayload | null }) {
           ))}
         </select>
       </label>
-      {timings.length > 0 && (
+      {internalChromeEnabled && timings.length > 0 && (
         <span
           className="stx-cards-leaf__timings"
           title="Milliseconds since navigation start: bundle evaluated, first /graph applied, board painted"

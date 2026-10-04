@@ -213,16 +213,13 @@ def deliver(
     """
     if timeout is None:
         timeout = _default_timeout_s()
-    # Dev / test escape hatch. PS-220: this is library diagnostics, not a
-    # product line — it goes through the logger (stderr) so the importing
-    # caller keeps control of the stream, level and capture.
+    # Explicit dev/test dry-run output preserves the published stdout rail.
+    # getConsole keeps canonical logging formatting; normal diagnostics and
+    # transport failures below still use the module stderr logger.
     if os.environ.get(ENV_DRY_RUN) == "1":
-        logger.info(
-            "\n=== scitex-cards PUSH dry-run → %s (%s) ===\n%s\n=== end %s ===\n",
-            agent,
-            kind,
-            body,
-            agent,
+        slogging.getConsole(f"{__name__}.dry_run").info(
+            f"\n=== scitex-cards PUSH dry-run → {agent} ({kind}) ===\n"
+            f"{body}\n=== end {agent} ===\n",
         )
         return {
             "ok": True,

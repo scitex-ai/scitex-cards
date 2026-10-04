@@ -142,6 +142,14 @@ def send_cmd(
         return
     confirm_or_abort(f"Persist a DM to {recipient!r}?", assume_yes=assume_yes)
     try:
+        if sender is None:
+            from .._channel_identity import resolve_agent_id
+            from .._messaging import AgentIdentityUnresolved
+
+            try:
+                resolve_agent_id()
+            except RuntimeError as exc:
+                raise AgentIdentityUnresolved(str(exc)) from exc
         import scitex_cards
 
         record = scitex_cards.dm_send(

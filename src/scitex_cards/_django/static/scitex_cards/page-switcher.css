@@ -3,64 +3,63 @@
  * Markup: templates/scitex_cards/_page_switcher.html (one partial, both
  * pages), so the two surfaces cannot drift into two different switchers.
  *
- * VISUAL LANGUAGE: deliberately the same segmented control the board already
- * uses for its Layout axis (`.filt-layout-seg` / `.filt-layout-btn` in
- * board_v3/06-layout-and-recent.css) — 1px hairline, 8px radius, transparent
- * items, filled active item. The operator already reads that shape as "pick
- * one of these", so the page switcher borrows it rather than inventing a
- * second idiom.
- *
- * Every value comes from released scitex-ui theme tokens. Workspace-prefixed
- * tokens are intentional: the legacy board still defines private generic
- * names such as --text-muted, and must not shadow this shared navigation.
- */
+ /* VISUAL LANGUAGE (operator choice B, CCT1758): prominent top tabs shared by
+  * both Cards surfaces — Board | DM as equal tabs with a straight accent
+  * underline on the active one, the same idiom as the Fig/Writer/Scholar
+  * mobile tabs. No filled box, no card highlight: the underline alone marks
+  * the current page. Previously the segmented control borrowed from the
+  * board's Layout axis; that read as a small inline switch, not top-level
+  * navigation.
+  *
+  * Every value comes from released scitex-ui theme tokens. Workspace-prefixed
+  * tokens are intentional: the legacy board still defines private generic
+  * names such as --text-muted, and must not shadow this shared navigation.
+  */
 
-.stx-cards-switcher {
-  --sw-line: var(--workspace-border-default);
-  --sw-surface: var(--workspace-bg-primary);
-  --sw-fg: var(--workspace-text-secondary);
-  --sw-fg-on: var(--text-inverse);
-  --sw-surface-on: var(--app-accent-todo);
-  --sw-hover: var(--app-accent-todo-tint);
+ .stx-cards-switcher {
+   --sw-fg: var(--workspace-text-secondary);
+   --sw-fg-on: var(--workspace-text-primary);
+   --sw-accent: var(--app-accent-todo);
+   --sw-hover: var(--app-accent-todo-tint);
 
-  display: inline-flex;
-  flex: 0 0 auto;
-  border: 1px solid var(--sw-line);
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--sw-surface);
-}
+   display: flex;
+   flex: 1 1 auto;
+   gap: 4px;
+   background: transparent;
+ }
 
-.stx-cards-switcher__item {
-  display: flex;
-  align-items: center;
-  /* min-height keeps the tap target usable on a phone; the operator reads
-   * this board on an iPhone. */
-  min-height: 32px;
-  padding: 4px 12px;
-  border-right: 1px solid var(--sw-line);
-  color: var(--sw-fg);
-  font: inherit;
-  font-size: 0.82rem;
-  text-decoration: none;
-  white-space: nowrap;
-  transition:
-    background 100ms ease,
-    color 100ms ease;
-}
+ .stx-cards-switcher__item {
+   display: flex;
+   flex: 1 1 0;
+   align-items: center;
+   justify-content: center;
+   /* 44px floor: the operator reads this board on an iPhone, and phone
+    * tabs must not go below the platform target. */
+   min-height: 44px;
+   padding: 8px 16px;
+   border: 0;
+   border-bottom: 2px solid transparent;
+   border-radius: 0;
+   color: var(--sw-fg);
+   font: inherit;
+   font-size: 0.95rem;
+   font-weight: 500;
+   text-decoration: none;
+   white-space: nowrap;
+   transition:
+     color 100ms ease,
+     box-shadow 100ms ease;
+ }
 
-.stx-cards-switcher__item:last-child {
-  border-right: 0;
-}
-
-.stx-cards-switcher__item:hover {
-  background: var(--sw-hover);
-  color: var(--sw-fg-on);
-}
+ .stx-cards-switcher__item:hover {
+   background: var(--sw-hover);
+   color: var(--sw-fg-on);
+ }
 
 .stx-cards-switcher__item--on,
 .stx-cards-switcher__item--on:hover {
-  background: var(--sw-surface-on);
+  background: transparent;
+  border-bottom-color: var(--sw-accent);
   color: var(--sw-fg-on);
   font-weight: 700;
 }
@@ -68,7 +67,7 @@
 /* Keyboard focus must stay visible on both pages (the board's global reset
  * does not style :focus-visible for anchors). */
 .stx-cards-switcher__item:focus-visible {
-  outline: 2px solid var(--sw-surface-on);
+  outline: 2px solid var(--sw-accent);
   outline-offset: -2px;
 }
 
@@ -96,13 +95,14 @@
   text-align: center;
 }
 
-/* Phone: Apple HIG tap targets. Same 768px breakpoint the board's
- * 05-responsive.css uses, so the two agree on what "phone" means. */
+/* Phone: same prominent tabs (44px floor already in the base rule).
+ * Same 768px breakpoint the board's 05-responsive.css uses, so the two
+ * agree on what "phone" means. */
 @media (max-width: 768px) {
   .stx-cards-switcher__item {
-    min-height: 40px;
-    padding: 8px 14px;
-    font-size: 0.9rem;
+    min-height: 44px;
+    padding: 8px 10px;
+    font-size: 0.95rem;
   }
 
   .stx-cards-switcher__label-full {

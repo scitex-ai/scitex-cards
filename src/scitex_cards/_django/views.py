@@ -88,6 +88,19 @@ def _store_error_body(exc: Exception) -> str:
     return f"Cannot read the task store: {exc}"
 
 
+def _cards_internal_chrome_enabled(request) -> bool:
+    """Use the optional UI SDK's request eligibility for browser diagnostics."""
+    try:
+        from scitex_ui.context_processors import element_inspector_enabled
+
+        return element_inspector_enabled(request) is True
+    except Exception:  # noqa: BLE001 - unsupported optional UI hides diagnostics
+        logger.warning(
+            "[scitex-cards] browser diagnostic eligibility unavailable", exc_info=True
+        )
+        return False
+
+
 _STATIC_DIR = Path(__file__).resolve().parent / "static" / "scitex_cards"
 _FAVICON_PATH = _STATIC_DIR / "favicon.svg"
 
@@ -136,6 +149,90 @@ _BOARD_ALIASES = ("board-v3", "board")
 _DM_ALIASES = ("chat", "dm")
 
 
+def _project_picker_library_registered() -> bool:
+    """True when ``{% load scitex_project_picker %}`` can resolve here.
+
+    The check reads the ENGINE's registry rather than asking whether some module
+    imports, because that registry is exactly what ``{% load %}`` consults — and
+    ``{% load %}``ing a library that is not installed is a hard
+    ``TemplateSyntaxError`` raised while the template COMPILES. No runtime flag
+    inside the template can rescue a page that loads the library at its own top
+    level; the only graceful degradation is to not compile it at all, which is
+    why the load lives in ``_project_picker.html`` and every caller reaches that
+    partial through an ``{% include %}`` guarded by this answer.
+
+    scitex-ui ships the library from 0.22.0 onwards. Measured 2026-09-27 against
+    the wheel: 0.20.2 has no ``templatetags/scitex_project_picker.py`` and no
+    ``scitex_ui.project_scope`` at all, while 0.22.0 and 0.23.1 ship both.
+    """
+    from django.template import engines
+
+    return "scitex_project_picker" in engines["django"].engine.template_libraries
+
+
+def _host_project_provider_registered() -> bool:
+    """True when a HOST registered a project provider with the SDK.
+
+    Imported defensively and answered False on every failure: an scitex-ui that
+    predates the project-scope API, and a host that configured no provider, are
+    both deployments this board must still serve (the same graceful-degradation
+    rule ``settings.py`` applies to the element inspector). ``host_project_provider_url``
+    reads settings and reverses a URL name, so it can raise for reasons that are
+    the host's, not ours.
+    """
+    try:
+        from scitex_ui.project_scope import host_project_provider_url
+    except ImportError:  # older scitex-ui: no provider API, so no host picker
+        return False
+    try:
+        return bool(host_project_provider_url())
+    except Exception:  # noqa: BLE001 - an unusable provider is no provider
+        logger.warning(
+            "[scitex-cards] host project provider unusable", exc_info=True
+        )
+        return False
+
+
+def _current_project_id(request) -> str:
+    """The Hub project this request resolves to, or "" so the header hides it.
+
+    The PRECEDENCE is scitex-ui's own, called rather than re-derived
+    (:func:`scitex_ui.project_scope.resolve_project`): an explicit ``?project=``
+    wins, an inaccessible explicit project resolves to ``None`` and NEVER
+    silently falls back to the stored one, otherwise the last visited project if
+    it is still accessible, otherwise ``None``. Re-implementing that here would
+    be the second selector the SDK exists to prevent.
+
+    EVERY failure answers "" rather than raising. This value is read by the
+    SHARED header, which the fleet board and the DM page both render, and
+    neither of those pages is a project surface — so no host provider, an
+    anonymous request, an SDK predating project scope and a provider that raises
+    all have to leave the identity band exactly as it was. A header that 500s
+    takes both pages down with it.
+    """
+    try:
+        from scitex_ui.project_scope import (
+            host_project_provider,
+            resolve_project,
+        )
+    except ImportError:  # older scitex-ui: no project-scope API at all
+        return ""
+    try:
+        provider = host_project_provider()
+        if provider is None:
+            return ""
+        getter = getattr(request, "GET", None)
+        explicit = (getter.get("project") or "").strip() if getter is not None else ""
+        return resolve_project(request, provider, explicit=explicit or None) or ""
+    except Exception:  # noqa: BLE001 - the band renders whatever the host did
+        logger.warning(
+            "[scitex-cards] current project unavailable for %s",
+            getattr(request, "path", "?"),
+            exc_info=True,
+        )
+        return ""
+
+
 def _cards_shell_context(request, api_base: str) -> dict[str, object]:
     """Build the shared SciTeX app shell context for either Cards page."""
     from scitex_sdk.ui.branding import shell_context
@@ -168,6 +265,17 @@ def _cards_shell_context(request, api_base: str) -> dict[str, object]:
         "app_name": "scitex-cards",
         "cards_user": cards_user,
         "dm_unread_count": dm_unread_count,
+        # The leaf header's project slot. BOTH keys are required before the
+        # picker renders: the library must resolve (else the include would be a
+        # hard TemplateSyntaxError) AND a host must have registered a provider
+        # (else the SDK's own tag renders nothing and the slot would be empty
+        # chrome). One flag, so the two conditions cannot drift apart in the
+        # template — see `_project_picker.html`.
+        "cards_project_picker_available": (
+            _project_picker_library_registered()
+            and _host_project_provider_registered()
+        ),
+        "cards_current_project_id": _current_project_id(request),
     }
 
 
@@ -210,6 +318,7 @@ def board_page(request):
     """Serve the React SPA inside the scitex-ui shell, or a static fallback."""
     from django.template.loader import render_to_string
 
+    internal_chrome = _cards_internal_chrome_enabled(request)
     built = (_STATIC_DIR / "assets" / "index.js").exists()
 
     if built:
@@ -221,6 +330,7 @@ def board_page(request):
             # same number board_v3 and the DM page print, from the same
             # reader — a bundle that hard-coded it would go stale silently.
             context["scitex_cards_version"] = _cards_version()
+            context["cards_internal_chrome_enabled"] = internal_chrome
             html = render_to_string(
                 "scitex_cards/standalone.html",
                 # DISPLAY string only (operator TG 2026-07-13). ``app_name``
@@ -234,7 +344,7 @@ def board_page(request):
             logger.exception("[scitex-cards] shell render failed; using fallback")
 
     # Fallback: server-rendered static graph (no Node/Vite build available).
-    return HttpResponse(_static_graph_page(request))
+    return HttpResponse(_render_static_graph_page(request, internal_chrome))
 
 
 def board_v3_page(request, *, _announce=None):
@@ -257,6 +367,8 @@ def board_v3_page(request, *, _announce=None):
     module globals. Production callers (Django URL resolution) never pass it.
     """
     from django.template.loader import render_to_string
+
+    internal_chrome = _cards_internal_chrome_enabled(request)
 
     # Operator UX (TG 407): the operator verifies at a glance which release the
     # board is running. The number comes from _cards_version() — the ONE reader
@@ -303,6 +415,7 @@ def board_v3_page(request, *, _announce=None):
                 # protocol-relative URL).
                 "graph_prefetch_url": api_base.rstrip("/") + "/graph",
                 "status_colors": status_colors,
+                "cards_internal_chrome_enabled": internal_chrome,
             }
         )
         html = render_to_string(
@@ -313,7 +426,7 @@ def board_v3_page(request, *, _announce=None):
         return HttpResponse(html)
     except Exception:
         logger.exception("[scitex-cards] board_v3 render failed; using fallback")
-        return HttpResponse(_static_graph_page(request))
+        return HttpResponse(_render_static_graph_page(request, internal_chrome))
 
 
 def chat_page(request):
@@ -435,6 +548,11 @@ def _static_graph_page(request) -> str:
     PNG export uses, so the operator can view the graph even when the frontend
     toolchain has not produced a Vite bundle.
     """
+    return _render_static_graph_page(request, _cards_internal_chrome_enabled(request))
+
+
+def _render_static_graph_page(request, internal_chrome: bool) -> str:
+    """Keep the canonical read/build path shared by both browser fallbacks."""
     from scitex_cards._diagram import build_mermaid
 
     try:
@@ -443,20 +561,36 @@ def _static_graph_page(request) -> str:
         store = str(board.store_path)
         count = len(board.tasks)
     except Exception as exc:  # surface the load error in the page, not a 500
+        logger.exception("[scitex-cards] static graph load failed")
         mermaid_src = ""
         store = ""
         count = 0
-        error = str(exc)
+        error = exc
     else:
-        error = ""
+        error = None
+
+    return _static_graph_markup(mermaid_src, store, count, error, internal_chrome)
+
+
+def _static_graph_markup(mermaid_src, store, count, error, internal_chrome) -> str:
+    """Present real read results; browser visibility grants no Store authority."""
+    from django.utils.html import escape
+
+    if internal_chrome:
+        summary = f"Failed to load task store: {error}"
+    elif isinstance(error, StoreUnavailableError):
+        summary = error.public_summary
+    else:
+        summary = "Failed to load task store."
 
     body = (
         f'<pre class="mermaid">{mermaid_src}</pre>'
         if mermaid_src
-        else f'<p class="err">Failed to load task store: {error}</p>'
+        else f'<p class="err">{escape(summary)}</p>'
     )
+    location = f" &middot; <code>{escape(store)}</code>" if internal_chrome else ""
     meta = (
-        f'<p class="meta">{count} tasks &middot; <code>{store}</code></p>'
+        f'<p class="meta">{count} tasks{location}</p>'
         if store
         else ""
     )

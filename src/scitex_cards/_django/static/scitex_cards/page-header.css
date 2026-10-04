@@ -164,3 +164,24 @@ body:has(.site-dock) .stx-cards-header--mounted {
 .stx-cards-header__scope::before {
   content: "Signed in as ";
 }
+
+/* THE PROJECT SLOT — the canonical SDK picker, last in the band and pushed to
+ * the right edge. `margin-left: auto` is correct HERE and would be wrong on the
+ * switcher: the switcher's left edge is the operator's standing instruction and
+ * an auto margin on it is the exact way that instruction came undone once
+ * (see the rule above), whereas this slot is deliberately the band's right-hand
+ * end — identity on the left, the selector on the right, the same shape Writer
+ * and the shell use.
+ *
+ * `flex: 0 1 auto` before the viewport runs out: the slot must SHRINK rather
+ * than push anything off-screen, because a clipped control is a control the
+ * reader cannot reach (test__board_header_fits_a_phone.py owns that
+ * measurement). Nothing here sets a width — the SDK's own
+ * project-selector.css sizes the control it renders into this slot. */
+.stx-cards-header__project {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+}

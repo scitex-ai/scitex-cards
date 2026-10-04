@@ -18,9 +18,12 @@ Three guarantees, per docs/design/remote-hub-backend.md §2/§6:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
+from pathlib import Path
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import pytest
 
@@ -524,6 +527,171 @@ def test_dm_send_through_the_seam_still_delivers_when_the_currency_check_exits(
     thread = seam.dm_list("seam-bob", peer="seam-alice", store=store)
     # Assert
     assert [m["body"] for m in thread["messages"]] == ["hello"]
+
+
+# === Canonical ACK isolation ==============================================
+# Managed controls: require the normal owned per-test schema and local root.
+# Source-only readiness is not evidence that these PostgreSQL controls ran.
+
+
+def test_backend_ack_false_no_sidecar(store):
+    # Arrange
+    from scitex_cards._dm import read, write
+    from scitex_cards._threads import threads_path
+
+    message = write.append_pair("alice", "bob", "plain read", store=store)
+    path = threads_path(store)
+    # Act
+    result = get_backend().dm_list("bob", peer="alice", ack=False, store=store)
+    unread = read.unread_for("bob", store=store, thread_id=message["thread_id"])
+    # Assert
+    assert (
+        [m["id"] for m in result["messages"]],
+        [m["id"] for m in unread],
+        path.exists(),
+    ) == ([message["id"]], [message["id"]], False)
+
+
+def test_backend_ack_true_no_sidecar(store):
+    # Arrange
+    from scitex_cards._dm import read, receipt_state, write
+    from scitex_cards._threads import threads_path
+
+    message = write.append_pair("alice", "bob", "canonical ACK", store=store)
+    path = threads_path(store)
+    # Act
+    result = get_backend().dm_list("bob", peer="alice", ack=True, store=store)
+    receipts = receipt_state.receipt_state_for_thread(message["thread_id"], store=store)
+    unread = read.unread_for("bob", store=store, thread_id=message["thread_id"])
+    # Assert
+    assert (
+        result["thread"],
+        [m["id"] for m in result["messages"]],
+        receipts[message["id"]]["readers"],
+        unread,
+        path.exists(),
+    ) == (message["thread_id"], [message["id"]], ["bob"], [], False)
+
+
+def test_backend_ack_true_isolated_file_lock_failure(store):
+    # Arrange
+    from scitex_cards._dm import receipt_state
+    from scitex_cards._threads import append_message, threads_path
+
+    path = threads_path(store)
+    if path.parent != Path(os.environ["SCITEX_DIR"]) / "cards":
+        raise RuntimeError("the sidecar must belong to this test's pinned local root")
+    message = append_message("alice", "bob", "unusable own lock", store=store)
+    lock = path.parent / f".{path.name}.lock"
+    lock.unlink(missing_ok=True)
+    lock.mkdir()
+    # Act
+    result = get_backend().dm_list("bob", peer="alice", ack=True, store=store)
+    receipts = receipt_state.receipt_state_for_thread(result["thread"], store=store)
+    # Assert
+    assert (
+        [m["id"] for m in result["messages"]],
+        receipts[message["id"]]["readers"],
+        lock.is_dir(),
+    ) == ([message["id"]], ["bob"], True)
+
+
+def test_backend_ack_is_idempotent(store):
+    # Arrange
+    from scitex_cards._dm import read, receipt_state, write
+
+    message = write.append_pair("alice", "bob", "repeat ACK", store=store)
+    backend = get_backend()
+    # Act
+    backend.dm_list("bob", peer="alice", ack=True, store=store)
+    backend.dm_list("bob", peer="alice", ack=True, store=store)
+    new_receipts = write.mark_read([message["id"]], "bob", store=store)
+    receipts = receipt_state.receipt_state_for_thread(message["thread_id"], store=store)
+    unread = read.unread_for("bob", store=store, thread_id=message["thread_id"])
+    # Assert
+    assert (new_receipts, receipts[message["id"]]["readers"], unread) == (
+        0, ["bob"], []
+    )
+
+
+def test_backend_ack_is_reader_and_pair_scoped(store, new_store):
+    # Arrange
+    from scitex_cards._dm import read, receipt_state, write
+
+    target = write.append_pair("alice", "bob", "target", store=store)
+    other_pair = write.append_pair("charlie", "bob", "other pair", store=store)
+    other_reader = write.append_pair("alice", "dora", "other reader", store=store)
+    other_store = new_store()
+    write.append_pair(
+        "alice", "bob", "other store", store=other_store, msg_id=target["id"]
+    )
+    # Act
+    get_backend().dm_list("bob", peer="alice", ack=True, store=store)
+    receipts = receipt_state.receipt_state_for_thread(target["thread_id"], store=store)
+    pair_unread = read.unread_for("bob", store=store, thread_id=other_pair["thread_id"])
+    reader_unread = read.unread_for(
+        "dora", store=store, thread_id=other_reader["thread_id"]
+    )
+    store_unread = read.unread_for(
+        "bob", store=other_store, thread_id=target["thread_id"]
+    )
+    # Assert
+    assert (
+        receipts[target["id"]]["readers"],
+        [m["id"] for m in pair_unread],
+        [m["id"] for m in reader_unread],
+        [m["id"] for m in store_unread],
+    ) == (["bob"], [other_pair["id"]], [other_reader["id"]], [target["id"]])
+
+
+def test_backend_failure_has_no_file_fallback(store):
+    # Arrange
+    from psycopg.errors import ReadOnlySqlTransaction
+    from scitex_cards._threads import append_message, threads_path
+
+    path = threads_path(store)
+    if path.parent != Path(os.environ["SCITEX_DIR"]) / "cards":
+        raise RuntimeError("the sidecar must belong to this test's pinned local root")
+    append_message("alice", "bob", "refused ACK", store=store)
+    before = path.read_bytes()
+    parts = urlsplit(store)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    for index in range(len(query) - 1, -1, -1):
+        if query[index][0] == "options":
+            query[index] = (
+                "options", query[index][1] + " -cdefault_transaction_read_only=on"
+            )
+            break
+    else:
+        raise RuntimeError("the owned schema DSN must carry its search_path options")
+    refused_store = urlunsplit(
+        (*parts[:3], urlencode(query, quote_via=quote), parts.fragment)
+    )
+    error = None
+    # Act
+    try:
+        get_backend().dm_list("bob", peer="alice", ack=True, store=refused_store)
+    except ReadOnlySqlTransaction as exc:
+        error = exc
+    # Assert
+    assert (type(error), path.read_bytes()) == (ReadOnlySqlTransaction, before)
+
+
+def test_backend_ack_preserves_legacy_sidecar(store):
+    # Arrange
+    from scitex_cards._threads import append_message, thread_key, threads_path
+
+    path = threads_path(store)
+    if path.parent != Path(os.environ["SCITEX_DIR"]) / "cards":
+        raise RuntimeError("the sidecar must belong to this test's pinned local root")
+    message = append_message("alice", "bob", "legacy copy", store=store)
+    before = path.read_bytes()
+    # Act
+    get_backend().dm_list("bob", peer="alice", ack=True, store=store)
+    records = json.loads(path.read_bytes())["threads"][thread_key("alice", "bob")]
+    flags = [m["read"] for m in records if m["id"] == message["id"]]
+    # Assert
+    assert (path.read_bytes(), flags) == (before, [False])
 
 
 # EOF
