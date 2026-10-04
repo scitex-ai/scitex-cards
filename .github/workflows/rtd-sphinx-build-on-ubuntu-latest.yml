@@ -90,3 +90,12 @@ jobs:
       #
       # DO NOT reintroduce a commit-and-push here without first changing the
       # branch protection — the failure is structural, not intermittent.
+
+  rtd-sphinx-build-central:
+    uses: scitex-ai/.github/.github/workflows/rtd-sphinx-build.yml@8c646081e9f1352077d3d8674052cce7ec75a1b7
+    with:
+      runs_on: ${{ vars.CI_RUNS_ON || '["ubuntu-latest"]' }}
+      docs_dir: docs/sphinx
+      python_version: '3.12'
+      required: true
+      fail_on_warning: true
