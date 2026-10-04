@@ -255,7 +255,18 @@ class LocalBackend:
         unseen_only: bool = True,
         ack: bool = False,
         store: Any = None,
+        *,
+        notification_id: str | None = None,
+        limit: int | None = None,
+        after: str | None = None,
     ) -> dict:
+        if notification_id is not None or limit is not None or after is not None:
+            from ._notification_recovery import recover_notifications
+
+            return recover_notifications(
+                agent, unseen_only=unseen_only, ack=ack, store=store,
+                notification_id=notification_id, limit=limit, after=after,
+            )
         # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
         self._warn_currency()
         # HANDOVER IS NOT CONFIRMATION (_inbox_confirm): ack=True advances the
