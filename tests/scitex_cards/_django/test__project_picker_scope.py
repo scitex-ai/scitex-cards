@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 pytest.importorskip("django")
-sdk = pytest.importorskip("scitex_ui.templatetags.scitex_project_picker")
+sdk = pytest.importorskip("scitex_sdk.ui.templatetags.scitex_project_picker")
 
 from django.template import engines  # noqa: E402
 from django.template.loader import render_to_string  # noqa: E402

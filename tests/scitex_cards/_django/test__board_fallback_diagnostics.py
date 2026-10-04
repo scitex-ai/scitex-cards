@@ -56,7 +56,7 @@ def _markup(error, *, enabled, mermaid="", store="", count=0):
     with override_settings(DEBUG=not enabled, SCITEX_UI_ELEMENT_INSPECTOR=enabled):
         # The baseline lacked Cards' delegating helper; use the genuine SDK
         # resolver for its presentation controls, not a expected test boolean.
-        from scitex_ui.context_processors import element_inspector_enabled
+        from scitex_sdk.ui.context_processors import element_inspector_enabled
         resolve = functions.get("_cards_internal_chrome_enabled",
                                 element_inspector_enabled)
         decision = resolve(request)

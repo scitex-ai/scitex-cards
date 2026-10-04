@@ -29,7 +29,7 @@ def _helper(*, allow_predecessor=False):
     node = next((n for n in tree.body if getattr(n, "name", "") ==
                  "_cards_internal_chrome_enabled"), None)
     if node is None and allow_predecessor:
-        from scitex_ui.context_processors import element_inspector_enabled
+        from scitex_sdk.ui.context_processors import element_inspector_enabled
 
         return element_inspector_enabled
     if node is None:
@@ -41,14 +41,14 @@ def _helper(*, allow_predecessor=False):
 
 
 def _render(request, *, include_decision=True):
-    import scitex_app
-    import scitex_ui
+    import scitex_sdk.app
+    import scitex_sdk.ui
 
     engine = Engine(
-        dirs=[TEMPLATES, Path(scitex_app.__file__).parent / "templates",
-              Path(scitex_ui.__file__).parent / "templates"],
+        dirs=[TEMPLATES, Path(scitex_sdk.app.__file__).parent / "templates",
+              Path(scitex_sdk.ui.__file__).parent / "templates"],
         libraries=get_installed_libraries(),
-        context_processors=["scitex_ui.context_processors.element_inspector"],
+        context_processors=["scitex_sdk.ui.context_processors.element_inspector"],
     )
     context = {"api_base": "/apps/cards/", "app_name": "scitex-cards",
                "cards_project_picker_available": False}
