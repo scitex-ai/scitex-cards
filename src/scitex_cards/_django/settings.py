@@ -12,7 +12,7 @@ import importlib.util
 import os
 from pathlib import Path
 
-from scitex_app.i18n import i18n_settings, with_locale_middleware
+from scitex_sdk.app.i18n import i18n_settings, with_locale_middleware
 
 BASE_DIR = Path(__file__).resolve().parent
 

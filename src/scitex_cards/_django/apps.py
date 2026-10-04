@@ -2,10 +2,12 @@
 # -*- coding: utf-8 -*-
 """Django AppConfig for the scitex-cards board.
 
-Inherits ``scitex_app._django.ScitexAppConfig`` when scitex-app is installed
-(so the board can register as a scitex-hub module), and falls back to Django's
-plain ``AppConfig`` otherwise — keeping ``pip install scitex-cards[all]``
-functional without a hard scitex-app dependency.
+Inherits ``scitex_sdk.app._django.ScitexAppConfig`` when scitex-sdk is
+installed (so the board can register as a scitex-hub module), and falls back
+to Django's plain ``AppConfig`` otherwise — keeping ``pip install
+scitex-cards`` functional without a hard scitex-sdk dependency (the
+``scitex-sdk`` distribution itself remains declared, so the fallback is
+only a degraded-install guard, not a supported configuration).
 """
 
 try:

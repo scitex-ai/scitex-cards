@@ -92,8 +92,9 @@ dependencies = [
     # and the rich-board rendering tests fail — the silent wrong-board shape
     # the migration gate (test__board_shell_migration.py) exists to surface.
     "scitex-sdk>=0.3.0",
-    "scitex-app>=0.26.1",
-    "scitex-ui>=0.11.1",
+    # scitex-app/scitex-ui retired: every remaining consumer (i18n settings,
+    # project_scope, context_processors, tag libraries, app shells) resolves
+    # through scitex-sdk>=0.3.0 (verified against the published 0.3.0 wheel).
     # >=0.11.1 is MEASURED, not aspirational -- see the note in the `dev`
     # extra below for what breaks at 0.7.1 and why presence is not currency.
     # <4 is MEASURED, 2026-09-05: fastmcp 4.0.3 stopped holding mcp below
