@@ -52,8 +52,8 @@ of the board uses, so tests drive a real tmp store.
 from __future__ import annotations
 
 import json
-
 import scitex_logging as slogging
+
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
@@ -407,8 +407,8 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
         # Poll-and-ack: the open pane passes mark_read=1 so viewing the
         # thread clears the operator-side unread counter.
         if request.GET.get("mark_read") in ("1", "true"):
-            # mark_read DOES write (it advances the unread cursor), but it is
-            # part of the READ transaction and must share the read's scope:
+            # mark_read DOES write (it records canonical receipts), but it is
+            # part of opening the pane and must share the read's scope:
             # acking against a different store than the one just rendered would
             # clear the wrong board's counter. So it stays on `store` until the
             # hub moves its tenancy injection off the query string, at which
@@ -420,13 +420,9 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
             # the append path closed below — but it is NOT closed, and it is
             # part of the same coordinated fix on
             # scitex-cards-dm-store-from-query-and-forced-operator-author-20260728.
-            _threads.mark_read(key, _author_of(request), store=store)
-            # AND THE RECEIPT GOES TO THE STORE, because that is now where the
-            # unread COUNT comes from. #776 moved the badge onto `dm_receipts`
-            # via `unread_for_conn`; leaving the ack on the sidecar alone would
-            # mean opening a thread never cleared its badge — the count would be
-            # correct and permanently unclearable, which is a worse bug than the
-            # stale one it replaced.
+            # The unread count and messages come from the canonical store, so
+            # ACK writes only canonical receipts. A local sidecar lock must not
+            # block this rail.
             #
             # Idempotent by primary key `(message_id, reader)`, so a re-open
             # inserts nothing and returns 0 rather than erroring. `reader` is

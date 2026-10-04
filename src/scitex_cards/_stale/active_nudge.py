@@ -81,10 +81,9 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+import scitex_logging as slogging
 import os
 from pathlib import Path
-
-import scitex_logging as slogging
 
 from scitex_cards._reminder.enqueue import _iso, _safe_enqueue, _safe_resolve
 from scitex_cards._throughput import _now_utc, _parse_iso

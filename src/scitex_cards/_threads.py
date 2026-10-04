@@ -72,10 +72,9 @@ fine for ``mark_read``; it would NOT be fine for ``append_message``.
 
 from __future__ import annotations
 
+import scitex_logging as slogging
 import secrets
 from pathlib import Path
-
-import scitex_logging as slogging
 
 from . import _threads_mirror as _mirror
 from ._dm.ids import pair_thread_id, peers_of_pair

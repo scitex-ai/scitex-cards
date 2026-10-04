@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scitex-cards"
-version = "0.53.3"
+version = "0.53.5"
 description = "Canonical task-card store with pluggable adapters (mermaid dependency graphs)"
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -91,7 +91,7 @@ dependencies = [
     # SDK), so below the floor the pages degrade to the static-graph fallback
     # and the rich-board rendering tests fail — the silent wrong-board shape
     # the migration gate (test__board_shell_migration.py) exists to surface.
-    "scitex-app>=0.24.0",
+    "scitex-app>=0.26.1",
     # >=0.11.1 is MEASURED, not aspirational -- see the note in the `dev`
     # extra below for what breaks at 0.7.1 and why presence is not currency.
     "scitex-ui>=0.11.1",
@@ -499,6 +499,13 @@ artifacts = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# PS-211 / PS-212 test layers: `-m smoke` (fast CLI happy-path, every PR) and
+# `-m e2e` (real-subsystem round-trips, RUN_E2E=1 only). Registered here so
+# `-m` selection works without PytestUnknownMarkWarning.
+markers = [
+    "smoke: fast CLI happy-path tests (<60s, runs on every PR)",
+    "e2e: slow end-to-end workflows against real subsystems (RUN_E2E=1)",
+]
 # `-p no:anyio` — DO NOT REMOVE WITHOUT READING THIS.
 #
 # The anyio pytest plugin is auto-loaded (anyio is a transitive dependency, so the
@@ -561,8 +568,15 @@ library_dirs = ["src", "tests", "examples"]
 # would not rename it inside puppeteer — it would simply stop working, which
 # is the opposite of what the rule is protecting. Exempted by name, not by
 # prefix, so a future third-party variable still has to be argued for.
-# SAC injects its own agent name into a container. Inventory reads that
-# foreign runtime key to report namespace vantage; Cards must not rename it.
+#
+# `SAC_NAME` is the SciTeX Agent Container runtime's own variable, set by the
+# container platform (like HOSTNAME is set by the OS). `_process_inventory.py`
+# only READS it, to tell container vantage from host vantage when `/proc`
+# shows a private namespace. Renaming it to `SCITEX_CARDS_*` would not rename
+# it in the container — the read would simply stop matching, and an empty
+# container scan would be misreported as host evidence (the exact wrong
+# fleet-wide conclusion of 2026-08-21). Same "not ours to name" shape as
+# above, exempted by name for the same reason.
 env_allowlist = ["PUPPETEER_EXECUTABLE_PATH", "SAC_NAME"]
 
 [tool.scitex_dev.audit]

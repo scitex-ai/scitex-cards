@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+import scitex_logging as slogging
 import os
 from pathlib import Path
 from typing import Any, Callable
-
-import scitex_logging as slogging
 
 logger = slogging.getLogger(__name__)
 

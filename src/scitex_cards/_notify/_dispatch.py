@@ -69,9 +69,8 @@ no monkeypatch of the wire (STX-NM / PA-306-compliant).
 
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping
-
 import scitex_logging as slogging
+from typing import Any, Callable, Mapping
 
 logger = slogging.getLogger(__name__)
 

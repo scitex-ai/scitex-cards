@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## [0.53.5] - 2026-10-03
+
+### A missing SDK project picker degrades instead of blanking the page
+
+`{% load %}` of a template library that is not installed is a
+`TemplateSyntaxError` raised while the template **compiles**, so it cannot be
+guarded from the template's own context: the page fails before any flag is
+read. The project-scoped board loaded `scitex_project_picker` at its top level
+while claiming, one function away, that a missing scitex-ui API was a graceful
+degradation — the fallback branch it described was unreachable, and the page
+answered 500 for every one of its six states on any scitex-ui older than the
+one the code was written against (the declared floor is `scitex-ui>=0.11.1`).
+
+The load now lives in `_project_picker.html`, reached only through an
+`{% include %}` inside an `{% if %}`, and the availability flag asks the template
+engine's registry — the dict `{% load %}` itself reads — as well as the host
+provider. A partial that is never included is never compiled, so the degradation
+is real. scitex-writer ships the same partial for the same reason.
+
+The shared Cards leaf header also gains the canonical SDK project-picker slot,
+on both pages that render the band. It is guarded by the same flag, so a
+standalone install and a Hub mount that registers no provider render the header
+exactly as before.
+
 ### Cards board opens first, fills in behind itself
 
 `/apps/cards/` blocked first paint on a full server-side board rebuild —
@@ -23,6 +47,19 @@ and carry explicit totals, truncation state, and an opaque continuation
 cursor. Pydantic publishes and enforces the input constraints at dispatch;
 malformed, stale, or cross-filter cursors fail with an actionable restart
 message. Explicit filters retain the same matching semantics.
+
+### Other product fixes
+
+- Use the canonical SDK project-picker scope and wait for deferred board modules
+  before their first use (#1050, #1052).
+- Apply the SDK diagnostic visibility decision to board chrome and omit
+  diagnostic Store metadata from browser copy and exports (#1056, #1057).
+- Keep Board DM read acknowledgements on the canonical backend and hide load
+  error details when internal chrome is disabled (#1058).
+- Require explicit server Store configuration and reuse the shared App locale
+  settings (#1059).
+- Record the delivered source milestones and remaining public-release
+  requirements in the release evidence document (#1060).
 
 ## [0.53.1] - 2026-09-15
 

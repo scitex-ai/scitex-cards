@@ -60,7 +60,7 @@ intransitive_verbs:
                # "run this thing as a service" and is already the leaf of
                # `gui serve`; renaming one of the two would split a pair that
                # currently reads consistently.
-  - export     # `scitex-cards export --format markdown` serializes the
+  - export     # why: `scitex-cards export --format markdown` serializes the
                # implicitly resolved store. The source is deliberately
                # implicit under the existing one-store contract, so this verb
                # takes options rather than a positional object.

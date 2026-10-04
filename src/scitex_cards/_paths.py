@@ -21,10 +21,9 @@ not data — keeps its project-override layer in :mod:`scitex_cards._config`.
 
 from __future__ import annotations
 
+import scitex_logging as slogging
 import os
 from pathlib import Path
-
-import scitex_logging as slogging
 
 logger = slogging.getLogger(__name__)
 

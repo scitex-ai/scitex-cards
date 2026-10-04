@@ -49,10 +49,9 @@ that must not receive unsolicited pushes: just do not export the id for them.
 from __future__ import annotations
 
 import asyncio
+import scitex_logging as slogging
 import os
 from typing import Any, Awaitable, Callable
-
-import scitex_logging as slogging
 
 from . import _inbox
 from ._channel_drain_state import _DrainState, gated_drain_once

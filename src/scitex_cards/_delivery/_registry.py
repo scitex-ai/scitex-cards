@@ -22,10 +22,9 @@ deduped + ordered with discovered ones under the same first-wins policy.
 
 from __future__ import annotations
 
+import scitex_logging as slogging
 import sys
 from typing import Iterable, Mapping
-
-import scitex_logging as slogging
 
 from ._channel import DeliveryChannel
 
@@ -46,13 +45,14 @@ def _iter_entry_points(group: str):
 
 
 def _warn(msg: str) -> None:
-    """Surface a dropped/duplicate provider through the stderr logger.
+    """Surface a dropped/duplicate provider through the module logger.
 
     Fail-loud, never silent: a channel that can't load is an operational
     problem the operator must SEE — a swallowed warning would mean a user
-    silently stops receiving notifications.
+    silently stops receiving notifications. scitex-logging writes console
+    records to stderr, so the shape below reaches stderr as it always did.
     """
-    logger.warning("[scitex-cards delivery] %s", msg)
+    logger.warning("[scitex-cards delivery] WARNING: %s", msg)
 
 
 def _load_entry_point_channels() -> list[tuple[str, DeliveryChannel]]:

@@ -40,9 +40,8 @@ producer is never broken by emit.
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, Iterable
-
 import scitex_logging as slogging
+from typing import Any, Iterable
 
 from ._store import _utc_now_iso
 

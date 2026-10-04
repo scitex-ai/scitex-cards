@@ -59,11 +59,10 @@ logged to stderr and the guard ALLOWS the stop (exit 0). It fails loud but open.
 from __future__ import annotations
 
 import datetime as _dt
+import scitex_logging as slogging
 import os
 import sys
 from pathlib import Path
-
-import scitex_logging as slogging
 
 logger = slogging.getLogger(__name__)
 
@@ -172,6 +171,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         block, reason = evaluate(agent)
     except Exception as exc:  # noqa: BLE001 — a guard bug must NOT trap the agent
+        # PS-220: one record on stderr, through scitex-logging. This used to be
+        # the same sentence twice — once through a stdlib logger, once through a
+        # bare `print(file=sys.stderr)` — and the logger is now the only
+        # transport (scitex-logging writes console records to stderr).
         logger.warning("idle-guard: evaluation failed (%s); allowing stop", exc)
         return 0
 

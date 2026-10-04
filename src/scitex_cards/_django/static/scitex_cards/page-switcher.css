@@ -72,8 +72,14 @@
   outline-offset: -2px;
 }
 
-.stx-cards-switcher__label-short {
+/* Operator 2026-09-27: always "DM" on desktop and phone alike — the
+   width-dependent full/short swap read as flicker. */
+.stx-cards-switcher__label-full {
   display: none;
+}
+
+.stx-cards-switcher__label-short {
+  display: inline;
 }
 
 .stx-cards-switcher__badge {

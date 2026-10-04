@@ -23,9 +23,8 @@ with extra steps.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import scitex_logging as slogging
+from pathlib import Path
 
 from ._ledger import _KEY_SEP, TERMINAL_STATUS, Ledger
 

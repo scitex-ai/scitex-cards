@@ -32,13 +32,12 @@ is a filename. The store itself is reached through :func:`connect` /
 
 from __future__ import annotations
 
+import scitex_logging as slogging
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import scitex_logging as slogging
-
-from ._db_dm_schema import DM_TABLES as _DM_TABLES
+from ._db_dm_schema import DM_TABLES as _DM_TABLES  # noqa: F401  (re-export)
 from ._db_migrations import table_columns
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -242,7 +241,7 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
 # The core schema DDL and the table roster live in ``_db_schema_sql`` --
 # ``_db`` owns connections, not the shape of the store. Re-exported under
 # the historical private name so existing callers and tests are unaffected.
-from ._db_schema_sql import SCHEMA_SQL as _SCHEMA_SQL
+from ._db_schema_sql import SCHEMA_SQL as _SCHEMA_SQL  # noqa: F401  (re-export)
 from ._db_schema_sql import SCHEMA_TABLES
 
 

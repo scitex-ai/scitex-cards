@@ -37,9 +37,8 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
-from pathlib import Path
-
 import scitex_logging as slogging
+from pathlib import Path
 
 logger = slogging.getLogger(__name__)
 

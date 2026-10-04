@@ -39,7 +39,6 @@ export function toMarkdown(graph: GraphPayload, nodes: GraphNode[]): string {
   }
   const out: string[] = [
     `# scitex-cards — ${nodes.length} tasks`,
-    `*store: \`${graph.store_path}\`*`,
     "",
   ];
   const status_order = [
@@ -118,7 +117,7 @@ export function toJson(graph: GraphPayload, nodes: GraphNode[]): string {
     };
   });
   return JSON.stringify(
-    { store_path: graph.store_path, count: tasks.length, tasks },
+    { count: tasks.length, tasks },
     null,
     2,
   );

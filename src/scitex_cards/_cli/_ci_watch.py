@@ -106,11 +106,11 @@ def classify_transition(
     ``96afacc7``).
     """
     cur_overall = current.get("overall") or "unknown"
-    cur_head = current.get("head_sha") or ""
+    _cur_head = current.get("head_sha") or ""  # part of the (head_sha, overall) key; read by callers, not here
     if prior is None:
         return "first-seen"
     prior_overall = prior.get("overall") or "unknown"
-    prior_head = prior.get("head_sha") or ""
+    _prior_head = prior.get("head_sha") or ""  # see above
     # Definitive verdict landed (current is the FIRST sweep to see it).
     if cur_overall == "success" and prior_overall != "success":
         return "newly-green"

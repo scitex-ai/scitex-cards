@@ -66,9 +66,8 @@ from whichever population did not match the stamp — measured live on 2026-07-2
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import scitex_logging as slogging
+from pathlib import Path
 
 logger = slogging.getLogger(__name__)
 

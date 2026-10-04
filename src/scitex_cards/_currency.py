@@ -84,14 +84,13 @@ ship.
 
 from __future__ import annotations
 
+import scitex_logging as slogging
 import os
 import sys
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-
-import scitex_logging as slogging
 
 from ._currency_text import (
     CURRENCY_BYPASS_ENV,

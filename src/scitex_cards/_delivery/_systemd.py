@@ -41,14 +41,26 @@ from pathlib import Path
 from .._systemd_unit import (  # noqa: F401  (re-export: import surface)
     ExecStartUnresolved,
     UnitSpec,
-    console_script_path as _console_script_path,
-    enable_commands as _enable_commands,
-    install_unit as _install_unit,
-    render_unit as _render_unit,
-    resolve_exec_start as _resolve_exec_start,
-    unit_path as _unit_path,
     unit_template,
     user_unit_dir,
+)
+from .._systemd_unit import (
+    console_script_path as _console_script_path,
+)
+from .._systemd_unit import (
+    enable_commands as _enable_commands,
+)
+from .._systemd_unit import (
+    install_unit as _install_unit,
+)
+from .._systemd_unit import (
+    render_unit as _render_unit,
+)
+from .._systemd_unit import (
+    resolve_exec_start as _resolve_exec_start,
+)
+from .._systemd_unit import (
+    unit_path as _unit_path,
 )
 
 #: The systemd user-unit filename. Package-prefixed so the operator can grep

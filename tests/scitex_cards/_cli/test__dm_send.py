@@ -67,7 +67,7 @@ def test_json_success_includes_the_durable_message_id():
     args = ("agent:recipient", "hello", "--json")
     # Act
     result = _invoke(*args)
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     # Assert
     assert result.exit_code == 0 and payload["message_id"].startswith("m_")
 
@@ -111,7 +111,7 @@ def test_json_success_does_not_claim_delivery_or_ack():
     args = ("agent:recipient", "hello", "--json")
     # Act
     result = _invoke(*args)
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     # Assert
     assert (
         payload["status"]["code"] == 202
@@ -124,7 +124,7 @@ def test_default_sender_is_persisted_in_postgres():
     key = thread_key("test-suite", "recipient")
     # Act
     result = _invoke("agent:recipient", "from the environment", "--json")
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     stored = messages_in(key)
     # Assert
     assert [row["id"] for row in stored] == [payload["message_id"]]
@@ -135,7 +135,7 @@ def test_sender_flag_overrides_the_environment_identity():
     sender = "agent:explicit"
     # Act
     result = _invoke("agent:recipient", "explicit sender", "--sender", sender, "--json")
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     stored = messages_in(thread_key("explicit", "recipient"))
     # Assert
     assert any(row["id"] == payload["message_id"] for row in stored)
@@ -157,7 +157,10 @@ def test_unresolved_sender_json_is_actionable(env):
     env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     result = _invoke("agent:recipient", "nobody", "--json")
-    payload = json.loads(result.output)
+    # stdout is the machine-readable channel (stderr carries the loud
+    # unresolved-identity warning by design — the Claude Code contract:
+    # stdout is the decision, stderr is commentary).
+    payload = json.loads(result.stdout)
     # Assert
     assert (
         result.exit_code == 1
@@ -169,7 +172,9 @@ def test_unresolved_sender_uses_native_http_status(env):
     # Arrange
     env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
-    payload = json.loads(_invoke("agent:recipient", "nobody", "--json").output)
+    # stdout is the machine-readable channel here for the same reason as
+    # above: the unresolved-identity warning goes to stderr by design.
+    payload = json.loads(_invoke("agent:recipient", "nobody", "--json").stdout)
     # Assert
     assert (
         payload["status"]["kind"] == "http"
@@ -224,7 +229,7 @@ def test_invalid_shared_ledger_target_fails_before_persisting(env):
     key = thread_key("test-suite", "recipient")
     # Act
     result = _invoke("agent:recipient", "must not land", "--json")
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     env.set("SCITEX_STORE_DSN", valid_store)
     stored = messages_in(key)
     # Assert
@@ -258,12 +263,12 @@ def test_status_wire_does_not_reinvent_ok_or_retryable():
 
 def test_exchange_status_round_trips_through_shared_ledger():
     # Arrange
-    sent = json.loads(_invoke("agent:recipient", "tracked", "--json").output)
+    sent = json.loads(_invoke("agent:recipient", "tracked", "--json").stdout)
     # Act
     result = CliRunner().invoke(
         main, ["dm", "get-status", sent["exchange_id"], "--json"]
     )
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     # Assert
     assert (
         payload["status"]["code"],
@@ -276,7 +281,7 @@ def test_exchange_status_round_trips_through_shared_ledger():
 
 def test_same_responder_exchange_id_reaches_notification_row():
     # Arrange
-    sent = json.loads(_invoke("agent:recipient", "one exchange", "--json").output)
+    sent = json.loads(_invoke("agent:recipient", "one exchange", "--json").stdout)
     # Act
     notifications = poll_inbox("recipient", unseen_only=False)
     matching = [n for n in notifications if n.get("msg_id") == sent["message_id"]]
@@ -289,7 +294,7 @@ def test_same_responder_exchange_id_reaches_notification_row():
 
 def test_delivery_retry_reuses_the_same_notification_and_exchange():
     # Arrange
-    sent = json.loads(_invoke("agent:recipient", "retry rail", "--json").output)
+    sent = json.loads(_invoke("agent:recipient", "retry rail", "--json").stdout)
     # Act -- a consumer may die after either poll; neither poll acknowledges.
     first = poll_inbox("recipient")
     second = poll_inbox("recipient")

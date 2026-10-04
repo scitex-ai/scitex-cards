@@ -28,9 +28,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
     from ._backend_connect import StoreConnection
 
-from dataclasses import dataclass
-
 import scitex_logging as slogging
+from dataclasses import dataclass
 
 from ._db import SCHEMA_VERSION
 from ._db_payload import CARD_JSON_COL, card_payload_json_or_raise

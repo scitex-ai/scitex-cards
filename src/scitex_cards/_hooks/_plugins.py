@@ -54,11 +54,10 @@ from __future__ import annotations
 
 import functools
 import importlib.metadata
+import scitex_logging as slogging
 import os
 import threading
 from typing import Any, Callable, Iterable
-
-import scitex_logging as slogging
 
 logger = slogging.getLogger(__name__)
 

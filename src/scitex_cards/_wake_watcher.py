@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import scitex_logging as slogging
 import os
 import time
 import urllib.error
@@ -60,8 +61,6 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional, TextIO
-
-import scitex_logging as slogging
 
 logger = slogging.getLogger(__name__)
 

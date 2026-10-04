@@ -14,9 +14,8 @@ sweep state machine) so that module stays under the file-size budget.
 from __future__ import annotations
 
 import datetime as _dt
-from typing import Any, Callable
-
 import scitex_logging as slogging
+from typing import Any, Callable
 
 logger = slogging.getLogger(__name__)
 

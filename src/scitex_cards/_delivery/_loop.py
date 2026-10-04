@@ -39,6 +39,11 @@ from ._recipients import Recipient, load_recipients, should_deliver_now
 from ._registry import discover_channels
 from ._tick import fault_text
 
+#: The notifyd logger name the channel log sink attaches to (see
+#: `_delivery._channels` and `_channel_log_sink`). PS-220: per-item delivery
+#: faults go through scitex-logging (stderr) instead of a bare print.
+logger = slogging.getLogger("scitex_cards.delivery.notifyd")
+
 # Cumulative notifications are full point-in-time snapshots, not an event log.
 # Their producers intentionally use stable synthetic card ids so a newer row
 # can supersede an older one. Keep the keys here at the delivery boundary: this
@@ -79,7 +84,7 @@ def _drop_superseded_snapshots(notes: list[dict]) -> list[dict]:
 
 def _warn(msg: str) -> None:
     """Surface a per-item delivery fault to stderr (fail-loud)."""
-    slogging.getLogger(__name__).warning("[scitex-cards delivery] %s", msg)
+    logger.warning("[scitex-cards delivery] WARNING: %s", msg)
 
 
 def _resolve_channels(

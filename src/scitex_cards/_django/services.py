@@ -44,14 +44,13 @@ See :class:`BoardState`.
 """
 
 import glob
+import scitex_logging as slogging
 import os
 import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-
-import scitex_logging as slogging
 
 logger = slogging.getLogger(__name__)
 

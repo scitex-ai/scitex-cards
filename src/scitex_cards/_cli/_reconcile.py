@@ -19,10 +19,9 @@ import json
 
 import click
 
-from ._mutating import confirm_or_abort, mutating_options
-
 from .._paths import resolve_tasks_path
 from .._reconcile_prs import reconcile_merged_prs
+from ._mutating import confirm_or_abort, mutating_options
 
 
 @click.command(

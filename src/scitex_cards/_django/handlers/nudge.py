@@ -32,9 +32,9 @@ the cron-driven hourly notify.
 from __future__ import annotations
 
 import json
+import scitex_logging as slogging
 import time
 
-import scitex_logging as slogging
 from django.http import JsonResponse
 
 logger = slogging.getLogger(__name__)

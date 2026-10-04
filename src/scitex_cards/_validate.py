@@ -9,10 +9,10 @@ import fcntl
 import os
 from pathlib import Path
 
+import scitex_logging as slogging
+
 from ._deadlines import _parse_deadline_or_raise
-from ._store_verify import _verify_dumped_tmp  # hook-bypass: line-limit
 from ._task import (
-    _BLOCKER_ALIASES,
     ABOLISHED_STATUSES,
     VALID_BLOCKERS,
     VALID_KINDS,
@@ -20,12 +20,15 @@ from ._task import (
     TaskValidationError,
 )
 
-
 #: The ``source`` :func:`_validate_tasks` is given on the WRITE side. Every
 #: other source is a store being read. Kept as a constant because two places
 #: now depend on the exact spelling, and a silent drift between them would
 #: reintroduce the mislabel this constant exists to prevent.
 WRITE_SOURCE = "<save_tasks>"
+
+#: PS-220: the module's logger. `_warn_tolerated` used to shout through a bare
+#: `print(file=sys.stderr)`; scitex-logging owns stderr and carries the level.
+logger = slogging.getLogger(__name__)
 
 
 def _side_of(source: str) -> str:
@@ -62,12 +65,13 @@ def _warn_tolerated(msg: str, side: str = "read-side") -> None:
     """
     import warnings as _warnings
 
-    import scitex_logging as slogging
-
     from ._tolerated import record as _record
 
     banner = f"[scitex-cards] TOLERATED ({side}): {msg}"
-    slogging.getLogger(__name__).warning("%s", banner)
+    # PS-220: stderr belongs to scitex-logging. `log.warning` keeps the record
+    # on stderr (identical stream to the bare print it replaces) and adds the
+    # searchable level prefix; the `warnings.warn` below is unchanged.
+    logger.warning("%s", banner)
     _warnings.warn(banner, stacklevel=3)
     # AND BACK TO THE CALLER, when one is collecting. stderr and `warnings`
     # reach a log scraper and a human reading the server's output; neither

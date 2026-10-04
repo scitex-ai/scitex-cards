@@ -11,9 +11,8 @@ and deprecated-env-var tolerance.
 
 from __future__ import annotations
 
-import os
-
 import scitex_logging as slogging
+import os
 
 logger = slogging.getLogger(__name__)
 

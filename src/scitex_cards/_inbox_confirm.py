@@ -42,11 +42,10 @@ ZERO external-runtime imports (this sits under the standalone delivery rail).
 
 from __future__ import annotations
 
+import scitex_logging as slogging
 import warnings
 from pathlib import Path
 from typing import Any
-
-import scitex_logging as slogging
 
 from . import _inbox
 from ._store_target import store_label

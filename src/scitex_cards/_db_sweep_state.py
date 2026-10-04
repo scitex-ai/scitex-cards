@@ -61,9 +61,8 @@ observable behaviour matches the file version, and a peer can still tell
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
 import scitex_logging as slogging
+from pathlib import Path
 
 logger = slogging.getLogger(__name__)
 
@@ -313,8 +312,8 @@ def claim_sweep(
 
     Returns True at most once per ``cadence_minutes`` across every host.
     """
-    from ._store_url import BACKEND_POSTGRES, backend_of
     from ._db_users import _db_target
+    from ._store_url import BACKEND_POSTGRES, backend_of
 
     target = _db_target(store)
     if backend_of(target) != BACKEND_POSTGRES:

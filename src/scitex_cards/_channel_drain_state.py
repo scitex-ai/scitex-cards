@@ -24,11 +24,10 @@ under its line budget; the two are one logical unit.
 
 from __future__ import annotations
 
+import scitex_logging as slogging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
-
-import scitex_logging as slogging
 
 logger = slogging.getLogger(__name__)
 

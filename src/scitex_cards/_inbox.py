@@ -38,12 +38,11 @@ delivery sink and works with no external runtime present.
 
 from __future__ import annotations
 
+import scitex_logging as slogging
 import os
 import secrets
 from pathlib import Path
 from typing import Any
-
-import scitex_logging as slogging
 
 from ._model import _store_lock
 from ._paths import local_store_path

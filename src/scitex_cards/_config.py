@@ -30,11 +30,10 @@ running daemon pick it up on its next tick — no restart.
 
 from __future__ import annotations
 
+import scitex_logging as slogging
 import os
 from pathlib import Path
 from typing import Any
-
-import scitex_logging as slogging
 
 from ._paths import PKG_SHORT, _find_git_root, _user_root
 

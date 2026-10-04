@@ -38,7 +38,6 @@ cost is the parse, not the query.
 from __future__ import annotations
 
 import json
-
 import scitex_logging as slogging
 
 logger = slogging.getLogger(__name__)

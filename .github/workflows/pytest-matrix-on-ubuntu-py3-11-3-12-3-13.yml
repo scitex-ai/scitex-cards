@@ -104,3 +104,23 @@ jobs:
       # worth having here, given this repo lost its live board on 2026-07-19 to
       # two names that resolved differently.
       postgres: true
+      # Prepare the existing locked compiler and pinned preservation baseline
+      # before pytest. The shared workflow treats preparation failures as fatal.
+      pre_test_command: |
+        git -C "${GITHUB_WORKSPACE:?}" fetch --no-tags --depth=1 origin 65d751e7f6cedf92abdd4e9e1c53aaa477c94e88
+        git -C "${GITHUB_WORKSPACE:?}" cat-file -e '65d751e7f6cedf92abdd4e9e1c53aaa477c94e88^{commit}'
+        git -C "${GITHUB_WORKSPACE:?}" fetch --no-tags --depth=1 origin 1a3815aac3b4162cf3adea29344deea280d3aab8
+        git -C "${GITHUB_WORKSPACE:?}" cat-file -e '1a3815aac3b4162cf3adea29344deea280d3aab8^{commit}'
+        node --version
+        npm --version
+        node <<'NODE'
+        const stable = /^(\d+)\.\d+\.\d+$/.exec(process.versions.node);
+        const major = stable && Number(stable[1]);
+        if (!stable || !(major === 18 || major >= 20)) {
+          console.error('Locked Vite requires stable Node 18 or Node 20+: ' + process.versions.node);
+          process.exit(1);
+        }
+        NODE
+        cd "${GITHUB_WORKSPACE:?}/src/scitex_cards/_django/frontend"
+        npm ci
+        npm run build

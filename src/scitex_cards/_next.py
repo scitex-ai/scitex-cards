@@ -32,7 +32,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-
 # Status values that are eligible for "next pickup". Imported, not restated:
 # this was a hand-copied duplicate of _runnable's set, and when ``pending`` was
 # abolished only one of the two copies got updated — leaving `next` and

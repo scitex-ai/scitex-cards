@@ -14,9 +14,8 @@ straight to plugins (the built-in card-event handler is C5).
 
 from __future__ import annotations
 
-from typing import Any, Iterable
-
 import scitex_logging as slogging
+from typing import Any, Iterable
 
 from .. import _store
 from .._git_link import TRIGGER_COMMIT

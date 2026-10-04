@@ -18,28 +18,48 @@ audit:
 
   # Pre-approved rule skips (lead a2a `fb413fb038da49d1b18262b237385c33`,
   # 2026-06-12, PR #110 fix-forward). Each entry is a scitex-dev audit rule
-  # code we accept as drift while a focused cleanup PR is queued. The
-  # schema (`audit.skip`) is read by
-  # scitex_dev/_cli/audit/_config/_loader.py::load_config.
+  # code we accept as drift while a focused cleanup PR is queued.
+  #
+  # TWO KNOBS, deliberately, because the two audit surfaces honour different
+  # ones (measured 2026-09-22: dropping `skip` resurfaced 235 PS-204 + 3
+  # PS-140 + 3 PS-169 + PS-108/108b in `audit-project` while `skip-rules`
+  # stayed declared):
+  #   `audit.skip` (bare ids) — honoured ONLY by `audit-project`, silently.
+  #     Left untouched for back-compat per
+  #     scitex_dev/_cli/audit/_config/_skip_rules.py. This is what keeps the
+  #     per-surface project gate green.
+  #   `audit.skip-rules` (rule + written reason) — honoured by `audit-all`
+  #     with a visible MASKED INVENTORY (per-rule counts + reasons). Same
+  #     rules, same justifications, reason-carrying.
+  # Keep both in sync until `audit-project` honours `skip-rules`; deleting
+  # `skip` alone is NOT a no-op (see measurement above).
   skip:
-    # PS-204 — `orphan-test-file`. Six tests in tests/scitex_cards/ are
-    # tied to non-Python surfaces (board_v3.html template signatures,
-    # search-query.js + search-suggest.js + recent_view JS modules,
-    # deadline / deadline_multi_recurring server endpoints) so they
-    # have no 1:1 mirror under src/scitex_cards/. Restructuring or
-    # splitting them is its own PR.
     - PS-204
+    - PS-140
+    - PS-169
+    - PS-108
+    - PS-108b
+  skip-rules:
+    # PS-204 — `orphan-test-file`. The suite names tests by BEHAVIOUR
+    # (test__deadline_never_notifies, test__a_comment_row_is_read_by_name…),
+    # not by mirrored module, so most files under tests/scitex_cards/ have
+    # no 1:1 counterpart under src/scitex_cards/ (235 at last count; the
+    # "six tests" note it replaced named only the non-Python-surface ones).
+    # Renaming the suite to the mirror convention is its own PR.
+    - rule: PS-204
+      reason: "orphan-test-file: suite names tests by behaviour, not mirrored module, so most files under tests/scitex_cards/ have no 1:1 counterpart under src/scitex_cards/; renaming the suite to the mirror convention is its own PR"
     # PS-140 — `cross-package-imports-test-missing`. The
     # tests/integration/test_cross_package_imports.py gate file lists
     # an older import set; needs a regeneration sweep.
-    - PS-140
-    # PS-169 — `hosted-runner-forbidden`. Unlike PS-224 next to it, this rule
-    # offers NO exemption path: its own message says "forbidden without
-    # exception" and the only remedy it names is the self-hosted pool. So a
-    # per-rule skip WITH A WRITTEN REASON is the sole lever available, and it is
-    # the one the constitution section 2 prescribes ("one at a time, in a config
-    # file, each with a written reason") — the thing it forbids is a blanket
-    # FLAG that silences the whole run, which this is not.
+    - rule: PS-140
+      reason: "cross-package-imports-test-missing: tests/integration/test_cross_package_imports.py gate file lists an older import set; needs a regeneration sweep"
+    # PS-169 — `hosted-runner-forbidden`. This rule offers NO exemption path:
+    # its own message says "forbidden without exception" and the only remedy
+    # it names is the self-hosted pool. So a per-rule skip WITH A WRITTEN
+    # REASON is the sole lever available, and it is the one the constitution
+    # section 2 prescribes ("one at a time, in a config file, each with a
+    # written reason") — the thing it forbids is a blanket FLAG that silences
+    # the whole run, which this is not.
     #
     # The rule's premise is superseded. It cites an operator mandate of
     # 2026-07-14; two CURRENT documents say the opposite:
@@ -52,17 +72,15 @@ audit:
     #
     # Reported as dev-ps169-forbids-hosted-runners-policy-superseded-20260731 so
     # the RULE gets fixed; this entry is the bridge and should be deleted the
-    # moment scitex-dev lands that. Repo-wide is narrower here than it sounds:
-    # this is the only workflow in the repo that names a runner in-file
-    # (pytest-matrix delegates to a reusable workflow, cla.yml is exempted
-    # above), so it silences exactly the job it is meant to.
-    - PS-169
-    # PS-168 — `secret-env-prefix-missing`. cla.yml uses
-    # `GH_PERSONAL_ACCESS_TOKEN` without the SCITEX_CARDS_ per-package
-    # prefix. The rule was codified after cla.yml shipped and the
-    # secret is shared across the fleet — renaming requires cross-repo
-    # rotation.
-    - PS-168
+    # moment scitex-dev lands that.
+    - rule: PS-169
+      reason: "hosted-runner-forbidden: rule premise superseded — constitution section 4 defaults CI to GitHub-hosted runners (same incident/policy formerly recorded beside the PS-224 entries, now removed as stale); reported upstream as dev-ps169-forbids-hosted-runners-policy-superseded-20260731; delete when scitex-dev fixes the rule"
+    # REMOVED 2026-09-22: PS-168 (`secret-env-prefix-missing`) is STALE —
+    # verified silent under scitex-dev 0.60.2.dev25 AND 0.60.1 on this tree
+    # (no finding with all suppressions disabled). The old note said cla.yml
+    # uses GH_PERSONAL_ACCESS_TOKEN without the SCITEX_CARDS_ prefix; the
+    # rule no longer fires here, so the entry was deleted rather than
+    # migrated. Restore it if the rule ever fires again.
     # PS-108 — `src-prefix-cluster-mess`. INHERITED STRUCTURAL DEBT, not
     # drift introduced by any PR that currently trips it. Measured on
     # develop @ 951124bc: 12 prefix-clusters totaling 89 flat files
@@ -78,7 +96,8 @@ audit:
     #
     # DELETE THIS ENTRY WHEN THAT CARD LANDS. It is a bridge, not a verdict:
     # the debt is real and the rule is right about it.
-    - PS-108
+    - rule: PS-108
+      reason: "src-prefix-cluster-mess: inherited structural debt, not drift (12 prefix-clusters, 89 flat files @951124bc); tracked as cards-group-the-store-db-dm-module-families-into-subpackages-20260810 with PR #785 as step one; delete when that card lands"
     # PS-108b — `src-flat-py-files-over-threshold`. Same inherited debt,
     # same tracking card, same deletion condition. Measured on develop @
     # 951124bc: 133 flat .py files at `scitex_cards/` root against a
@@ -96,91 +115,27 @@ audit:
     # Same failure mode the quality-audit workflow header already documents
     # for tally-bearing summary lines; reported upstream so the KEYING gets
     # fixed. This entry is the bridge until then.
-    - PS-108b
-    # PS-128 — `sphinx-build-broken`. The rule says .gitignore MUST NOT exclude
-    # src/<pkg>/_sphinx_html/, because "CI's hatchling force-include will fail
-    # otherwise". THAT PREMISE DOES NOT HOLD HERE: the rule assumes
-    # `force-include`; this package uses `artifacts`, which exists precisely to
-    # ship VCS-IGNORED files. Measured — two builds, same tree, only the
-    # directory's presence differing:
-    #     no _sphinx_html present  -> wheel carries 0 entries, build SUCCEEDS
-    #     gitignored dir present   -> wheel carries index.html + sub/style.css
-    # The second row is the one the rule calls impossible.
+    - rule: PS-108b
+      reason: "src-flat-py-files-over-threshold: same inherited debt, same tracking card, same deletion condition (133 flat .py files @951124bc vs threshold 15)"
+    # REMOVED 2026-09-22: PS-128 (`sphinx-build-broken`) is STALE — verified
+    # silent under scitex-dev 0.60.2.dev25 AND 0.60.1 on this tree (no finding
+    # with all suppressions disabled), so the entry was deleted rather than
+    # migrated. The old note argued the rule's premise (hatchling
+    # `force-include` fails on gitignored dirs) does not hold for this
+    # package's `artifacts`-based wheel docs, and that re-tracking
+    # `_sphinx_html/` would restore the 2026-06-17..08-16 silent-push outage;
+    # the release workflow still asserts on the BUILT WHEEL instead. None of
+    # that changed — the rule simply no longer fires here. Restore the entry
+    # (as `skip-rules`, with that reason) if it ever fires again.
     #
-    # And gitignoring it is LOAD-BEARING, not preference. Tracking this
-    # directory is what produced a two-month outage: the `docs` workflow
-    # committed 99 files to develop and pushed, develop is protected, every
-    # push was refused (GH006), the rejection was swallowed by
-    # `git push || echo` under `continue-on-error: true`, and the step reported
-    # SUCCESS. Last refresh that landed: 2026-06-17. Satisfying this rule by
-    # re-tracking the directory would restore exactly that failure.
-    #
-    # The property the rule protects — docs actually reach the wheel — is now
-    # enforced MECHANICALLY and more strictly: the release workflow asserts on
-    # the BUILT WHEEL and fails the release if _sphinx_html/index.html is
-    # absent. "The directory is tracked" never checked the wheel at all.
-    #
-    # `skip` rather than a per-site `exemption` because PS-128's finding line is
-    # UNKEYABLE by the violation-key parser (it puts a path where <dist> is
-    # expected), so keyed exemptions cannot match it — measured, see the
-    # PS-128 record under `exemptions` below. Raised with scitex-dev; if the
-    # rule learns about `artifacts`, DELETE this entry rather than keep it.
-    - PS-128
-    #
-    # ── STALE AS OF 2026-08-16, CORRECTED IN PLACE. The paragraph below is
-    # kept because its reasoning is still the right shape, but its central
-    # factual claim — that `skip-rules` cannot work under `--new-only` — WAS
-    # FIXED, in response to this repo's own 2026-08-10 bug report. Today
-    # `_cli/ecosystem/_cmds/_audit_all.py:353-358` reads:
-    #
-    #     _, _head_exit, head_results, _head_report = _run_one(distribution)
-    #     head_combined = "\n".join(...)
-    #     head_combined = drop_masked_lines(head_combined, _head_report)
-    #
-    # The fourth element is CAPTURED, and the mask is applied before the diff.
-    # So `skip-rules` is no longer DISQUALIFIED on the CI path, and the choice
-    # of `audit.skip` below is now a PENDING MIGRATION rather than a deliberate
-    # workaround.
-    #
-    # BUT "not disqualified" IS NOT "verified", and the distinction is the whole
-    # reason this entry has not moved. scitex-dev narrowed their own report
-    # after sending it: `drop_masked_lines` has a unit test that calls it
-    # directly on a constructed MaskReport, and the CALL SITE at
-    # `_audit_all.py:358` is covered by NO test. The unit is pinned; the WIRING
-    # is not — both endpoints correct with the middle never exercised, which is
-    # the same shape as their #652. What would settle it is a skip-rules entry
-    # for a rule that FIRES at HEAD, run with `--new-only` against a baseline,
-    # asserting the declared rule is absent from the net-new set AND an
-    # undeclared one is still present. The negative half is not decoration:
-    # masking that hides everything is as wrong as masking that hides nothing,
-    # and only the pair tells them apart.
-    #
-    # So: migrate when that test exists and the skip-rules counters are
-    # verified. Not before. Moving twice is worse than moving late.
-    #
-    # THE LESSON THIS ENTRY PAID FOR, worth more than the entry: the note ended
-    # "Verified by running the audit both ways before this landed, not
-    # assumed" — the exact phrasing that stops the next reader re-checking it,
-    # attached to no date and no commit. A verification note without a date is
-    # a claim about a code state nobody can identify. Date them, or expect them
-    # to outlive the code they describe, as this one did by six days.
-    #
-    # ── ORIGINAL NOTE (accurate when written, 2026-08-10 or earlier) ──
-    # Both entries use `audit.skip` rather than the newer, reason-carrying
-    # `audit.skip-rules`, and that is deliberate — `skip-rules` DOES NOT WORK
-    # on the path CI actually runs. `skip-rules` masking is applied in
-    # `ecosystem/_cmds/_audit_all.py` after the auditor fan-out, but the
-    # `--new-only` branch (the flag this repo's quality workflow passes)
-    # discards the MaskReport and diffs the RAW sub-auditor stdout/stderr:
-    #
-    #     _, _head_exit, head_results, _ = _run_one(distribution)
-    #     head_combined = "\n".join((res.get("stdout") or "") + ... )
-    #
-    # so a `skip-rules` entry would print a reassuring masked inventory in
-    # strict runs and mask exactly nothing in CI. `audit.skip` is honoured
-    # inside `audit-project` itself — the auditor that emits PS-108/PS-108b —
-    # so the finding never reaches the diff. Verified by running the audit
-    # both ways before this landed, not assumed.
+    # ── MIGRATION NOTE 2026-09-22 (the 2026-08-10..16 skip-vs-skip-rules
+    # discussion was removed in this commit as resolved). The old note's demand — migrate only
+    # when the `skip-rules` counters are verified — is met by this commit:
+    # `audit-all` prints `N masked by skip-rules (N declared)` with per-rule
+    # counts, and `--new-only` is gone from the quality gate (#909), so the
+    # untested-wiring worry no longer applies to the path CI runs.
+    # Lesson kept from the old note: verification notes carry a date, or
+    # they outlive the code they describe.
     #
     # EVERY OTHER RULE STAYS LIVE, and that is the point of doing this
     # per-rule instead of reaching for a blanket flag. Those rules are
@@ -189,13 +144,13 @@ audit:
     # defects found by the gate that this entry keeps pointed at real work.
 
   # PER-SITE exemptions (`audit.exemptions`, {rule: [{path, line, reason}]}).
-  # Deliberately NOT `skip:` above: skip silences a rule REPO-WIDE, which for
-  # PS-224 would stop detecting ANY workflow aimed at a runner no machine
-  # serves — and that rule's whole value is catching the green-by-absence case
-  # where a job never runs and therefore never fails. Silencing it fleet-wide
-  # to excuse one deliberate exception is "a gate that cannot fail is not a
-  # gate" (constitution §2). One site, one reason, still enforced everywhere
-  # else.
+  # Deliberately NOT `skip-rules` above: a repo-wide skip silences a rule
+  # everywhere, which for a rule like PS-224 would stop detecting ANY
+  # workflow aimed at a runner no machine serves — and such a rule's whole
+  # value is catching the green-by-absence case where a job never runs and
+  # therefore never fails. Silencing it repo-wide to excuse one deliberate
+  # exception is "a gate that cannot fail is not a gate" (constitution §2).
+  # One site, one reason, still enforced everywhere else.
   exemptions:
     PS-231:
       # `workflow-duplication` — the rule says this workflow re-implements the
@@ -218,8 +173,9 @@ audit:
       #
       # BLOCKER 2 DOES NOT APPLY and is recorded so nobody re-derives it: this
       # leaf does not vendor `_sphinx_html` back into the tree. That was true
-      # once and caused the 2026-06-17..08-16 outage documented in the PS-128
-      # entry below; the commit-and-push step is gone, deliberately.
+      # once and caused the 2026-06-17..08-16 outage documented in the
+      # `skip-rules` removal note above; the commit-and-push step is gone,
+      # deliberately.
       #
       # REVISIT WHEN: the org reusable grows warnings-as-errors, at which point
       # the gate moves upstream honestly and this entry should be deleted.
@@ -233,88 +189,33 @@ audit:
           (BLOCKER 2 does not apply; the commit-and-push step was removed after
           it caused a two-month silent-failure outage). Delete this entry once
           the org reusable enforces warnings-as-errors itself.
+      # `workflow-duplication` on the renamed (PS-165-neutral) quality gate.
+      # This workflow runs THIS package's canonical
+      # `scitex-dev ecosystem audit-all scitex-cards` gate with leaf trigger
+      # paths (src/tests/pyproject/config + itself) and documents the leaf's
+      # gate history (`--new-only` removal #909). Converting it to the org
+      # caller renames the published check context `<job>` →
+      # `<caller-job> / <callee-job>` (BLOCKER 1 in PS-231's own text), which
+      # needs branch-protection coordination — a separate change, not part of
+      # an audit-green run. Revisit then.
+      - path: .github/workflows/quality-audit-on-ubuntu-latest.yml
+        line: 0
+        reason: >-
+          Leaf-specific audit-all gate for this package (leaf trigger paths
+          and gate history documented in-file); converting to the org caller
+          renames the required check context per BLOCKER 1, which needs
+          branch-protection coordination done as its own change.
 
-    PS-128:
-      # `sphinx-build-broken` — the rule says: ".gitignore excludes
-      # src/<pkg>/_sphinx_html/ — but scitex-cloud serves docs from the in-wheel
-      # bundle, so it MUST be tracked. Remove the line; CI's hatchling
-      # force-include will fail otherwise."
-      #
-      # THE RULE'S PREMISE DOES NOT HOLD FOR THIS DESIGN, and the difference is
-      # which hatchling feature carries the files. The rule assumes
-      # `force-include`. This package uses `artifacts`, which exists precisely
-      # to ship VCS-IGNORED files, so "gitignored" and "reaches the wheel" are
-      # not in conflict here. Measured before relying on it — two builds, same
-      # tree, only the directory's presence differing:
-      #
-      #     no _sphinx_html present  -> wheel carries 0 entries, build SUCCEEDS
-      #     gitignored dir present   -> wheel carries index.html + sub/style.css
-      #
-      # The second row is the one the rule says is impossible.
-      #
-      # WHY GITIGNORED IS LOAD-BEARING RATHER THAN A PREFERENCE: tracking this
-      # directory is what created the two-month outage this exemption's own PR
-      # fixes. The `docs` workflow committed 99 files to develop and pushed;
-      # develop is protected, so every push was refused (GH006), swallowed by
-      # `git push || echo` under `continue-on-error: true`, and reported
-      # SUCCESS. Last refresh that landed: 2026-06-17. Re-tracking the
-      # directory to satisfy this rule would restore exactly that failure.
-      #
-      # The property the rule protects — docs actually reach the wheel — is now
-      # enforced MECHANICALLY rather than by tracking: the release workflow
-      # asserts on the BUILT WHEEL and fails the release if
-      # `_sphinx_html/index.html` is absent. That is a stronger guarantee than
-      # "the directory is tracked", which never checked the wheel at all.
-      #
-      # NOTE — THIS PER-SITE ENTRY DOES NOT SUPPRESS PS-128, and it is kept
-      # only as the record of why. Measured: with this exemption in place the
-      # `--new-only` run still reports the finding, and says why itself —
-      # "2 net-new ERROR finding(s) NOT READABLE BY THE VIOLATION-KEY PARSER".
-      # PS-128 emits `[PS-128 ...] <path>: <msg>`, putting a PATH where the
-      # parser expects `<dist>`, so the line cannot be keyed; unkeyed lines are
-      # diffed as RAW TEXT and a keyed exemption has nothing to match against.
-      # The actual suppression is the `audit.skip: PS-128` entry above, which
-      # is honoured INSIDE audit-project so the finding never reaches the diff
-      # at all — the same reason the PS-108/PS-108b entries use `skip`.
-      - path: .gitignore
-        line: 0
-        reason: >-
-          RECORD ONLY, does not suppress (PS-128 lines are unkeyable by the
-          violation-key parser, so keyed exemptions cannot match); the working
-          suppression is the audit.skip entry. Docs ship via hatchling
-          `artifacts`, verified present in the built wheel by an assertion in
-          the release workflow; tracking this directory is what caused the
-          2026-06-17..08-16 outage, because pushing it to protected `develop`
-          could never succeed
-    PS-224:
-      # `runner-destination-unregistered` — cla.yml::CLAssistant targets
-      # ubuntu-latest, which no registered machine serves.
-      #
-      # This is NOT drift and must NOT be "fixed" by pointing the job at
-      # Spartan. It is a deliberate SECURITY decision, made in a090c283
-      # ("harden CLA — SHA-pin the third-party action + move it off the
-      # credential-holding runner", #496) which intentionally REVERSED the
-      # earlier blanket move to Spartan (7083b18c). CLAssistant runs a
-      # third-party action; our self-hosted Spartan runners hold fleet
-      # credentials, so running untrusted third-party code there trades a
-      # CI-hygiene rule for a credential-exposure risk. Repointing it would
-      # silently undo a security fix.
-      #
-      # Every other workflow in this repo is on self-hosted Spartan
-      # (pypi-publish, rtd-sphinx, quality-audit) — this is the sole
-      # exception, and it is bounded to this one job rather than the file.
-      - path: .github/workflows/cla.yml::CLAssistant
-        line: 0
-        reason: >-
-          third-party action, deliberately kept off the credential-holding
-          self-hosted runner by a090c283 (#496); repointing it at Spartan
-          would reverse that security hardening
-      # `quality-audit::audit` targets ubuntu-latest for the same class of
-      # reason, but a different one: RUNNER RELIABILITY, not credentials.
-      # See the PS-169 entry below for the measurement.
-      - path: .github/workflows/scitex-cards-quality-audit-on-ubuntu-latest.yml::audit
-        line: 0
-        reason: >-
-          moved to a hosted runner because several self-hosted runners share one
-          uv toolcache and lose the race; constitution section 4 makes hosted the
-          default and cites this exact incident
+  # REMOVED 2026-09-22 (kept as comment so the parser never sees it):
+  # PS-128 RECORD ONLY entry deleted as stale (the rule is verified silent
+  # under scitex-dev 0.60.2.dev25 AND 0.60.1; see the `skip-rules` removal
+  # note above for the retained history).
+  # PS-224 both per-site entries deleted as stale (the rule is verified silent
+  # under scitex-dev 0.60.2.dev25 AND 0.60.1 on this tree, with all
+  # suppressions disabled). The old notes recorded deliberate runner choices
+  # — cla.yml::CLAssistant kept off the credential-holding self-hosted runner
+  # by a090c283 (#496, third-party action), and quality-audit::audit on hosted
+  # for runner reliability (constitution section 4, uv-toolcache race). None of
+  # that changed; the rule simply no longer fires here. Restore these entries
+  # (same paths, same reasons) if it ever fires again — do NOT "fix" it by
+  # repointing either job.

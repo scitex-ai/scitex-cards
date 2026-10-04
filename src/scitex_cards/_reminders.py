@@ -58,11 +58,10 @@ Design
 from __future__ import annotations
 
 import datetime as _dt
+import scitex_logging as slogging
 import os
 from pathlib import Path
 from typing import Any, Callable
-
-import scitex_logging as slogging
 
 from ._reminder.bodies import (
     DIGEST_CARD_CAP,

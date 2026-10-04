@@ -32,10 +32,10 @@ from __future__ import annotations
 
 import datetime
 import json
+import scitex_logging as slogging
 import os
 from collections import defaultdict
 
-import scitex_logging as slogging
 from django.http import JsonResponse
 
 from ..._comment_ids import stamp_comment_id

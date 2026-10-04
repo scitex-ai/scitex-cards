@@ -34,10 +34,9 @@ keeps it honest.
 from __future__ import annotations
 
 import datetime as _dt
+import scitex_logging as slogging
 import os
 from pathlib import Path
-
-import scitex_logging as slogging
 
 from ._tick import fault_text
 

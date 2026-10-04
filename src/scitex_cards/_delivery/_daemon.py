@@ -53,12 +53,11 @@ from __future__ import annotations
 
 import datetime as _dt
 import fcntl
+import scitex_logging as slogging
 import os
 import signal
 import threading
 from pathlib import Path
-
-import scitex_logging as slogging
 
 from .._inbox import _resolved_store
 from ._liveness import DeliveryLiveness, read_liveness, write_liveness

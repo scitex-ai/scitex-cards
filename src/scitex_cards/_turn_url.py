@@ -29,9 +29,8 @@ separate card.
 from __future__ import annotations
 
 import json
-import os
-
 import scitex_logging as slogging
+import os
 
 logger = slogging.getLogger(__name__)
 

@@ -13,8 +13,8 @@ its hand-written comments via the ruamel writer).
 from __future__ import annotations
 
 import json
-
 import scitex_logging as slogging
+
 from django.http import JsonResponse
 
 logger = slogging.getLogger(__name__)

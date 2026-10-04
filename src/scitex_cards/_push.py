@@ -57,11 +57,10 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import scitex_logging as slogging
 import os
 import urllib.error
 import urllib.request
-
-import scitex_logging as slogging
 
 # Turn-URL RESOLUTION (the "where do I deliver?" concern) lives in
 # ``_turn_url``; this module owns the delivery WIRE. We re-export the
@@ -214,7 +213,9 @@ def deliver(
     """
     if timeout is None:
         timeout = _default_timeout_s()
-    # Dev / test escape hatch.
+    # Explicit dev/test dry-run output preserves the published stdout rail.
+    # getConsole keeps canonical logging formatting; normal diagnostics and
+    # transport failures below still use the module stderr logger.
     if os.environ.get(ENV_DRY_RUN) == "1":
         slogging.getConsole(f"{__name__}.dry_run").info(
             f"\n=== scitex-cards PUSH dry-run → {agent} ({kind}) ===\n"

@@ -24,10 +24,10 @@ mutation surfaces as a 400 rather than corrupting the store.
 from __future__ import annotations
 
 import json
+import scitex_logging as slogging
 import os
 import re
 
-import scitex_logging as slogging
 from django.http import JsonResponse
 
 logger = slogging.getLogger(__name__)

@@ -31,6 +31,7 @@ per-repo); CONFIG failure DOES (the whole strip is unconfigurable).
 from __future__ import annotations
 
 import scitex_logging as slogging
+
 from django.http import JsonResponse
 
 from ._config import fleet_config_load

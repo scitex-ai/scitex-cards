@@ -20,9 +20,8 @@ the sidecar has joined the mirrors. See ``docs/design/dm-into-cards-db.md``.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import scitex_logging as slogging
+from pathlib import Path
 
 logger = slogging.getLogger(__name__)
 

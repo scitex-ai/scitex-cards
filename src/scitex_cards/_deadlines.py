@@ -17,13 +17,10 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import scitex_logging as slogging
 import os
 from dataclasses import dataclass
-from pathlib import Path
 
-import scitex_logging as slogging
-
-from ._store_verify import _verify_dumped_tmp  # hook-bypass: line-limit
 from ._task import TaskValidationError
 
 _LOG = slogging.getLogger(__name__)

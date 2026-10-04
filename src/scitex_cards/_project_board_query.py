@@ -34,9 +34,8 @@ two different answers to "whose card is this".
 
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable, Optional
-
 import scitex_logging as slogging
+from typing import Any, Callable, Iterable, Optional
 
 from ._user_row_scope import OWNED_FIELDS
 

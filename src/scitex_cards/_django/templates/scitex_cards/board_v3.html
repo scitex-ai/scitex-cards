@@ -464,7 +464,8 @@
       <button type="button" id="filter-empty-banner-clear"
               style="margin-left:10px; cursor:pointer;">Clear all filters</button>
     </div>
-    <div class="columns" id="columns" aria-busy="true">
+    <div class="columns" id="columns" aria-busy="true"
+         data-cards-internal-chrome="{{ cards_internal_chrome_enabled|yesno:'true,false,false' }}">
       {% comment %}
         Open-first skeleton: the server paints placeholder cards + a spinner
         BEFORE /graph resolves, so first paint carries feedback even when the
@@ -577,8 +578,8 @@
               <select class="filt" id="f-status"><option value="">All statuses</option></select>
             </div>
             <div class="details-row details-row--filter">
-              <label for="f-blocker">Blocker</label>
-              <select class="filt" id="f-blocker"><option value="">All blockers</option></select>
+              <label for="f-blocker">Blocked by</label>
+              <select class="filt" id="f-blocker" title="Show what each card is waiting for"><option value="">All blockers</option></select>
             </div>
             <div class="details-row details-row--filter">
               <label for="f-host">Host</label>
@@ -587,7 +588,7 @@
             <div class="details-row details-row--filter">
               <label for="f-date">Date</label>
               <select class="filt" id="f-date"
-                      title="Filter by date proximity (operator TG 440/442)">
+                      title="Show cards by due date">
                 <option value="">All dates</option>
                 <option value="overdue">📅 overdue</option>
                 <option value="today">📅 today</option>
@@ -597,10 +598,10 @@
               </select>
             </div>
             <label class="details-check" for="f-blockingme"
-                   title="Only cards blocked on an operator decision — the 🚧 rows in the legend">
+                   title="Show blocked cards that need your decision">
               <input type="checkbox" id="f-blockingme"
                      onchange="onBlockingMeChange(event)">
-              <span>🚧 blocking me</span>
+              <span>🚧 awaiting your decision</span>
             </label>
             <label class="details-check" for="f-showdone">
               <input type="checkbox" id="f-showdone" onchange="onShowDoneChange(event)">
@@ -630,10 +631,12 @@
     </aside>
   </div>
 
+  {% if cards_internal_chrome_enabled %}
   <div class="foot">
     <span>v3 LIVE · real data · operator schema (ADR-0007) · GUI→code (ADR-0006)</span>
     <span><code id="store-path">…</code></span>
   </div>
+  {% endif %}
 
   <div class="detail-backdrop" id="detail-backdrop" onclick="closeDetail(event)">
     <div class="detail" onclick="event.stopPropagation()">
@@ -682,11 +685,11 @@
             <label for="d-edit-blocker">Blocker</label>
             <select class="d-edit-select" id="d-edit-blocker">
               <option value="">(none)</option>
-              <option value="compute">compute</option>
-              <option value="quota">quota</option>
-              <option value="user-pending">user-pending</option>
-              <option value="task-dependency">task-dependency</option>
-              <option value="operator-decision">operator-decision</option>
+              <option value="compute">Compute</option>
+              <option value="quota">Resource quota</option>
+              <option value="user-pending">Awaiting your response</option>
+              <option value="task-dependency">Task dependency</option>
+              <option value="operator-decision">Awaiting your decision</option>
             </select>
           </div>
         </div>
@@ -793,6 +796,24 @@
     // (hook-bypass: line-limit — pre-existing 3473-line template; split queued.)
     const API_BASE = "{{ api_base|escapejs }}".replace(/\/+$/, "");
     window.API_BASE = API_BASE;
+
+    // === Board module readiness / first-load phases =======================
+    // This inline boot runs while the parser is still loading. Head scripts
+    // marked defer (including the timeline painter) run afterwards, before
+    // DOMContentLoaded. Fetch and parse graph data now; publish it to the
+    // painters only after those dependencies have had their turn.
+    function markBoardPhase(phase) {
+      const perf = window.performance;
+      const name = "scitex-cards:board-v3:" + phase;
+      if (perf?.mark && !perf.getEntriesByName(name).length) perf.mark(name);
+    }
+    markBoardPhase("shell-dom-ready");
+    const BOARD_MODULES_READY = document.readyState === "loading"
+      ? new Promise(resolve => document.addEventListener(
+          "DOMContentLoaded", resolve, { once: true },
+        ))
+      : Promise.resolve();
+    BOARD_MODULES_READY.then(() => markBoardPhase("modules-ready"));
 
     // === LAYOUT whitelist (SSOT) ==========================================
     // The only layouts that exist. Column + Table were removed 2026-07-13
@@ -921,10 +942,19 @@
     async function loadGraph(opts) {
       const { preserveScroll = false, skipIfUnchanged = false } = opts || {};
       try {
+        markBoardPhase("graph-request-started");
         const r = await fetch(API_BASE + "/graph"); // (hook-bypass: line-limit)
+        // Successful JSON parsing overlaps deferred script download. Error
+        // bodies retain boardStates.js's tolerant reader and named states.
+        const graph = r.ok ? await r.json() : null;
+        if (r.ok) markBoardPhase("graph-data-ready");
+        await BOARD_MODULES_READY;
         if (!r.ok) {
           const payload = await _readJsonBody(r);
-          if (renderLoadState(r.status, payload)) return;
+          if (renderLoadState(r.status, payload)) {
+            markBoardPhase("state-rendered");
+            return;
+          }
           const err = payload && payload.error ? String(payload.error) : "";
           // NOT escaped here. An Error message is a STRING, not markup — the
           // render layer escapes it once, at the point it becomes HTML. Escaping
@@ -933,7 +963,7 @@
           // out. Escape where you interpolate, exactly once.
           throw new Error(`HTTP ${r.status}` + (err ? ` — ${err}` : ""));
         }
-        STATE.graph = await r.json();
+        STATE.graph = graph;
         // Change-detection: if the fresh payload is byte-identical to the
         // last graph we rendered, skip the whole re-render (no flash, no
         // scroll jump). Only honored for the auto-refresh path so an
@@ -943,7 +973,8 @@
           return;
         }
         const _scrollSnap = preserveScroll ? captureScroll() : null;
-        document.getElementById("store-path").textContent = STATE.graph.store_path || "—";
+        const storePath = document.getElementById("store-path");
+        if (storePath) storePath.textContent = STATE.graph.store_path || "—";
         // A zero-card payload gets a SENTENCE, not a blank canvas. After
         // store-path is set, so the footer still names WHICH store answered —
         // "no cards visible" plus the store identity is a diagnosis; the same
@@ -951,6 +982,7 @@
         // refresh tick can skip an unchanged empty payload rather than
         // repainting this panel every few seconds.
         if (renderEmptyState(STATE.graph)) {
+          markBoardPhase("state-rendered");
           LAST_GRAPH_JSON = _freshJson;
           return;
         }
@@ -969,6 +1001,9 @@
         const _sdBox = document.getElementById("f-showdone");
         if (_sdBox) _sdBox.checked = !!STATE.filters.showDone;
         render();
+        // This dispatch can show Timeline's loading state while its separate
+        // request is pending. It is not a useful-paint or interactive mark.
+        markBoardPhase("render-dispatched");
         // Instant-open: retire the server-painted skeleton (aria-busy on
         // #columns) the moment real cards paint. The named empty /
         // signed-out / error states clear it in boardStates.js, which owns
@@ -987,11 +1022,13 @@
         // instead of freezing the UI for seconds (operator 2026-07-13).
         _prewarmGraph();
       } catch (e) {
+        await BOARD_MODULES_READY;
         // Cause first, full text in a disclosure — see boardStates.js for why.
         // This used to dump `e.message` as one red line, which turned the
         // server's complete, correct diagnosis into a screen the operator read
         // as "nothing displayed" (2026-08-17).
         renderLoadError(e);
+        markBoardPhase("state-rendered");
       }
     }
 
@@ -1304,11 +1341,16 @@
         `<option value="">All statuses</option>` +
         ["goal", "done", "in_progress", "blocked", "deferred", "failed", "cancelled"]
           .map(s => `<option value="${s}">${s}</option>`).join("");
+      const blockerLabels = {
+        "compute": "Compute", "dependency": "Task dependency", "dep": "Task dependency",
+        "operator-decision": "Awaiting your decision", "agent-wait": "Waiting for an agent",
+        "none": "None",
+      };
       document.getElementById("f-blocker").innerHTML =
         `<option value="">All blockers</option>` +
         ["compute", "dependency", "dep", "operator-decision", "agent-wait", "none"]
-          .map(b => `<option value="${b}">${b}</option>`).join("") +
-        `<option value="__none">no blocker</option>`;
+          .map(b => `<option value="${b}">${blockerLabels[b]}</option>`).join("") +
+        `<option value="__none">No blocker</option>`;
       // P11b rebind — refresh the scitex-ui Combobox layered over each
       // <select.filt> so its item list reflects the freshly-populated
       // option lists. No-op when window.STX.Combobox is unavailable.

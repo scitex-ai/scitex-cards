@@ -34,11 +34,10 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import scitex_logging as slogging
 import os
 from pathlib import Path
 from typing import Iterator, Optional, TextIO
-
-import scitex_logging as slogging
 
 from ._paths import runtime_dir
 

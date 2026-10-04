@@ -39,8 +39,6 @@ into Django's 500-handler — never silently degrade to an empty set.
 
 from __future__ import annotations
 
-import json
-
 from django.http import HttpRequest, HttpResponse, JsonResponse
 
 
@@ -68,7 +66,6 @@ def runnable_view(request: HttpRequest) -> HttpResponse:
     from ..services import get_board
 
     board = get_board()
-    path = board.store_path
     tasks = board.tasks
     result = runnable_tasks(tasks, agent=agent, group=group)
 
@@ -101,7 +98,6 @@ def blocked_batch_view(request: HttpRequest) -> HttpResponse:
     from ..services import get_board
 
     board = get_board()
-    path = board.store_path
     tasks = board.tasks
     result = blocked_tasks(tasks, agent=agent, group=group)
 

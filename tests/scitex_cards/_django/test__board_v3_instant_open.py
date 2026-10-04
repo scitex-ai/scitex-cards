@@ -26,7 +26,10 @@ view-test conventions (see test__board_v3_mount_prefix.py).
 
 from __future__ import annotations
 
+import json
 import os
+import shutil
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -262,3 +265,170 @@ def test_skeleton_stylesheet_honours_reduced_motion():
     honours = "prefers-reduced-motion" in css
     # Assert
     assert honours
+
+
+# --- graph arrival must not outrun the deferred painters -------------------
+
+
+def _run_graph_arrival(case):
+    """Execute the shipped boot/loadGraph and state module with delayed ports.
+
+    Node supplies only DOM/network ports. The native-browser receipt separately
+    holds the actual timeline script response and exercises the whole leaf.
+    The columns port explicitly enables internal chrome for the existing
+    technical-error oracles; normal-mode disclosure is qualified separately.
+    """
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is required to execute the shipped board load path")
+    source = _TEMPLATE.read_text(encoding="utf-8")
+    readiness = source.partition(
+        "// === Board module readiness / first-load phases"
+    )[2].partition("\n")[2].partition("// === LAYOUT whitelist")[0]
+    load_graph = "async function loadGraph(opts) {" + source.split(
+        "async function loadGraph(opts) {", 1
+    )[1].split("\n    function passes(t)", 1)[0]
+    payload = json.dumps({
+        "case": case, "readiness": readiness, "load": load_graph,
+        "states": _BOARD_STATES_JS.read_text(encoding="utf-8"),
+    })
+    harness = r"""
+    const vm = require('node:vm');
+    const input = JSON.parse(process.argv[1]), c = input.case;
+    globalThis.window = globalThis;
+    const calls = [], phases = [], listeners = [];
+    const columns = {innerHTML: 'skeleton', busy: 'true',
+      dataset: {cardsInternalChrome: 'true'},
+      setAttribute(key, value) { if (key === 'aria-busy') this.busy = value; }};
+    globalThis.document = {
+      readyState: c.ready || 'loading',
+      addEventListener(name, fn) {
+        if (name === 'DOMContentLoaded') listeners.push(fn);
+      },
+      getElementById(id) {
+        return id === 'columns' ? columns : id === 'store-path' ? {} : null;
+      },
+      querySelectorAll() { return []; },
+    };
+    globalThis.performance = {
+      mark(name) { phases.push(name); },
+      getEntriesByName(name) { return phases.filter(p => p === name); },
+    };
+    globalThis.STATE = {graph: null, layout: 'timeline', filters: {}};
+    globalThis.API_BASE = '/mounted/cards';
+    globalThis.LAST_GRAPH_JSON = null;
+    globalThis.normalizeLayout = x => x;
+    globalThis.populateFilters = () => {};
+    globalThis.captureScroll = () => [];
+    globalThis.restoreScroll = () => {};
+    globalThis._prewarmGraph = () => {};
+    globalThis.fetch = async url => {
+      calls.push('fetch:' + url);
+      if (c.networkError) throw new Error('Synthetic network refusal');
+      return {ok: c.status === 200, status: c.status, json: async () => {
+        calls.push('parse');
+        if (c.invalidJson) throw new Error('Synthetic invalid JSON');
+        return c.body;
+      }};
+    };
+    function installModules() {
+      vm.runInThisContext(input.states);
+      globalThis.render = () => {
+        calls.push('render'); columns.innerHTML = 'timeline loading';
+      };
+    }
+    function snapshot() {
+      return {calls: [...calls], graphPublished: STATE.graph !== null,
+        html: columns.innerHTML, busy: columns.busy, phases: [...phases]};
+    }
+    if (document.readyState !== 'loading') installModules();
+    vm.runInThisContext(input.readiness + '\n' + input.load);
+    (async () => {
+      const failure = [];
+      const pending = loadGraph().catch(e => failure.push(String(e)));
+      await new Promise(resolve => setImmediate(resolve));
+      const before = snapshot();
+      installModules();
+      document.readyState = 'interactive';
+      listeners.forEach(fn => fn());
+      await pending;
+      console.log(JSON.stringify({before, after: snapshot(), failure}));
+    })();
+    """
+    result = subprocess.run(
+        [node, "-e", harness, payload], capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode:
+        raise AssertionError(result.stderr[:2000])
+    return json.loads(result.stdout)
+
+
+@pytest.mark.parametrize(
+    ("case", "outcome"),
+    [
+        ({"status": 200, "body": {"nodes": [{"id": "synthetic"}]}},
+         "timeline loading"),
+        ({"status": 200, "body": {"nodes": [], "empty_store": True}},
+         "board-state--empty-store"),
+        ({"status": 200, "body": {"nodes": [], "empty_store": False}},
+         "board-state--none-visible"),
+        ({"status": 401, "body": {"error": "signed-out", "login_url": "/login"}},
+         "board-state--signed-out"),
+        ({"status": 404, "body": {"error": "No active project", "hint": "/projects"}},
+         "board-state--no-project"),
+        ({"status": 500, "body": {"error": "Synthetic backend unavailable"}},
+         "Synthetic backend unavailable"),
+        ({"status": 500, "invalidJson": True}, "HTTP 500"),
+        ({"status": 200, "networkError": True}, "Synthetic network refusal"),
+        ({"status": 200, "invalidJson": True}, "Synthetic invalid JSON"),
+    ],
+)
+def test_graph_arrival_waits_for_painters_without_delaying_fetch(case, outcome):
+    """Fast success, refusal and malformed responses retain their honest states."""
+    # Arrange
+    response = case
+    # Act
+    result = _run_graph_arrival(response)
+    before, after = result["before"], result["after"]
+    # Assert
+    assert (
+        before["calls"][0], before["html"], before["graphPublished"],
+        outcome in after["html"], after["busy"], result["failure"],
+    ) == ("fetch:/mounted/cards/graph", "skeleton", False, True, "false", [])
+
+
+def test_graph_json_is_parsed_while_deferred_modules_are_pending():
+    """Readiness gates publication/rendering rather than the useful network work."""
+    # Arrange
+    case = {"status": 200, "body": {"nodes": [{"id": "synthetic"}]}}
+    # Act
+    result = _run_graph_arrival(case)
+    # Assert
+    assert result["before"]["calls"] == ["fetch:/mounted/cards/graph", "parse"]
+
+
+def test_board_loaded_after_dom_ready_does_not_wait_for_a_past_event():
+    """A completed document resolves readiness immediately."""
+    # Arrange
+    case = {"ready": "complete", "status": 200,
+            "body": {"nodes": [{"id": "synthetic"}]}}
+    # Act
+    result = _run_graph_arrival(case)
+    # Assert
+    assert (result["before"]["html"], result["failure"]) == ("timeline loading", [])
+
+
+def test_first_load_marks_distinguish_data_modules_and_render_dispatch():
+    """A timeline spinner is render dispatch, not useful or interactive paint."""
+    # Arrange
+    case = {"status": 200, "body": {"nodes": [{"id": "synthetic"}]}}
+    # Act
+    result = _run_graph_arrival(case)
+    # Assert
+    assert result["after"]["phases"] == [
+        "scitex-cards:board-v3:shell-dom-ready",
+        "scitex-cards:board-v3:graph-request-started",
+        "scitex-cards:board-v3:graph-data-ready",
+        "scitex-cards:board-v3:modules-ready",
+        "scitex-cards:board-v3:render-dispatched",
+    ]

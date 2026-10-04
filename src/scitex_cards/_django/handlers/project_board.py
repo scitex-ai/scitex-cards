@@ -42,12 +42,11 @@ MVP with the tenancy off, which is the one way it must never ship.
 
 from __future__ import annotations
 
+import scitex_logging as slogging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Optional, Sequence
 from uuid import uuid4
-
-import scitex_logging as slogging
 
 from ..._project_board_query import DEFAULT_ROW_LIMIT
 
@@ -1187,7 +1186,12 @@ def render_project_board(
     from django.http import HttpResponse
     from django.template.loader import render_to_string
 
-    from ..views import _BOARD_ALIASES, _cards_shell_context, _include_root
+    from ..views import (
+        _BOARD_ALIASES,
+        _cards_shell_context,
+        _include_root,
+        _project_picker_library_registered,
+    )
 
     # The aliases this page can be reached by, longest first, so the include
     # root the shell's mount contract needs is recovered the same way the fleet
@@ -1210,9 +1214,18 @@ def render_project_board(
         "created_id": created_id,
         "updated_id": updated_id,
         "host_picker_available": (
-            _host_picker_available()
-            if host_picker_available is None
-            else host_picker_available
+            (
+                _host_picker_available()
+                if host_picker_available is None
+                else host_picker_available
+            )
+            # BOTH conditions, and the second one is what the old guard was
+            # missing: `{% load %}`ing a library that is not installed is a hard
+            # TemplateSyntaxError raised while the partial COMPILES, so a
+            # provider-only guard could never reach its own fallback and this
+            # page 500'd on every state. The library half is not overridable,
+            # because no caller can make an absent library present.
+            and _project_picker_library_registered()
         ),
     }
     html = render_to_string("scitex_cards/project_board.html", context, request=request)
@@ -1281,12 +1294,21 @@ def project_board_page(request):
 def _host_picker_available() -> bool:
     """True when a HOST has registered its project provider with the SDK.
 
-    The template renders ONE picker: the SDK's when the host registered one,
-    otherwise the standalone form over this viewer's own authorized projects.
-    Asking here rather than guessing in the template keeps the decision in one
-    place and keeps a missing scitex-ui API a graceful degradation (the same
-    rule ``settings.py`` applies to the element inspector) instead of a
-    TemplateSyntaxError on a deployment whose SDK predates project scope.
+    This answers ONE of the two questions the picker's availability turns on —
+    whether there is a host selector to show. The other, whether the SDK's tag
+    library can be LOADED at all, is ``views._project_picker_library_registered``
+    and is combined with this answer at the render site. It has to be separate,
+    because `{% load %}`ing a library that is not installed is a hard
+    TemplateSyntaxError raised while the partial COMPILES: a provider-only guard
+    cannot reach its own fallback branch, so on a deployment whose scitex-ui
+    predates project scope this page 500'd instead of degrading. The `{% load %}`
+    now lives in ``_project_picker.html``, reached only through a guarded
+    ``{% include %}``.
+
+    Imported lazily: this module is imported by ``urls.py`` at Django startup,
+    and the fleet board must keep working on a deployment whose scitex-ui
+    predates the project-scope API (the same graceful-degradation rule
+    ``settings.py`` applies to the element inspector).
     """
     try:
         from scitex_ui.project_scope import host_project_provider_url

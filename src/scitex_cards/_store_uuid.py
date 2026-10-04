@@ -44,13 +44,12 @@ merge the two and rule 4b silently becomes "use whatever you were pointed at".
 
 from __future__ import annotations
 
+import scitex_logging as slogging
 import os
 import re
 import uuid as _uuid_module
 from pathlib import Path
 from typing import Final
-
-import scitex_logging as slogging
 
 from ._store_tx import begin_write_transaction
 

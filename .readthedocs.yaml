@@ -8,7 +8,7 @@ build:
 
 sphinx:
   configuration: docs/sphinx/conf.py
-  fail_on_warning: false
+  fail_on_warning: true
 
 formats:
   - pdf
@@ -16,9 +16,10 @@ formats:
 
 python:
   install:
-    # The package itself (web/docs extras pull Django + Sphinx). The board
-    # deps (scitex-app/scitex-ui) are mocked in conf.py, so a bare install
-    # plus the docs requirements is enough to build the API docs.
+    # A bare install carries the runtime (Django + board deps are core, not
+    # extras). The board deps (scitex-app/scitex-ui) are mocked in conf.py,
+    # so a bare install plus the docs requirements is enough to build the
+    # API docs.
     - method: pip
       path: .
     - requirements: docs/sphinx/requirements.txt
