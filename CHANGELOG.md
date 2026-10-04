@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## [0.53.6] - 2026-10-04
+
+### Board and DM are prominent top tabs
+
+The shared Board | DM page switcher was a small inline segmented control;
+it read as a minor switch, not top-level navigation. Both surfaces now show
+Board and DM as equal full-width top tabs with a straight accent underline
+on the active page (44px targets on desktop and phone). Routes, markup,
+aria-current, the unread badge and the mount-aware `api_base` hrefs are
+unchanged.
+
 ## [0.53.5] - 2026-10-03
 
 ### A missing SDK project picker degrades instead of blanking the page
