@@ -83,7 +83,9 @@ def real_picker():
 def _canonical(context, request):
     # Use the tag itself as the capability authority. A future canonical user
     # capability can emit markup without Cards adding a second scope policy.
-    return sdk.scitex_project_picker({**context, "request": request}, current="A")
+    from django.template import Context
+
+    return sdk.scitex_project_picker(Context({**context, "request": request}), current="A")
 
 
 @pytest.mark.parametrize("active", ["board", "dm"])
