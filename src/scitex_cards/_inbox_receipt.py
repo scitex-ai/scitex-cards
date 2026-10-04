@@ -59,6 +59,8 @@ import scitex_logging as slogging
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from ._inbox_record import NOTIFICATION_RECORD_KEYS
+
 logger = slogging.getLogger(__name__)
 
 #: Column/key: when WE handed the record to the transport.
@@ -138,17 +140,11 @@ def _file_receipts(recipient_id: str, store: str | Path | None) -> list[dict]:
         return []
     out: list[dict] = []
     for record in _load_inboxes_section(path).get(recipient_id, []):
-        out.append(
-            {
-                "id": record.get("id"),
-                "event_type": record.get("event_type"),
-                "card_id": record.get("card_id"),
-                "ts": record.get("ts"),
-                "seen": bool(record.get("seen")),
-                PUSHED_AT: record.get(PUSHED_AT),
-                CONFIRMED_AT: record.get(CONFIRMED_AT),
-            }
-        )
+        receipt = {key: record.get(key) for key in NOTIFICATION_RECORD_KEYS}
+        receipt["seen"] = bool(record.get("seen"))
+        receipt[PUSHED_AT] = record.get(PUSHED_AT)
+        receipt[CONFIRMED_AT] = record.get(CONFIRMED_AT)
+        out.append(receipt)
     return out
 
 
@@ -272,9 +268,11 @@ def receipts(recipient_id: str, *, store: str | Path | None = None) -> list[dict
     """Every record for ``recipient_id`` with its receipts, oldest first.
 
     Read-only on every backend (it will not create or migrate a store), so the
-    health doctor can measure without changing what it measures. Each entry is
-    ``{id, event_type, card_id, ts, seen, pushed_at, confirmed_at}``; a record
-    that predates receipts reports ``None`` for both stamps.
+    health doctor can measure without changing what it measures. Each entry
+    preserves the nine standard notification fields (including original body,
+    actor and DM identifiers) plus ``pushed_at`` and ``confirmed_at``. A record
+    that predates receipts reports ``None`` for both stamps. Imported payload
+    extensions are outside this closed projection.
 
     Dispatches for the same reason :func:`_stamp` does — a doctor reading a
     different database from the one the rail writes is a doctor that reports

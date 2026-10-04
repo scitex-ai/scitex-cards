@@ -385,8 +385,21 @@ class HubBackend:
         unseen_only: bool = True,
         ack: bool = False,
         store: Any = None,
+        *,
+        notification_id: str | None = None,
+        limit: int | None = None,
+        after: str | None = None,
     ) -> dict:
         self._forbid_store(store)
+        selectors = {
+            key: value for key, value in
+            (("notification_id", notification_id), ("limit", limit), ("after", after))
+            if value is not None
+        }
+        if selectors:
+            from ._notification_recovery import _validate_selectors
+
+            _validate_selectors(agent, unseen_only, ack, notification_id, limit, after)
         if ack:
             # HANDOVER IS NOT CONFIRMATION — warn on the CLIENT too, not just
             # hub-side, so the deprecation reaches the process that wrote it.
@@ -395,7 +408,7 @@ class HubBackend:
             warn_ack_on_read()
         return self._call(
             "poll_notifications",
-            {"agent": agent, "unseen_only": unseen_only, "ack": ack},
+            {"agent": agent, "unseen_only": unseen_only, "ack": ack, **selectors},
         )
 
     def ack_notifications(

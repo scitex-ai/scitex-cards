@@ -54,6 +54,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Final
 
+from ._inbox_record import NOTIFICATION_RECORD_KEYS
 from ._inbox_shape import POSTGRES_SHAPE
 
 __all__ = ["receipts", "stamp"]
@@ -62,15 +63,9 @@ _TABLE: Final[str] = POSTGRES_SHAPE.table
 _RECIPIENT: Final[str] = POSTGRES_SHAPE.recipient
 _ORDER_COLUMN: Final[str] = POSTGRES_SHAPE.order_by
 
-#: Columns a receipt read returns, in the shape the file reader returns.
-_READ_COLUMNS: Final[tuple[str, ...]] = (
-    "id",
-    "event_type",
-    "card_id",
-    "ts",
-    "seen",
-    "pushed_at",
-    "confirmed_at",
+#: Original notification fields plus authoritative delivery receipt columns.
+_READ_COLUMNS: Final[tuple[str, ...]] = NOTIFICATION_RECORD_KEYS + (
+    "pushed_at", "confirmed_at"
 )
 
 
