@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## [0.53.7] - 2026-10-04
+
+### App/UI ownership consolidated into scitex-sdk
+
+Direct scitex-app/scitex-ui distributions retired from core dependencies;
+every remaining consumer (i18n settings, project_scope, context processors,
+tag libraries, app shells, floor contract, test doubles) resolves through
+scitex-sdk>=0.3.0 (floor qualified against the published 0.3.0 wheel).
+Graceful degradation preserved where the SDK is absent or predates an API.
+
 ## [0.53.6] - 2026-10-04
 
 ### Board and DM are prominent top tabs
