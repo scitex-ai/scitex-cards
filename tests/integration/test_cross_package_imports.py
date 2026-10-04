@@ -50,12 +50,12 @@ import pytest
 
 #: Exactly the cross-package modules imported under src/ (PS-140 verifies this).
 CROSS_PACKAGE_IMPORTS = [
-    "scitex_app._django",
+    'scitex_sdk.app._django',
     "scitex_config._ecosystem",
     "scitex_dev.ecosystem",
     "scitex_dev.jobs",
     "scitex_dev.staleness",
-    "scitex_ui",
+    'scitex_sdk.ui',
 ]
 
 
@@ -78,8 +78,9 @@ def test_cross_package_dependency_imports_cleanly(module_name):
 def test_board_appconfig_subclasses_scitex_app_when_installed():
     # Arrange -- importorskip on the ROOT, then import the submodule for real;
     # the old form skipped on the dotted path and so could not fail.
-    pytest.importorskip("scitex_app")
-    scitex_app_django = importlib.import_module("scitex_app._django")
+    pytest.importorskip("scitex_sdk")
+    importlib.import_module('scitex_sdk.app')
+    scitex_app_django = importlib.import_module('scitex_sdk.app._django')
     from scitex_cards._django.apps import ScitexCardsConfig
 
     # Act

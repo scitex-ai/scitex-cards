@@ -91,7 +91,7 @@ def _store_error_body(exc: Exception) -> str:
 def _cards_internal_chrome_enabled(request) -> bool:
     """Use the optional UI SDK's request eligibility for browser diagnostics."""
     try:
-        from scitex_ui.context_processors import element_inspector_enabled
+        from scitex_sdk.ui.context_processors import element_inspector_enabled
 
         return element_inspector_enabled(request) is True
     except Exception:  # noqa: BLE001 - unsupported optional UI hides diagnostics
@@ -181,8 +181,8 @@ def _host_project_provider_registered() -> bool:
     the host's, not ours.
     """
     try:
-        from scitex_ui.project_scope import host_project_provider_url
-    except ImportError:  # older scitex-ui: no provider API, so no host picker
+        from scitex_sdk.ui.project_scope import host_project_provider_url
+    except ImportError:  # SDK predating provider API: no host picker
         return False
     try:
         return bool(host_project_provider_url())
@@ -211,11 +211,11 @@ def _current_project_id(request) -> str:
     takes both pages down with it.
     """
     try:
-        from scitex_ui.project_scope import (
+        from scitex_sdk.ui.project_scope import (
             host_project_provider,
             resolve_project,
         )
-    except ImportError:  # older scitex-ui: no project-scope API at all
+    except ImportError:  # SDK predating project-scope API
         return ""
     try:
         provider = host_project_provider()
@@ -235,8 +235,8 @@ def _current_project_id(request) -> str:
 
 def _cards_shell_context(request, api_base: str) -> dict[str, object]:
     """Build the shared SciTeX app shell context for either Cards page."""
-    from scitex_ui.branding import shell_context
-    from scitex_ui.mount import mount_context
+    from scitex_sdk.ui.branding import shell_context
+    from scitex_sdk.ui.mount import mount_context
 
     from ._user_scope import current_user
 

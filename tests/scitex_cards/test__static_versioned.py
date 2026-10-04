@@ -115,7 +115,7 @@ class TestAnExistingQueryStringIsPreserved:
     [
         "/static/scitex_cards/chat/chat.js",
         "/static/scitex_cards/chat/chat_menu.js",
-        "/static/scitex_ui/css/shell/theme.css",
+        "/static/scitex_sdk/ui/css/shell/theme.css",
         "/board/static/scitex_cards/chat/chat.js",
     ],
     ids=["chat", "menu", "ui-css", "sub-path-mount"],

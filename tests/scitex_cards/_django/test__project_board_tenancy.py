@@ -54,7 +54,7 @@ class _Provider:
         self.remembered = []
 
     def list_projects(self, request=None):
-        from scitex_ui.project_scope import ProjectEntry
+        from scitex_sdk.ui.project_scope import ProjectEntry
 
         return [ProjectEntry(id=pid, name=pid) for pid in self._ids]
 

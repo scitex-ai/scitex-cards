@@ -41,6 +41,9 @@ from importlib.metadata import version as _dist_version
 from pathlib import Path
 
 import click
+import scitex_logging as slogging
+
+logger = slogging.getLogger(__name__)
 
 try:  # scitex-dev develop (slices 2+3 merged; not in the 0.21.0 release)
     from scitex_dev.ecosystem import (
@@ -91,7 +94,7 @@ def _warn_once(old_name: str, message: str) -> None:
     marker = _marker_path(old_name)
     if marker.exists():
         return
-    click.echo(message, err=True)
+    logger.warning(message)
     try:
         marker.touch()
     except OSError:

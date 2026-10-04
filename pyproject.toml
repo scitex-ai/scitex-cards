@@ -91,10 +91,12 @@ dependencies = [
     # SDK), so below the floor the pages degrade to the static-graph fallback
     # and the rich-board rendering tests fail — the silent wrong-board shape
     # the migration gate (test__board_shell_migration.py) exists to surface.
-    "scitex-app>=0.26.1",
+    "scitex-sdk>=0.3.0",
+    # scitex-app/scitex-ui retired: every remaining consumer (i18n settings,
+    # project_scope, context_processors, tag libraries, app shells) resolves
+    # through scitex-sdk>=0.3.0 (verified against the published 0.3.0 wheel).
     # >=0.11.1 is MEASURED, not aspirational -- see the note in the `dev`
     # extra below for what breaks at 0.7.1 and why presence is not currency.
-    "scitex-ui>=0.11.1",
     # <4 is MEASURED, 2026-09-05: fastmcp 4.0.3 stopped holding mcp below
     # 2.0, so an unbounded resolution now installs mcp 2.1.1, whose
     # ServerSession no longer takes the initialization options positionally.
@@ -150,7 +152,7 @@ dev = [
     # tests; include them so a fresh `pip install -e .[dev]` runs the full
     # suite rather than silently skipping the board tests (PS-210).
     "django>=4.2",
-    "scitex_app",
+    "scitex-sdk>=0.3.0",
     # >=0.11.1, and the number is MEASURED rather than aspirational:
     #
     #   0.7.1  — the shell template's DEFAULT favicon. Our templates declare no
@@ -170,7 +172,6 @@ dev = [
     # minor versions under what the code needs. A resolver honouring 0.7.1 gets
     # a page that renders and is subtly wrong — the failure mode a floor exists
     # to prevent. Do not loosen it.
-    "scitex_ui>=0.11.1",
     # Same PS-210 reason as the web extras above, and caught by the same rule:
     # the backend tests import psycopg UNGUARDED, so without it here a fresh
     # `pip install -e .[dev]` collects them and errors rather than running the
@@ -211,8 +212,7 @@ web = [
     # else's build for a change of mine. Ordering it the other way costs nothing
     # and lands the noise on nobody.
     "django>=4.2",
-    "scitex-app",
-    "scitex-ui>=0.11.1",
+    "scitex-sdk>=0.3.0",
 ]
 mcp = [
     # Same redundant-alias contract as `web` above. FastMCP is the canonical

@@ -1,4 +1,4 @@
-{% extends "scitex_app/app_shell.html" %}
+{% extends "scitex_sdk/app/app_shell.html" %}
 {% load static scitex_paths %}
 {% comment %}
   project_board.html — the PROJECT-SCOPED board (Hub PR #923, section 5 "Cards":
@@ -9,8 +9,8 @@
   locate controls by stable attributes "not translated labels", so the labels
   below are free to move and translate without breaking a recording.
 
-  THE PICKER IS THE SDK's. When the host registers a project provider, the
-  {% templatetag openblock %} include {% templatetag closeblock %} below renders the canonical selector and this page adds no second one. Only a
+  THE PICKER IS THE SDK's. When the host registers a project provider,
+  {% templatetag openblock %} scitex_project_picker {% templatetag closeblock %} renders the canonical selector and this page adds no second one. Only a
   STANDALONE mount (no host provider) falls back to the plain form below, which
   offers exactly the projects the viewer's own authorized cards name — the same
   set the provider would answer with, so the two can never disagree.
