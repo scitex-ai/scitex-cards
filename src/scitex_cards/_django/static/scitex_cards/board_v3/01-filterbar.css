@@ -219,7 +219,6 @@ a {
   background: var(--green);
   display: inline-block;
   margin-right: 5px;
-  animation: pulse-green 2s ease-in-out infinite;
 }
 
 /* === Fleet-liveness dot-strip (ticket proj-scitex-cards-fleet-liveness) ===
@@ -596,8 +595,8 @@ a {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
-  padding: 4px 14px;
+  gap: 3px 8px;
+  padding: 3px 10px;
   background: var(--col-bg);
   border-bottom: 1px solid var(--border);
 }
