@@ -183,29 +183,32 @@ def test_missing_skill_writes_no_stdout(tmp_path, level):
     assert result.stdout == ""
 
 
-def test_missing_skill_names_missing_skill(tmp_path):
+@pytest.mark.parametrize("level", ["INFO", "ERROR"])
+def test_missing_skill_error_names_missing_skill(tmp_path, level):
     # Arrange
     args = ["-m", "scitex_cards", "skills", "get", "missing-skill"]
     # Act
-    result = _run(tmp_path, args, level="INFO")
+    result = _run(tmp_path, args, level=level)
     # Assert
     assert "ERRO: skill not found: missing-skill" in result.stderr
 
 
-def test_missing_skill_lists_available(tmp_path):
+@pytest.mark.parametrize("level", ["INFO", "ERROR"])
+def test_missing_skill_lists_available(tmp_path, level):
     # Arrange
     args = ["-m", "scitex_cards", "skills", "get", "missing-skill"]
     # Act
-    result = _run(tmp_path, args, level="INFO")
+    result = _run(tmp_path, args, level=level)
     # Assert
     assert "ERRO: available:" in result.stderr
 
 
-def test_missing_skill_suggests_quick_start(tmp_path):
+@pytest.mark.parametrize("level", ["INFO", "ERROR"])
+def test_missing_skill_suggests_quick_start(tmp_path, level):
     # Arrange
     args = ["-m", "scitex_cards", "skills", "get", "missing-skill"]
     # Act
-    result = _run(tmp_path, args, level="ERROR")
+    result = _run(tmp_path, args, level=level)
     # Assert
     assert "02_quick-start" in result.stderr
 
@@ -551,6 +554,28 @@ def test_fallback_alias_hidden_level_writes_no_stderr(tmp_path):
     result = _run(tmp_path, args, level="ERROR")
     # Assert
     assert result.stderr == ""
+
+
+@pytest.mark.parametrize("level", ["WARNING", "ERROR"])
+def test_fallback_alias_second_run_preserves_exit(tmp_path, level):
+    # Arrange
+    args = ["-c", _ALIAS, "old-fixture", "--value", "42"]
+    # Act
+    _run(tmp_path, args, level=level)
+    result = _run(tmp_path, args, level=level)
+    # Assert
+    assert result.returncode == 0
+
+
+@pytest.mark.parametrize("level", ["WARNING", "ERROR"])
+def test_fallback_alias_second_run_preserves_json(tmp_path, level):
+    # Arrange
+    args = ["-c", _ALIAS, "old-fixture", "--value", "42"]
+    # Act
+    _run(tmp_path, args, level=level)
+    result = _run(tmp_path, args, level=level)
+    # Assert
+    assert json.loads(result.stdout) == {"value": 42}
 
 
 @pytest.mark.parametrize("level", ["WARNING", "ERROR"])
