@@ -7,6 +7,7 @@ from __future__ import annotations
 from _banned import DRIVER, ENGINE  # noqa: F401
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -314,6 +315,103 @@ class TestServerRequiresAStoreChoice:
             error = exc
         # Assert
         assert type(error) is StoreTargetError
+
+
+class _RefuseStorePrimitive:
+    """Meta-path finder that fails ``scitex_dev.store`` like a half-removed install.
+
+    Measured 2026-10-05: a partial uninstall leaves ``scitex_dev/`` as a
+    namespace directory with no ``store/``, so the import system raises
+    ``ModuleNotFoundError("No module named 'scitex_dev.store'")``. Raising
+    that exact error exercises the guard without touching the real install.
+    """
+
+    def __init__(self, name: str = "scitex_dev.store"):
+        self._name = name
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "scitex_dev.store":
+            raise ModuleNotFoundError(
+                f"No module named {self._name!r}", name=self._name
+            )
+        return None
+
+
+@pytest.fixture
+def half_removed_primitive(monkeypatch):
+    """Evict the real primitive and refuse its re-import for one test."""
+    monkeypatch.delitem(sys.modules, "scitex_dev.store", raising=False)
+    blocker = _RefuseStorePrimitive()
+    sys.meta_path.insert(0, blocker)
+    try:
+        yield blocker
+    finally:
+        sys.meta_path.remove(blocker)
+
+
+class TestAHalfRemovedPrimitiveIsNamed:
+    """The store door must name the install defect, not just the symptom.
+
+    Every store-backed verb funnels through ``resolve_store_target`` before
+    touching the database, so this one guard is where a half-removed
+    scitex-dev stops being a bare ``ModuleNotFoundError`` and starts being
+    an actionable repair order.
+    """
+
+    def test_missing_primitive_names_the_reinstall(self, half_removed_primitive):
+        # Arrange
+        message = ""
+        # Act
+        try:
+            resolve_store_target()
+        except ModuleNotFoundError as exc:
+            message = str(exc)
+        # Assert
+        assert "force-reinstall" in message
+        assert "scitex-dev" in message
+
+    def test_the_original_error_stays_chained(self, half_removed_primitive):
+        # Arrange
+        chained = None
+        # Act
+        try:
+            resolve_store_target()
+        except ModuleNotFoundError as exc:
+            chained = exc.__cause__
+        # Assert
+        assert isinstance(chained, ModuleNotFoundError)
+        assert chained.name == "scitex_dev.store"
+
+    def test_an_explicit_target_never_touches_the_primitive(
+        self, half_removed_primitive, tmp_path
+    ):
+        """Positive control: the guard must not break callers that chose a target."""
+        # Arrange
+        target = tmp_path / "cards.db"
+        # Act
+        resolved = resolve_store_target(target)
+        # Assert
+        assert resolved == str(target)
+
+    def test_a_deeper_breakage_is_not_relabelled(self, monkeypatch):
+        """An ImportError INSIDE the primitive is their defect, not this install."""
+        # Arrange
+        monkeypatch.delitem(sys.modules, "scitex_dev.store", raising=False)
+        blocker = _RefuseStorePrimitive(name="scitex_dev.store._internal_dep")
+        sys.meta_path.insert(0, blocker)
+        error = None
+        # Act
+        try:
+            try:
+                resolve_store_target()
+            except ModuleNotFoundError as exc:
+                error = exc
+        finally:
+            sys.meta_path.remove(blocker)
+        # Assert
+        assert error is not None
+        assert error.name == "scitex_dev.store._internal_dep"
+        assert "force-reinstall" not in str(error)
 
 
 # EOF

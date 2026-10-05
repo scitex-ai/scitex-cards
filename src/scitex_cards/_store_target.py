@@ -99,7 +99,33 @@ def resolve_store_target(explicit: str | Path | None = None) -> str:
     # default when the variable is absent.  Keeping this call at the common
     # door means cards, DMs, and inbox rows cannot quietly choose different
     # databases.
-    from scitex_dev.store import host_store
+    try:
+        from scitex_dev.store import host_store
+    except ModuleNotFoundError as exc:
+        # A BARE ModuleNotFoundError NAMES THE SYMPTOM, NOT THE FIX. Measured
+        # 2026-10-05: a partial uninstall left scitex_dev/ as a NAMESPACE
+        # directory in site-packages -- subdirs present, but NO store/, NO
+        # __init__.py, NO dist-info -- so every store-backed verb died HERE
+        # with "No module named 'scitex_dev.store'". That text names a
+        # subsystem that was working and sends the reader hunting a missing
+        # module instead of a broken install. The fix is reinstalling the
+        # primitive, not editing this call site.
+        #
+        # ONLY the primitive itself missing is rewritten: an ImportError for
+        # anything deeper (a dependency scitex_dev.store itself needs) is
+        # their defect, not this install, and relabelling it would repeat
+        # the misdirection this guard exists to end.
+        if exc.name not in ("scitex_dev", "scitex_dev.store"):
+            raise
+        raise ModuleNotFoundError(
+            "scitex-cards cannot reach its store: the shared-store primitive "
+            f"'scitex_dev.store' is not importable here ({exc}). This is an "
+            "INSTALL defect, not a code defect -- a half-removed scitex-dev "
+            "(namespace directory with no store/ and no dist-info) raises "
+            "exactly this. Repair it with:\n"
+            "    pip install --force-reinstall 'scitex-dev>=0.59.0'\n"
+            "then confirm with `scitex-cards resolve-store`."
+        ) from exc
 
     from ._store_plugin import STORE_NAME
 
