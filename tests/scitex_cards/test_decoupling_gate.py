@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""S7 decoupling gate: scitex-cards never couples to sac or the telegrammer.
+"""S7 decoupling gate: scitex-cards never couples to sac, the telegrammer,
+or any model-harness SDK.
 
 Operator hard rule (さいいんふら, 2026-07-16): scitex-cards must be
 independently usable — no single point of failure, no import of
-scitex-agent-container (sac) or claude-code-telegrammer, ever. Cross-package
+scitex-agent-container (sac), claude-code-telegrammer, or any model-harness
+SDK, ever. Cross-package
 integration happens through PORTS (entry-point groups the OTHER side
 registers into; see ``_ports.py``), so the dependency arrow always points
 AT this package, never out of it.
@@ -59,10 +61,14 @@ SRC = Path(__file__).resolve().parents[2] / "src" / "scitex_cards"
 
 #: Root module names scitex-cards must NEVER import. ``scitex_cards`` is
 #: deliberately absent: that is our own shim, not a foreign package.
+#: ``claude_agent_sdk`` is a model-harness SDK: measured 2026-10-05 it is
+#: installed in the dev venv (0.2.163) yet imported nowhere under src/ — the
+#: independence holds, and this entry pins it.
 FORBIDDEN_ROOTS = {
     "scitex_agent_container",
     "claude_code_telegrammer",
     "sac",
+    "claude_agent_sdk",
 }
 
 
