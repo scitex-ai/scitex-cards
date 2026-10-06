@@ -134,10 +134,28 @@ def detect_vantage(proc_root: Path) -> str:
     A container's ``/proc`` shows only its own namespace, so an empty result
     there means WRONG VANTAGE, not "not running" — the distinction that cost a
     wrong fleet-wide conclusion on 2026-08-21.
+
+    Every ``exists()`` here is guarded: on a shared host ``/proc/1/root`` is
+    another UID's directory and the check itself raises ``PermissionError``
+    (measured on compute-02). An undetectable vantage answers ``"host"`` —
+    the conservative direction, since claiming ``"container"`` would discard
+    a real empty result as a vantage artifact while claiming ``"host"``
+    merely reports what was seen.
     """
-    return "container" if (proc_root / "1" / "root" / ".dockerenv").exists() or Path(
-        "/.dockerenv"
-    ).exists() or os.environ.get("SAC_NAME") else "host"
+
+    def _exists(path: Path) -> bool:
+        try:
+            return path.exists()
+        except (OSError, PermissionError):
+            return False
+
+    return (
+        "container"
+        if _exists(proc_root / "1" / "root" / ".dockerenv")
+        or _exists(Path("/.dockerenv"))
+        or os.environ.get("SAC_NAME")
+        else "host"
+    )
 
 
 def _read(path: Path) -> str:

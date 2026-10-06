@@ -20,6 +20,7 @@ from scitex_cards._process_inventory import (
     UNREADABLE,
     UNRESOLVED,
     describe_self,
+    detect_vantage,
     scan,
 )
 
@@ -248,6 +249,42 @@ def test_a_vanishing_pid_does_not_abort_the_table(tmp_path):
     inv = scan(proc_root=root, self_pid=1, parent_pid=2)
     # Assert
     assert ([r.pid for r in inv.rows], inv.enumerated) == ([4242], 2)
+
+
+def test_a_denied_proc_root_answers_host_rather_than_raising(tmp_path):
+    """The compute-02 case: /proc/1/root raises PermissionError on exists().
+
+    Same class as the exe fix one line over — an unguarded ``exists()`` on
+    another UID's directory aborts the enumeration before it starts. The
+    direction matters: undetectable answers ``"host"``, because claiming
+    ``"container"`` would discard a real empty result as a vantage artifact.
+    """
+    # Arrange
+    root = tmp_path / "proc"
+    root.mkdir()
+    real_exists = Path.exists
+
+    def _deny_root(self, *, follow_symlinks=True):  # noqa: ANN001, ANN202
+        if self == root / "1" / "root" / ".dockerenv":
+            raise PermissionError("other uid")
+        return real_exists(self, follow_symlinks=follow_symlinks)
+
+    Path.exists = _deny_root  # type: ignore[method-assign] — restored in finally
+    # SAC_NAME must not decide this: the subject is the proc_root guard, and
+    # this container carries SAC_NAME, which would answer container through
+    # the third clause whatever the guard does.
+    import os
+
+    saved = os.environ.pop("SAC_NAME", None)
+    try:
+        # Act
+        vantage = detect_vantage(root)
+    finally:
+        if saved is not None:
+            os.environ["SAC_NAME"] = saved
+        Path.exists = real_exists
+    # Assert
+    assert vantage == "host"
 
 
 def test_describe_self_reports_the_version_actually_imported():
