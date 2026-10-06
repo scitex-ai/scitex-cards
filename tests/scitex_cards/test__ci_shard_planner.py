@@ -132,6 +132,34 @@ def test_the_profile_free_fallback_spreads_the_db_files(tmp_path):
     assert len(shards_with_db) == 4
 
 
+def test_the_db_markers_match_the_current_conftest_vocabulary(tmp_path):
+    """The markers must name what store-touching test files ACTUALLY spell.
+
+    The cutover to the database-only store renamed the vocabulary: the
+    fixtures are ``new_store`` / ``seed_db_from_doc`` and the pin is
+    ``$SCITEX_STORE_DSN``. Markers naming the machinery underneath
+    (``ephemeral_schema``, ``writable_dsn``, ...) classify seeding files as
+    DB-free, and the long tail piles onto one shard. This pins the sync:
+    every marker must occur in tests/conftest.py or
+    tests/scitex_cards/conftest.py — the two files whose machinery the
+    comment claims to track.
+    """
+    # Arrange
+    roots = (
+        _REPO_ROOT / "tests" / "conftest.py",
+        _REPO_ROOT / "tests" / "scitex_cards" / "conftest.py",
+    )
+    sources = [p.read_text(encoding="utf-8") for p in roots]
+    # Act
+    missing = [
+        m
+        for m in ci_shard._DB_FILE_MARKERS
+        if not any(m in source for source in sources)
+    ]
+    # Assert
+    assert missing == []
+
+
 def test_the_same_inputs_always_produce_the_same_plan(tmp_path):
     """Determinism: a rebuild must not reshuffle what a green run measured."""
     # Arrange

@@ -120,12 +120,20 @@ def _file_of(node_id: str) -> str:
 
 # Markers that indicate a test *file* drives a real Postgres store.
 # Kept in sync with tests/conftest.py's throwaway-schema machinery.
+#
+# WHY THESE THREE AND NOT THE OLDER SET. The cutover to the database-only
+# store renamed the vocabulary: ``new_store`` is now the fixture that hands
+# out throwaway stores, ``seed_db_from_doc`` the seeder, and
+# ``$SCITEX_STORE_DSN`` the pin every store-touching test names. The older
+# markers (``ephemeral_schema``, ``writable_dsn``, ``SCITEX_CARDS_DB``,
+# ``postgres_dsn``) name the machinery UNDER the fixtures, which most test
+# files never spell — so a file that seeds a real store through
+# ``seed_db_from_doc`` was classified DB-free, and the long tail piled onto
+# one shard. Measured 2026-10-06: 92 of 120 true DB files missed.
 _DB_FILE_MARKERS = (
     "new_store",
-    "ephemeral_schema",
-    "writable_dsn",
-    "SCITEX_CARDS_DB",
-    "postgres_dsn",
+    "seed_db_from_doc",
+    "SCITEX_STORE_DSN",
 )
 
 # A coarse weight for a DB file vs a DB-free file when no duration profile is
