@@ -54,8 +54,8 @@ from typing import Dict, List, Optional, Tuple
 
 logger = slogging.getLogger(__name__)
 
-# In-process cache: store_path_str -> (BoardState, last_access_time)
-_board_cache: Dict[str, Tuple["BoardState", float]] = {}
+# In-process cache: (store_path_str, load_tag) -> (BoardState, last_access_time)
+_board_cache: Dict[tuple, Tuple["BoardState", float]] = {}
 _CACHE_TTL_SECONDS = 3_600  # 1 hour
 
 #: Env override for the per-project lane discovery glob. Comma-separated.
@@ -157,6 +157,41 @@ def _discover_lanes() -> List[Path]:
             if mpath.is_file():
                 out.append(mpath)
     return sorted(set(out))
+
+
+def _load_tag(load) -> str:
+    """The cache-key half that names HOW the board was read.
+
+    The board cache used to key on the store alone, which was sound while
+    every caller read the whole document: one store, one board. The moment a
+    caller passes ``load=`` — a project-scoped reader, a test's slow
+    rebuild — the same store has as many boards as readers, and a shared key
+    serves one reader's slice as another's board. The tag keeps them apart.
+
+    ``None`` (the default whole-document read) tags ``"default"``. Anything
+    else tags ``module.qualname`` — stable across calls for the named,
+    module-level loader functions production callers pass. Two distinct
+    closures sharing one qualname share one tag: pass named loaders, not
+    lambdas, when the entries must differ. ``id()`` would be unique but is
+    wrong instead: ids are recycled after garbage collection, and a recycled
+    id serves a dead loader's board as a live one's.
+    """
+    if load is None:
+        return "default"
+    module = getattr(load, "__module__", None) or "?"
+    qualname = getattr(load, "__qualname__", None) or repr(load)
+    return f"{module}.{qualname}"
+
+
+def _board_cache_key(resolved, load) -> tuple:
+    """The ONE construction point for board-cache identity.
+
+    ``(store path, load tag)`` — every ``_board_cache`` and ``_refreshing``
+    access flows from the key ``get_board`` builds here, so a second
+    construction site is a second cache that can disagree. Read the tag's
+    docstring before adding a third component.
+    """
+    return (str(resolved), _load_tag(load))
 
 
 def _stat_sig(path: Path) -> tuple:
@@ -477,7 +512,7 @@ def get_board(
         _stat_sig(resolved) if sidecar_exists else (0, 0, 0),
     )
 
-    key = str(resolved)
+    key = _board_cache_key(resolved, load)
     cached = _board_cache.get(key)
     if cached is not None:
         board, _ = cached
