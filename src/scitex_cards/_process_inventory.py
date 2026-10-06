@@ -147,6 +147,25 @@ def _read(path: Path) -> str:
         return ""
 
 
+def _exe_of(entry: Path) -> str:
+    """The process's executable, or '' when it cannot be read.
+
+    On a shared host, ``/proc/<pid>/exe`` for another UID raises
+    ``PermissionError`` — out of ``exists()`` itself, not just the read, so
+    there is no \"check first, read after\" that avoids it. An unreadable exe
+    is not an unreadable PROCESS: the cmdline half (read through ``_read``,
+    which already swallows this) still identifies the interpreter via
+    argv[0], so the row is kept with the venv half UNREADABLE. Skipping the
+    row instead would undercount the population; aborting the loop instead
+    loses the whole host table — which is what infra measured on
+    compute-01/02/03.
+    """
+    try:
+        return os.path.realpath(entry / "exe") if (entry / "exe").exists() else ""
+    except (OSError, PermissionError):
+        return ""
+
+
 def _classify(cmdline: str) -> str:
     return LONG_LIVED if any(t in cmdline for t in _DAEMON_TOKENS) else PER_INVOCATION
 
@@ -224,7 +243,7 @@ def scan(
         cmdline = _read(entry / "cmdline").replace("\x00", " ").strip()
         if not cmdline or not any(m in cmdline for m in _MARKERS):
             continue
-        exe = os.path.realpath(entry / "exe") if (entry / "exe").exists() else ""
+        exe = _exe_of(entry)
         venv = ""
         for candidate in _interpreter_candidates(cmdline, exe):
             venv = _venv_of(candidate)

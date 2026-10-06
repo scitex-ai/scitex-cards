@@ -201,6 +201,55 @@ def test_the_venv_is_found_from_argv0_not_from_the_resolved_interpreter(tmp_path
     assert inv.rows[0].venv_version == "9.9.9"
 
 
+def test_an_unreadable_exe_keeps_the_row_with_an_unreadable_venv(tmp_path):
+    """The shared-host case: /proc/<other-uid>/exe raises PermissionError.
+
+    Infra measured scan() aborting the whole host table on compute-01/02/03
+    because the exe resolution had no guard. The row must survive on its
+    cmdline half (argv[0] still names the interpreter) with the venv half
+    UNREADABLE — skipping the row undercounts the population, and aborting
+    loses every other row too.
+    """
+    # Arrange
+    root = tmp_path / "proc"
+    root.mkdir()
+    d = _proc(root, 4242, "/opt/venv-sac/bin/python -m scitex_cards worker")
+    real_exists = Path.exists
+
+    def _deny_exe(self, *, follow_symlinks=True):  # noqa: ANN001, ANN202
+        if self == d / "exe":
+            raise PermissionError("other uid")
+        return real_exists(self, follow_symlinks=follow_symlinks)
+
+    Path.exists = _deny_exe  # type: ignore[method-assign] — restored in finally; real fs, no mock
+    try:
+        # Act
+        inv = scan(proc_root=root, self_pid=1, parent_pid=2)
+    finally:
+        Path.exists = real_exists
+    # Assert — the row survives on its cmdline half; the exe half is gone so
+    # the venv can only come from argv[0], never from the unreadable link.
+    assert [(r.pid, r.venv_path) for r in inv.rows] == [(4242, "/opt/venv-sac")]
+
+
+def test_a_vanishing_pid_does_not_abort_the_table(tmp_path):
+    """A pid exiting mid-scan leaves a cmdline the exe check never sees.
+
+    Same family as the unreadable exe: per-pid failures must stay per-pid.
+    The surviving row still reports, and the enumeration counts both.
+    """
+    # Arrange
+    root = tmp_path / "proc"
+    root.mkdir()
+    _proc(root, 4242, "/opt/venv-sac/bin/python -m scitex_cards worker")
+    gone = _proc(root, 4343, "/usr/bin/python -m scitex_cards worker")
+    (gone / "cmdline").unlink()
+    # Act
+    inv = scan(proc_root=root, self_pid=1, parent_pid=2)
+    # Assert
+    assert ([r.pid for r in inv.rows], inv.enumerated) == ([4242], 2)
+
+
 def test_describe_self_reports_the_version_actually_imported():
     # The one row that IS knowable: ask the process, do not read its venv.
     # Arrange
