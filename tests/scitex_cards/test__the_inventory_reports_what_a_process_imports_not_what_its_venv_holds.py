@@ -214,13 +214,24 @@ def test_an_unreadable_exe_keeps_the_row_with_an_unreadable_venv(tmp_path):
     # Arrange
     root = tmp_path / "proc"
     root.mkdir()
-    d = _proc(root, 4242, "/opt/venv-sac/bin/python -m scitex_cards worker")
+    # Hermetic venv: the interpreter's home must exist ON DISK for _venv_of
+    # (it looks for pyvenv.cfg in the parents), so build it under tmp_path.
+    # Naming a real host path (e.g. /opt/venv-sac) makes the test pass only
+    # on machines that happen to carry that venv — green on compute nodes,
+    # red in CI, which is exactly backwards for a gate.
+    venv = tmp_path / "venv-sac"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "pyvenv.cfg").write_text("home = /usr/bin\n")
+    d = _proc(root, 4242, f"{venv}/bin/python -m scitex_cards worker")
     real_exists = Path.exists
 
-    def _deny_exe(self, *, follow_symlinks=True):  # noqa: ANN001, ANN202
+    def _deny_exe(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN202
         if self == d / "exe":
             raise PermissionError("other uid")
-        return real_exists(self, follow_symlinks=follow_symlinks)
+        # Bare call, never forwarding args: Path.exists() takes no parameters
+        # on Python < 3.12, so forwarding the 3.12+ follow_symlinks keyword
+        # is a TypeError there. The default there is the behaviour we want.
+        return real_exists(self)
 
     Path.exists = _deny_exe  # type: ignore[method-assign] — restored in finally; real fs, no mock
     try:
@@ -230,7 +241,7 @@ def test_an_unreadable_exe_keeps_the_row_with_an_unreadable_venv(tmp_path):
         Path.exists = real_exists
     # Assert — the row survives on its cmdline half; the exe half is gone so
     # the venv can only come from argv[0], never from the unreadable link.
-    assert [(r.pid, r.venv_path) for r in inv.rows] == [(4242, "/opt/venv-sac")]
+    assert [(r.pid, r.venv_path) for r in inv.rows] == [(4242, str(venv))]
 
 
 def test_a_vanishing_pid_does_not_abort_the_table(tmp_path):
@@ -264,10 +275,12 @@ def test_a_denied_proc_root_answers_host_rather_than_raising(tmp_path):
     root.mkdir()
     real_exists = Path.exists
 
-    def _deny_root(self, *, follow_symlinks=True):  # noqa: ANN001, ANN202
+    def _deny_root(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN202
         if self == root / "1" / "root" / ".dockerenv":
             raise PermissionError("other uid")
-        return real_exists(self, follow_symlinks=follow_symlinks)
+        # Bare call: see _deny_exe above — forwarding follow_symlinks is a
+        # TypeError on Python < 3.12.
+        return real_exists(self)
 
     Path.exists = _deny_root  # type: ignore[method-assign] — restored in finally
     # SAC_NAME must not decide this: the subject is the proc_root guard, and
