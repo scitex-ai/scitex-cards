@@ -32,7 +32,7 @@ if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
     from ._backend_connect import StoreConnection
 
 
-from ._db_dm_idempotency import _migrate_v14_to_v15
+from ._database.schema_rungs import _migrate_v13_to_v14, _migrate_v14_to_v15
 from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
 from ._db_foreign_keys import _migrate_v10_to_v11
 from ._db_lifecycle_columns import _migrate_v12_to_v13
@@ -46,7 +46,6 @@ from ._db_migrations import (
     _migrate_v9_to_v10,
     record_migration_provenance,
 )
-from ._db_notification_exchange import _migrate_v13_to_v14
 from ._db_schema_sql import SCHEMA_SQL as _SCHEMA_SQL
 from ._db_sync_columns import _migrate_v11_to_v12
 from ._ddl import execute_ddl
