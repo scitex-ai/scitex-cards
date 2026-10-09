@@ -628,3 +628,56 @@ a {
 .status-legend-label {
   color: var(--text-muted);
 }
+
+/* === MOBILE DECLUTTER (card cards-mobile-declutter-20261007) ==============
+ * The legend disclosure wrapper: closed by default so the phone board opens
+ * on cards. Desktop keeps the always-visible row (details open via CSS —
+ * no JS needed to preserve the old layout where room exists).
+ * Touch devices hide desktop keyboard hints (the / - Esc - Tab - Cmd/Ctrl
+ * affordances have no keys to press); the behaviors stay wired for
+ * hardware keyboards. The search input goes full-width on narrow screens
+ * so it no longer clips. */
+.status-legend-wrap {
+  background: var(--col-bg);
+  border-bottom: 1px solid var(--border);
+}
+.status-legend-summary {
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  list-style: none;
+}
+.status-legend-summary::-webkit-details-marker {
+  display: none;
+}
+.status-legend-summary::before {
+  content: "▸ ";
+}
+.status-legend-wrap[open] .status-legend-summary::before {
+  content: "▾ ";
+}
+@media (min-width: 769px) {
+  .status-legend-wrap:not([open]) > .status-legend {
+    display: flex;
+  }
+  .status-legend-summary {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .desktop-kbd-hint {
+    display: none;
+  }
+}
+@media (max-width: 768px) {
+  .filt-search-wrap {
+    display: block;
+    width: 100%;
+  }
+  .filt-search {
+    width: 100%;
+    min-width: 0;
+  }
+}
