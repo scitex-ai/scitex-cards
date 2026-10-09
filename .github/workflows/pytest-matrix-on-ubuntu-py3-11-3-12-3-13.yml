@@ -104,6 +104,17 @@ jobs:
       # worth having here, given this repo lost its live board on 2026-07-19 to
       # two names that resolved differently.
       postgres: true
+      # 4-WAY FILE SHARDING (cards-ci-shard-7513). The reusable workflow splits
+      # test files into `shard_count` test-count-balanced groups (greedy
+      # least-loaded) and runs group `matrix.shard` per job; each shard job
+      # gets its OWN postgres service, so per-shard DB isolation holds the
+      # same way the unsharded leg's does, and `-n auto` still parallelises
+      # within each shard. OPEN VERIFICATION (draft until answered): the added
+      # `shard` matrix dimension may rename the reported check contexts, in
+      # which case branch protection needs the matching admin edit — the gate
+      # this card requires kept. This PR's own checks will show the names.
+      shard_indices: '[0,1,2,3]'
+      shard_count: 4
       # Prepare the existing locked compiler and pinned preservation baseline
       # before pytest. The shared workflow treats preparation failures as fatal.
       pre_test_command: |
