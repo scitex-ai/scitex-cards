@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from scitex_cards._db import ENV_STORE_DSN
 from scitex_cards._paths import _user_root
 from scitex_cards._store_target import resolve_store_target
@@ -63,13 +65,19 @@ def _resolved_schema() -> str | None:
     return target.rsplit(marker, 1)[1].split("&")[0]
 
 
-def test_the_resolved_store_is_scoped_to_a_schema_at_all():
+def test_the_resolved_store_is_scoped_to_a_schema_at_all(postgres_dsn):
     """An unscoped DSN IS the live board — there is no separate test database.
 
     The direct successor to the old tmp-root check. That one asked "is the
     resolved path inside pytest's scratch tree"; the equivalent question now is
     "is the resolved target confined to a schema of its own", because a DSN
     with no search_path lands in `public` alongside the real cards.
+
+    ``postgres_dsn`` is requested but is not the assertion target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    resolve below would raise instead of returning a DSN to inspect — the
+    fixture fails first, LOUDLY, with the reason and the remedy. (Same guard
+    as the ``store`` fixtures in _django/.)
     """
     # Arrange
     # Act
@@ -83,13 +91,16 @@ def test_the_resolved_store_is_scoped_to_a_schema_at_all():
     )
 
 
-def test_the_resolved_store_is_not_the_live_schema():
+def test_the_resolved_store_is_not_the_live_schema(postgres_dsn):
     """The same pin from the other direction, and not redundant.
 
     A target could carry a search_path and still name `public` — a refactor
     that kept the mechanism and lost the isolation. The test above would pass
     on that; this one is what fails. Same reasoning as the two SCITEX_DIR
     checks further down, which were split for exactly this asymmetry.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the test above.
     """
     # Arrange
     # Act
@@ -168,6 +179,52 @@ def test_env_db_still_names_the_winning_precedence_tier():
         f"${ENV_STORE_DSN} is unset — the session isolation fixture in "
         "tests/conftest.py is not pinning it."
     )
+
+
+def test_no_throwaway_cluster_leaves_a_target_every_door_refuses():
+    """Ask-1/ask-3 contract: "unset" must never be what a test resolves.
+
+    When no writable PostgreSQL was opened, ``$SCITEX_STORE_DSN`` must name a
+    target that every store door REFUSES — loudly — rather than resolving
+    ambiently to the live board through the resolver's fleet default. When a
+    cluster WAS opened it must instead be the ephemeral scoped DSN (covered
+    by the two schema tests above). Either way it must be SET: the one value
+    that must never be reached is "unset", which is the exact enabling
+    condition of the 2026-07 wipes.
+
+    Cluster-independent by construction: it opens no connection and needs no
+    server, so it runs — and must pass — on a clusterless host too. It goes
+    RED on the old harness (which popped the variable) and GREEN on the
+    refused placeholder.
+    """
+    # Arrange
+    import os
+
+    # Act
+    target = os.environ.get(ENV_STORE_DSN)
+
+    # Assert — SET, either way. An unset variable walks the precedence chain
+    # to the user-canonical target: the live board.
+    assert target, (
+        f"${ENV_STORE_DSN} is unset — with no writable PostgreSQL the "
+        "harness must pin the refused placeholder, never pop the variable: "
+        "an absent variable resolves to the LIVE board."
+    )
+    from scitex_cards._store_url import reject_non_postgres_target
+
+    try:
+        reject_non_postgres_target(target)
+    except Exception:
+        # No cluster: the placeholder. The resolver must refuse it too, not
+        # fall through to the fleet default behind our back.
+        with pytest.raises(Exception, match="DSN|store"):
+            resolve_store_target(None)
+    else:
+        # A cluster was opened: the pin must be the ephemeral scoped DSN.
+        assert "search_path%3D" in target, (
+            "the pinned store target is a valid DSN but carries no "
+            "search_path scoping — it resolves to the live schema."
+        )
 
 
 # EOF
