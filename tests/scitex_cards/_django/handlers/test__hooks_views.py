@@ -24,7 +24,10 @@ from scitex_cards._store import add_task
 
 
 @pytest.fixture()
-def store_with_card(tmp_path: Path, env) -> Path:
+def store_with_card(tmp_path: Path, env, postgres_dsn) -> Path:
+    # ``postgres_dsn`` is requested but is not the seed target (same
+    # no-cluster LOUD guard as the other store fixtures in _django/: the
+    # ``add_task`` below would otherwise resolve AMBIENTLY to the live board).
     store = tmp_path / "tasks.yaml"
     # NO `store=` HERE. Passing this path never isolated the write: `store=`
     # resolves to a LOCAL FILE PATH (the lock + sidecars), while the data goes

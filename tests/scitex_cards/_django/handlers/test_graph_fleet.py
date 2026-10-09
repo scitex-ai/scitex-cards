@@ -120,7 +120,10 @@ def _store_text() -> str:
 
 
 @pytest.fixture
-def store(tmp_path):
+def store(tmp_path, postgres_dsn):
+    # ``postgres_dsn`` is requested but is not the seed target (same guard
+    # as the other ``store`` fixtures in _django/: no-cluster failure is
+    # LOUD via the fixture, not a bare ``KeyError`` below).
     seed_db_from_doc(safe_load(_store_text()) or {}, os.environ["SCITEX_STORE_DSN"])
     _reset_cache()
     yield os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
@@ -358,7 +361,8 @@ _OVERDUE_FIXTURE = (
 
 
 @pytest.fixture
-def overdue_store(tmp_path):
+def overdue_store(tmp_path, postgres_dsn):
+    # Same no-cluster LOUD guard as ``store`` above.
     seed_db_from_doc(safe_load(_OVERDUE_FIXTURE) or {}, os.environ["SCITEX_STORE_DSN"])
     _reset_cache()
     yield os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
@@ -411,7 +415,8 @@ _BLOCKING_FIXTURE = (
 
 
 @pytest.fixture
-def blocking_store(tmp_path):
+def blocking_store(tmp_path, postgres_dsn):
+    # Same no-cluster LOUD guard as ``store`` above.
     seed_db_from_doc(safe_load(_BLOCKING_FIXTURE) or {}, os.environ["SCITEX_STORE_DSN"])
     _reset_cache()
     yield os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]

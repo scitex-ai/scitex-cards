@@ -32,7 +32,12 @@ from scitex_cards._model import load_tasks
 
 
 @pytest.fixture()
-def store(env):
+def store(env, postgres_dsn):
+    # ``postgres_dsn`` is requested but is not the seed target. With no
+    # writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN`` from
+    # the environment, so indexing it below would die with a bare
+    # ``KeyError`` — the fixture fails first, LOUDLY, with the reason and
+    # the remedy. (Same guard as the other ``store`` fixtures in _django/.)
     # Post-cutover: card DATA lives in the canonical DB (a path-independent
     # read), so the two seeded cards are put THERE. But the board cache — the
     # subject of this whole file — still keys HALF its invalidation on the

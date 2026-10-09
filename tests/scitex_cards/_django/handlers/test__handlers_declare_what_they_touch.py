@@ -47,7 +47,7 @@ _STORE_DOC = {
 
 
 @pytest.fixture
-def store():
+def store(postgres_dsn):
     """Seed, then WARM THE MIRROR HASHES so the write under test is incremental.
 
     THIS WARM-UP IS THE POINT OF THE FIXTURE, not boilerplate. `seed_db_from_doc`
@@ -60,6 +60,11 @@ def store():
     handler to declare only ONE of three reordered cards left all 22 tests in
     this directory green. A single write after a seed cannot detect a
     `touched_ids` defect, in this file or any other.
+
+    ``postgres_dsn`` is requested but is not the seed target: with no
+    writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN``, so
+    indexing it below would die with a bare ``KeyError`` — the fixture
+    fails first, LOUDLY, with the reason and the remedy.
     """
     seed_db_from_doc(_STORE_DOC, os.environ["SCITEX_STORE_DSN"])
     store_path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]

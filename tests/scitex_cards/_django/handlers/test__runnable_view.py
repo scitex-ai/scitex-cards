@@ -29,8 +29,14 @@ from scitex_cards._store import add_task
 
 
 @pytest.fixture()
-def store_with_runnable() -> Path:
+def store_with_runnable(postgres_dsn) -> Path:
     """Seed the canonical DB with one runnable + one blocked task.
+
+    ``postgres_dsn`` is requested but is not the seed target: with no
+    writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN``, and the
+    ``add_task`` calls below would otherwise resolve AMBIENTLY to the live
+    board — a write, not a bare ``KeyError``. The fixture fails first,
+    LOUDLY, with the reason and the remedy.
 
     The store is the database now; the harness pins SCITEX_CARDS_TASKS_YAML_SHARED
     and SCITEX_STORE_DSN at a per-test scratch DB, and the view's ``get_board``

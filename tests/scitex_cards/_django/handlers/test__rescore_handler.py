@@ -63,9 +63,14 @@ _STORE_TEXT = (
 
 
 @pytest.fixture
-def store(env):
+def store(env, postgres_dsn):
     # Hermetic: no per-project lane union from the real ~/proj tree.
     env.set("SCITEX_CARDS_LANE_GLOBS", "")
+    # ``postgres_dsn`` is requested but is not the seed target. With no
+    # writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN`` from
+    # the environment, so indexing it below would die with a bare
+    # ``KeyError`` — the fixture fails first, LOUDLY, with the reason and
+    # the remedy. (Same guard as the other ``store`` fixtures in _django/.)
     # The store is the database: seed the prior cards into it, then hand the
     # handler the PINNED store-identity path (never a tmp_path YAML — a write
     # stamped with a tmp path fails the next read's ownership check). The DB is

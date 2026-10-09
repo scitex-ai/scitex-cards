@@ -32,11 +32,17 @@ from scitex_cards._store import add_task, comment_task
 
 
 @pytest.fixture()
-def store_with_chat_task() -> str:
+def store_with_chat_task(postgres_dsn) -> str:
     """Seed the canonical store with one task that already carries
     one comment, plus an empty-thread task, so the view's
     ``resolve_tasks_path(None)`` — pinned to the scratch store by the root and
     ``_django`` conftests — reads them back.
+
+    ``postgres_dsn`` is requested but is not the seed target: with no
+    writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN``, and the
+    ``add_task`` / ``comment_task`` calls below would otherwise resolve
+    AMBIENTLY to the live board — a write, not a bare ``KeyError``. The
+    fixture fails first, LOUDLY, with the reason and the remedy.
 
     The store is the database now: ``add_task`` / ``comment_task`` write the canonical
     DB, and passing ``store=None`` (the default) resolves the pinned store and

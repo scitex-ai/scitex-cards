@@ -36,7 +36,12 @@ _STORE_TEXT = (
 
 
 @pytest.fixture
-def store():
+def store(postgres_dsn):
+    # ``postgres_dsn`` is requested but is not the seed target. With no
+    # writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN`` from
+    # the environment, so indexing it below would die with a bare
+    # ``KeyError`` — the fixture fails first, LOUDLY, with the reason and
+    # the remedy. (Same guard as the other ``store`` fixtures in _django/.)
     from conftest import seed_db_from_doc
 
     from scitex_cards._yaml import safe_load
@@ -483,7 +488,7 @@ def _comment_owner_inbox(tmp_path):
         _reset_cache()
 
 
-def test_comment_toast_reports_the_relay_as_sent(tmp_path):
+def test_comment_toast_reports_the_relay_as_sent(tmp_path, postgres_dsn):
     # Arrange
     # Act
     relay = _comment_relay(tmp_path)
@@ -491,7 +496,7 @@ def test_comment_toast_reports_the_relay_as_sent(tmp_path):
     assert relay["sent"] is True
 
 
-def test_comment_toast_names_the_inbox_wire_not_a_connection_error(tmp_path):
+def test_comment_toast_names_the_inbox_wire_not_a_connection_error(tmp_path, postgres_dsn):
     # Arrange
     # the toast must reflect the INBOX QUEUE, never the old
     # direct-POST connection error.
@@ -501,7 +506,7 @@ def test_comment_toast_names_the_inbox_wire_not_a_connection_error(tmp_path):
     assert relay["wire"] == "inbox"
 
 
-def test_comment_toast_names_the_owning_agent_as_target(tmp_path):
+def test_comment_toast_names_the_owning_agent_as_target(tmp_path, postgres_dsn):
     # Arrange
     # Act
     relay = _comment_relay(tmp_path)
@@ -509,7 +514,7 @@ def test_comment_toast_names_the_owning_agent_as_target(tmp_path):
     assert relay["target"] == "owner-agent"
 
 
-def test_comment_toast_lists_the_queued_recipients(tmp_path):
+def test_comment_toast_lists_the_queued_recipients(tmp_path, postgres_dsn):
     # Arrange
     # the owner is the queued recipient (author != owner).
     # Act
@@ -519,7 +524,7 @@ def test_comment_toast_lists_the_queued_recipients(tmp_path):
     assert relay["queued"] == ["owner-agent"]
 
 
-def test_comment_does_not_await_a_turn_url_post(tmp_path, env):
+def test_comment_does_not_await_a_turn_url_post(tmp_path, env, postgres_dsn):
     # A comment must NOT depend on / await a turn-URL POST. Point the owner at
     # a CLOSED port (a real refused connection) and assert the relay went over
     # the inbox rail (wire == "inbox"). That structural guarantee — not a
@@ -559,7 +564,7 @@ def test_comment_does_not_await_a_turn_url_post(tmp_path, env):
     assert payload["relay"]["wire"] == "inbox"
 
 
-def test_comment_enqueues_a_commented_event_to_the_owner(tmp_path):
+def test_comment_enqueues_a_commented_event_to_the_owner(tmp_path, postgres_dsn):
     # Arrange
     # end-to-end over the always-works rail; no mocks.
     # Act
@@ -568,7 +573,7 @@ def test_comment_enqueues_a_commented_event_to_the_owner(tmp_path):
     assert [n["event_type"] for n in notes] == ["commented"]
 
 
-def test_comment_notification_names_the_commented_card(tmp_path):
+def test_comment_notification_names_the_commented_card(tmp_path, postgres_dsn):
     # Arrange
     # Act
     notes = _comment_owner_inbox(tmp_path)
@@ -576,7 +581,7 @@ def test_comment_notification_names_the_commented_card(tmp_path):
     assert notes[0]["card_id"] == "owned"
 
 
-def test_comment_still_saved_when_owner_unreachable(tmp_path, env):
+def test_comment_still_saved_when_owner_unreachable(tmp_path, env, postgres_dsn):
     # The comment must always land on disk — there is no network on the write
     # path now, but assert persistence even with an unreachable turn-URL set.
     # Arrange

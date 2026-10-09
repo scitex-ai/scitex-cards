@@ -56,8 +56,18 @@ _BOARD_STATES_JS = (
 
 
 @pytest.fixture
-def store():
-    """Seed the canonical DB and reset the board cache around the test."""
+def store(postgres_dsn):
+    """Seed the canonical DB and reset the board cache around the test.
+
+    Requesting the ``postgres_dsn`` fixture makes the no-cluster failure
+    LOUD: on a host with no writable PostgreSQL the fleet guard clears
+    ``SCITEX_STORE_DSN`` from the environment, so indexing it directly would
+    die with a bare ``KeyError`` — the fixture fails first, with the reason
+    and the remedy. The SEED TARGET stays the per-test variable, not the
+    fixture: card reads resolve ambiently (``resolve_store_target(None)``)
+    to this test's own throwaway schema, while ``postgres_dsn`` names the
+    SESSION schema, which no read in this test ever opens.
+    """
     from conftest import seed_db_from_doc
 
     from scitex_cards._yaml import safe_load

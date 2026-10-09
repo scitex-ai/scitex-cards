@@ -30,8 +30,13 @@ _STORE_TEXT = (
 
 
 @pytest.fixture
-def store():
+def store(postgres_dsn):
     """Seed the canonical DB and reset the board cache around the test.
+
+    ``postgres_dsn`` is requested but is not the seed target: with no
+    writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN``, so
+    indexing it below would die with a bare ``KeyError`` — the fixture
+    fails first, LOUDLY, with the reason and the remedy.
 
     The store is the database now; the handlers read it and treat the
     ``?store=`` path as a provenance label only. We still author the fixture as
@@ -255,8 +260,11 @@ _NESTED_STORE_TEXT = (
 
 
 @pytest.fixture
-def nested_store():
+def nested_store(postgres_dsn):
     """Seed the DB with a parent + two children + an unrelated top-level node.
+
+    ``postgres_dsn`` requested but not the seed target (same no-cluster
+    LOUD guard as ``store`` above).
 
     Same post-cutover shape as the ``store`` fixture: parse the YAML text,
     seed the canonical DB, and yield the pinned store identity path.
