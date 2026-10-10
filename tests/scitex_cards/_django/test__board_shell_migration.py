@@ -1,34 +1,33 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Board shell migration gate: ``scitex_ui`` standalone shell -> ``scitex_app`` shell.
+"""Board shell migration gate: retired standalone shell -> ``scitex_sdk`` shells.
 
-THE MIGRATION THIS FILE PINS. Both operator-facing board pages were re-targeted
-from the scitex-ui standalone shell to the scitex-app shell, and ``scitex_app``
-was registered in ``INSTALLED_APPS`` so its templates resolve through
-AppDirectoriesFinder::
+THE MIGRATION THIS FILE PINS. Both operator-facing board pages are targeted
+at the scitex-sdk shells, and ``scitex_sdk.app`` is registered in
+``INSTALLED_APPS`` so its templates resolve through the app-directories
+loader::
 
-    {% extends "scitex_ui/standalone_shell.html" %}  ->  {% extends "scitex_app/app_shell.html" %}
-    {% block app_content %}                          ->  {% block scitex_app_content %}
+    {% extends "scitex_sdk/ui/standalone_shell.html" %}  ->  {% extends "scitex_sdk/app/app_shell.html" %}
+    {% block app_content %}                              ->  {% block scitex_app_content %}
 
-The shell the pages extend is built by the SIBLING scitex-app package: its
-``app_shell.html`` extends ``scitex_ui/standalone_shell.html`` and re-exports
+The shell the pages extend is built by the scitex-sdk package: its
+``app_shell.html`` extends the SDK standalone shell and re-exports
 ``scitex_app_content`` as a nested block inside ``app_content``. Our pages
 therefore override the INNER block (``scitex_app_content``), not the outer one
 (``app_content``) — overriding ``app_content`` would replace the whole content
 slot and bypass the shell's nesting.
 
-WHY A GATE EXISTS. The installed scitex-app wheel does not always ship
-``app_shell.html`` — the template is present in the scitex-app *source* but may
-be absent from the *distribution* (measured on 0.22.1 and 0.23.0). Consequence:
-when the shell is absent, both board views' ``render_to_string(...)`` raise
-``TemplateDoesNotExist``, the views' ``except Exception`` catches it, and they
-serve the static graph fallback instead of the rich board. The operator sees a
-WORKING board that is the WRONG board, with no failing test and no signal — the
-exact "board works but wrong" silence the 2026-07-29 outage was made of.
+WHY A GATE EXISTS. The installed scitex-sdk wheel does not always ship
+``app_shell.html`` — below the ``scitex-sdk>=0.3.0`` floor the board views'
+``render_to_string(...)`` raise ``TemplateDoesNotExist``, the views'
+``except Exception`` catches it, and they serve the static graph fallback
+instead of the rich board. The operator sees a WORKING board that is the
+WRONG board, with no failing test and no signal — the exact "board works but
+wrong" silence the 2026-07-29 outage was made of.
 
 This file is the Cards-side CONTRACT for the migration. It is fully hermetic:
 it parses OUR templates and reads OUR settings, so it needs no store, no
-database, no sibling checkout, and no network. It is portable across scitex-app
+database, no sibling checkout, and no network. It is portable across scitex-sdk
 versions because the one assertion that depends on the wheel's contents
 (:func:`test_missing_shell_degrades_to_template_does_not_exist`) computes a
 single outcome instead of assuming the shell is present or absent.
@@ -59,12 +58,12 @@ from django.test import RequestFactory  # noqa: E402
 _PAGES = ("scitex_cards/standalone.html", "scitex_cards/board_v3.html")
 
 #: The shell the migration points at, and the block our pages must override.
-_SHELL = "scitex_app/app_shell.html"
+_SHELL = 'scitex_sdk/app/app_shell.html'
 _NEW_BLOCK = "scitex_app_content"
 _RETIRED_BLOCK = "app_content"
 
 #: The retired scitex-ui shell the pages used to extend.
-_OLD_SHELL = "scitex_ui/standalone_shell.html"
+_OLD_SHELL = 'scitex_sdk/ui/standalone_shell.html'
 
 _EXTENDS = re.compile(r"""\{%[-\s]*extends\s+['"]([^'"]+)['"]""")
 _BLOCK = re.compile(r"""\{%[-\s]*block\s+([A-Za-z0-9_]+)""")
@@ -132,7 +131,7 @@ def test_page_extends_the_scitex_app_shell(page: str) -> None:
     parents = _EXTENDS.findall(src)
     # Assert
     assert _SHELL in parents, (
-        f"{page} extends {parents!r}; expected the scitex_app shell "
+        f"{page} extends {parents!r}; expected the scitex_sdk shell "
         f"({_SHELL}). The migration was reverted."
     )
 
@@ -146,7 +145,7 @@ def test_page_no_longer_extends_the_retired_scitex_ui_shell(page: str) -> None:
     parents = _EXTENDS.findall(src)
     # Assert
     assert _OLD_SHELL not in parents, (
-        f"{page} still extends the retired scitex-ui shell {_OLD_SHELL!r} "
+        f"{page} still extends the retired standalone shell {_OLD_SHELL!r} "
         f"(extends {parents!r})"
     )
 
@@ -196,7 +195,7 @@ def test_scitex_app_is_registered_in_installed_apps() -> None:
     # Arrange
     installed = settings.INSTALLED_APPS
     # Act
-    present = "scitex_app" in installed
+    present = 'scitex_sdk.app' in installed
     # Assert
     assert present, (
         f"INSTALLED_APPS={installed!r} does not register `scitex_app`; the "

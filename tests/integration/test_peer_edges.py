@@ -82,8 +82,9 @@ def test_board_appconfig_subclasses_scitex_app_when_present():
     # full dotted path `importorskip` skips on ModuleNotFoundError — an
     # ImportError subclass — so a RENAMED submodule reported GREEN, which is
     # the one event this guard exists to catch.
-    pytest.importorskip("scitex_app")
-    scitex_app_django = importlib.import_module("scitex_app._django")
+    pytest.importorskip("scitex_sdk")
+    importlib.import_module('scitex_sdk.app')
+    scitex_app_django = importlib.import_module('scitex_sdk.app._django')
     from scitex_cards._django.apps import ScitexCardsConfig
 
     # Act
@@ -115,14 +116,14 @@ def scitex_app_absent():
 
     def _evict(name: str) -> bool:
         return (
-            name == "scitex_app"
-            or name.startswith("scitex_app.")
+            name == 'scitex_sdk.app'
+            or name.startswith('scitex_sdk.app.')
             or name == "scitex_cards._django.apps"
         )
 
     for name in [n for n in list(sys.modules) if _evict(n)]:
         del sys.modules[name]
-    sys.modules["scitex_app"] = None  # type: ignore[assignment]
+    sys.modules['scitex_sdk.app'] = None  # type: ignore[assignment]
     reloaded = importlib.import_module("scitex_cards._django.apps")
 
     try:
@@ -139,7 +140,7 @@ def test_scitex_app_absent_fixture_blocks_the_import(scitex_app_absent):
     # Arrange
     _ = scitex_app_absent
     # Act
-    module_name = "scitex_app"
+    module_name = 'scitex_sdk.app'
     # Assert
     with pytest.raises(ImportError):
         importlib.import_module(module_name)
@@ -177,7 +178,8 @@ def test_board_appconfig_keeps_board_label_without_scitex_app(scitex_app_absent)
 @pytest.fixture
 def settings_with_scitex_ui_present():
     """Reload the board settings with the real (present) scitex-ui; yield it."""
-    pytest.importorskip("scitex_ui")
+    pytest.importorskip("scitex_sdk")
+    importlib.import_module('scitex_sdk.ui')
     _configure_django_once()
 
     snapshot = dict(sys.modules)
@@ -200,7 +202,7 @@ def test_settings_installs_scitex_ui_app_when_present(
     # Arrange
     settings = settings_with_scitex_ui_present
     # Act
-    installed = "scitex_ui" in settings.INSTALLED_APPS
+    installed = 'scitex_sdk.ui' in settings.INSTALLED_APPS
     # Assert
     assert installed
 
@@ -213,8 +215,9 @@ def test_settings_wires_element_inspector_when_context_processors_present(
     # ROOT skip, then a real import of the submodule — see the note above.
     # `scitex_ui` genuinely absent is a lean install and skips; `scitex_ui`
     # present with the submodule renamed away must FAIL, not skip.
-    pytest.importorskip("scitex_ui")
-    importlib.import_module("scitex_ui.context_processors")
+    pytest.importorskip("scitex_sdk")
+    importlib.import_module('scitex_sdk.ui')
+    importlib.import_module('scitex_sdk.ui.context_processors')
     settings = settings_with_scitex_ui_present
     ctx_processors = settings.TEMPLATES[0]["OPTIONS"]["context_processors"]
     # Act
@@ -247,13 +250,14 @@ def settings_with_scitex_ui_context_processors_absent():
 
     Yields the freshly reloaded settings module.
     """
-    scitex_ui = pytest.importorskip("scitex_ui")
+    pytest.importorskip("scitex_sdk")
+    scitex_ui = importlib.import_module('scitex_sdk.ui')
     _configure_django_once()
 
     snapshot = dict(sys.modules)
     original_path = list(scitex_ui.__path__)
 
-    sys.modules.pop("scitex_ui.context_processors", None)
+    sys.modules.pop('scitex_sdk.ui.context_processors', None)
     sys.modules.pop("scitex_cards._django.settings", None)
     scitex_ui.__path__[:] = []  # make the submodule undiscoverable
     try:
@@ -274,7 +278,7 @@ def test_context_processors_fixture_hides_the_submodule(
     # Arrange
     _ = settings_with_scitex_ui_context_processors_absent
     # Act
-    spec = importlib.util.find_spec("scitex_ui.context_processors")
+    spec = importlib.util.find_spec('scitex_sdk.ui.context_processors')
     # Assert
     assert spec is None
 
@@ -311,7 +315,7 @@ def test_settings_keeps_scitex_ui_app_without_context_processors(
     # Arrange
     settings = settings_with_scitex_ui_context_processors_absent
     # Act
-    installed = "scitex_ui" in settings.INSTALLED_APPS
+    installed = 'scitex_sdk.ui' in settings.INSTALLED_APPS
     # Assert
     assert installed
 

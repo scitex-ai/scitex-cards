@@ -51,16 +51,16 @@ def _request(path, staff=False):
 
 def _render(request, template="standalone.html", *, include_decision=True,
             view_path="legacy/"):
-    import scitex_app
-    import scitex_ui
-    from scitex_ui.branding import shell_context
-    from scitex_ui.mount import mount_context
+    import scitex_sdk.app
+    import scitex_sdk.ui
+    from scitex_sdk.ui.branding import shell_context
+    from scitex_sdk.ui.mount import mount_context
 
     engine = Engine(
-        dirs=[TEMPLATES, Path(scitex_app.__file__).parent / "templates",
-              Path(scitex_ui.__file__).parent / "templates"],
+        dirs=[TEMPLATES, Path(scitex_sdk.app.__file__).parent / "templates",
+              Path(scitex_sdk.ui.__file__).parent / "templates"],
         libraries=get_installed_libraries(),
-        context_processors=["scitex_ui.context_processors.element_inspector"],
+        context_processors=["scitex_sdk.ui.context_processors.element_inspector"],
     )
     context = {
         **shell_context("Cards", panes={"ai": "unused", "files": "unused",

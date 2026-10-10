@@ -207,7 +207,7 @@ class SessionProjectProvider:
         self._entries = tuple(entries)
 
     def list_projects(self, request: Any = None):  # noqa: D102 - protocol method
-        from scitex_ui.project_scope import ProjectEntry
+        from scitex_sdk.ui.project_scope import ProjectEntry
 
         return [ProjectEntry(id=pid, name=pid) for pid in self._entries]
 
@@ -235,7 +235,7 @@ def _resolve_current(
     predates the project-scope API (the same graceful-degradation rule
     ``settings.py`` applies to the element inspector).
     """
-    from scitex_ui.project_scope import resolve_project
+    from scitex_sdk.ui.project_scope import resolve_project
 
     return resolve_project(request, provider, explicit=explicit or None)
 
@@ -1311,7 +1311,7 @@ def _host_picker_available() -> bool:
     ``settings.py`` applies to the element inspector).
     """
     try:
-        from scitex_ui.project_scope import host_project_provider_url
-    except ImportError:  # older scitex-ui: no provider API, so no host picker
+        from scitex_sdk.ui.project_scope import host_project_provider_url
+    except ImportError:  # SDK predating provider API: no host picker
         return False
     return bool(host_project_provider_url())

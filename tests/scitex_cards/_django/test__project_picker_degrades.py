@@ -193,7 +193,7 @@ def sdk_library():
     THE TAG LIBRARY: the same dict the real one occupies, so ``{% load %}``
     resolves and ``views._project_picker_library_registered`` answers True.
 
-    AND ``scitex_ui.project_scope``, which is the SEPARATE half — an installed
+    AND ``scitex_sdk.ui.project_scope``, which is the SEPARATE half — an installed
     scitex-ui can in principle ship one without the other, and on this host
     (0.20.2) it ships neither. Without this module ``host_project_provider_url``
     raises ImportError and the availability flag is false no matter what the
@@ -212,8 +212,8 @@ def sdk_library():
 
     engine = engines["django"].engine
     previous_library = engine.template_libraries.get(_TAG_LIBRARY)
-    previous_module = sys.modules.get("scitex_ui.project_scope")
-    stub_sdk = types.ModuleType("scitex_ui.project_scope")
+    previous_module = sys.modules.get("scitex_sdk.ui.project_scope")
+    stub_sdk = types.ModuleType("scitex_sdk.ui.project_scope")
 
     def _provider_url() -> str:
         from django.conf import settings
@@ -248,7 +248,7 @@ def sdk_library():
 
     _STUB.calls.clear()
     engine.template_libraries[_TAG_LIBRARY] = _STUB.library
-    sys.modules["scitex_ui.project_scope"] = stub_sdk
+    sys.modules["scitex_sdk.ui.project_scope"] = stub_sdk
     _reset_template_loaders(engine)
     try:
         yield _STUB
@@ -258,9 +258,9 @@ def sdk_library():
         else:
             engine.template_libraries[_TAG_LIBRARY] = previous_library
         if previous_module is None:
-            sys.modules.pop("scitex_ui.project_scope", None)
+            sys.modules.pop("scitex_sdk.ui.project_scope", None)
         else:
-            sys.modules["scitex_ui.project_scope"] = previous_module
+            sys.modules["scitex_sdk.ui.project_scope"] = previous_module
         _reset_template_loaders(engine)
 
 

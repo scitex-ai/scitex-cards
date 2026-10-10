@@ -20,6 +20,28 @@ since 0.53.5 (PyPI/GH latest remain 0.53.4).
   failing raw when no writable PostgreSQL opens (#1076).
 - CLA canonicalized to the em-dash Mar-12 text (#1074).
 
+## [0.53.7] - 2026-10-04
+
+### App/UI ownership consolidated into scitex-sdk
+
+Direct scitex-app/scitex-ui distributions retired from core dependencies;
+every remaining consumer (i18n settings, project_scope, context processors,
+tag libraries, app shells, floor contract, test doubles) resolves through
+scitex-sdk>=0.3.0 (floor qualified against the published 0.3.0 wheel).
+Graceful degradation preserved where the SDK is absent or predates an API.
+
+## [0.53.6] - 2026-10-04
+
+### Board and DM are prominent top tabs
+
+The shared Board | DM page switcher was a small inline segmented control;
+it read as a minor switch, not top-level navigation. Both surfaces now show
+Board and DM as equal full-width top tabs with a straight accent underline
+on the active page (44px targets on desktop and phone). Routes, markup,
+aria-current, the unread badge and the mount-aware `api_base` hrefs are
+unchanged.
+>>>>>>> origin/main
+
 ## [0.53.5] - 2026-10-03
 
 ### A missing SDK project picker degrades instead of blanking the page

@@ -1,4 +1,4 @@
-{% extends "scitex_app/app_shell.html" %}
+{% extends "scitex_sdk/app/app_shell.html" %}
 {% load static %}
 {% comment %}
   Board v3 now extends the scitex-ui workspace shell (operator-asked,
@@ -69,8 +69,8 @@
 {% endcomment %}
 <link rel="prefetch" href="{{ graph_prefetch_url }}" as="fetch" crossorigin="anonymous">
 {# combobox.css (loaded below the page-CSS so its specificity sits ON TOP if needed) #}
-<link rel="stylesheet" href="{% static 'scitex_ui/css/app/combobox.css' %}">
-<script defer src="{% static 'scitex_ui/js/app/combobox.js' %}"></script>
+<link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/combobox.css' %}">
+<script defer src="{% static 'scitex_sdk/ui/js/app/combobox.js' %}"></script>
 {% comment %}
   searchQuery.js — GitHub-style qualifier-syntax parser (project:/agent:/
   status:/...). Exposes window.STX.searchQuery; the page logic below

@@ -126,14 +126,14 @@ def test_the_page_serves_the_scitex_ui_matcher(page: str) -> None:
     # Arrange
     # Act
     # Assert
-    assert "scitex_ui/js/app/combobox.js" in page
+    assert 'scitex_sdk/ui/js/app/combobox.js' in page
 
 
 def test_the_matcher_loads_before_the_filter_module(page: str) -> None:
     """Both are `defer`, so document order IS execution order."""
     # Arrange
     # Act
-    combobox = page.index("scitex_ui/js/app/combobox.js")
+    combobox = page.index('scitex_sdk/ui/js/app/combobox.js')
     chat_filter = page.index("chat/chat_filter.js")
     # Assert
     assert combobox < chat_filter

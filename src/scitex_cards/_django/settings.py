@@ -12,7 +12,7 @@ import importlib.util
 import os
 from pathlib import Path
 
-from scitex_app.i18n import i18n_settings, with_locale_middleware
+from scitex_sdk.app.i18n import i18n_settings, with_locale_middleware
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -122,16 +122,16 @@ if _extra_hosts:
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.staticfiles",
-    "scitex_app",
+    "scitex_sdk.app",
     "scitex_cards._django",
 ]
 
 # Optional: scitex-ui shared shell components (static + templates served via
 # AppDirectoriesFinder). Absent installs fall back to the bare React SPA.
 try:
-    import scitex_ui  # noqa: F401
+    import scitex_sdk.ui as scitex_ui  # noqa: F401
 
-    INSTALLED_APPS.append("scitex_ui")
+    INSTALLED_APPS.append("scitex_sdk.ui")
 except ImportError:
     pass
 
@@ -174,14 +174,14 @@ TEMPLATES = [
     },
 ]
 
-# Enable the scitex-ui Alt+I element inspector (DEBUG/staff-gated) on the
+# Enable the SDK Alt+I element inspector (DEBUG/staff-gated) on the
 # board. The shell template already includes the partial; this context
 # processor sets the gating flag it checks. Guard on the module actually
-# existing (scitex-ui>=0.5.0) rather than just scitex-ui being installed,
-# so an older scitex-ui degrades gracefully instead of raising on import.
-if importlib.util.find_spec("scitex_ui.context_processors") is not None:
+# existing rather than just scitex-sdk being installed, so an older SDK
+# degrades gracefully instead of raising on import.
+if importlib.util.find_spec("scitex_sdk.ui.context_processors") is not None:
     TEMPLATES[0]["OPTIONS"]["context_processors"].append(
-        "scitex_ui.context_processors.element_inspector"
+        "scitex_sdk.ui.context_processors.element_inspector"
     )
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
