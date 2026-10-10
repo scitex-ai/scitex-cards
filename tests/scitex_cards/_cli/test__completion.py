@@ -4,33 +4,169 @@
 
 from __future__ import annotations
 
+import pytest
 from click.testing import CliRunner
 
 from scitex_cards._cli import main
 
 
-def test_print_shell_completion_emits_bash_function():
+@pytest.fixture
+def runner() -> CliRunner:
+    """Fresh CliRunner per test."""
+    return CliRunner()
+
+
+def _install(runner: CliRunner, tmp_path, extra_env=None):
+    """Run install-shell-completion with an isolated SCITEX_DIR."""
+    env = {"SCITEX_DIR": str(tmp_path)}
+    if extra_env:
+        env.update(extra_env)
+    return runner.invoke(
+        main, ["install-shell-completion", "--shell", "bash"], env=env
+    )
+
+
+def test_print_shell_completion_emits_bash_function(runner: CliRunner):
     # Arrange
-    runner = CliRunner()
     # Act
     result = runner.invoke(main, ["print-shell-completion", "--shell", "bash"])
     # Assert
     assert "_scitex_cards_completion" in result.output
 
 
-def test_install_shell_completion_dry_run_changes_nothing():
+def test_install_shell_completion_dry_run_changes_nothing(runner: CliRunner):
     # Arrange
-    runner = CliRunner()
     # Act
     result = runner.invoke(main, ["install-shell-completion", "--dry-run"])
     # Assert
     assert "[dry-run]" in result.output
 
 
-def test_install_shell_completion_dry_run_exits_zero():
+def test_install_shell_completion_dry_run_exits_zero(runner: CliRunner):
     # Arrange
-    runner = CliRunner()
     # Act
     result = runner.invoke(main, ["install-shell-completion", "--dry-run"])
     # Assert
     assert result.exit_code == 0
+
+
+def test_install_writes_drop_in_file(runner: CliRunner, tmp_path):
+    # Arrange
+    # Act
+    _install(runner, tmp_path)
+    target = tmp_path / "cards" / "runtime" / "completion" / "scitex-cards"
+    # Assert
+    assert target.is_file()
+
+
+def test_install_drop_in_file_has_completion_content(runner: CliRunner, tmp_path):
+    # Arrange
+    # Act
+    _install(runner, tmp_path)
+    target = tmp_path / "cards" / "runtime" / "completion" / "scitex-cards"
+    # Assert
+    assert "_scitex_cards_completion" in target.read_text(encoding="utf-8")
+
+
+def test_install_prints_drop_in_path(runner: CliRunner, tmp_path):
+    # Arrange
+    # Act
+    result = _install(runner, tmp_path)
+    target = tmp_path / "cards" / "runtime" / "completion" / "scitex-cards"
+    # Assert
+    assert str(target) in result.output
+
+
+def test_install_exits_zero(runner: CliRunner, tmp_path):
+    # Arrange
+    # Act
+    result = _install(runner, tmp_path)
+    # Assert
+    assert result.exit_code == 0
+
+
+def test_install_second_run_exits_zero(runner: CliRunner, tmp_path):
+    # Arrange
+    # Act
+    _install(runner, tmp_path)
+    # Assert
+    assert _install(runner, tmp_path).exit_code == 0
+
+
+def test_install_second_run_keeps_bytes(runner: CliRunner, tmp_path):
+    # Arrange
+    # Act
+    _install(runner, tmp_path)
+    target = tmp_path / "cards" / "runtime" / "completion" / "scitex-cards"
+    before = target.read_bytes()
+    _install(runner, tmp_path)
+    # Assert
+    assert target.read_bytes() == before
+
+
+def test_install_runs_against_fake_home(runner: CliRunner, tmp_path):
+    # Arrange
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    # Act
+    result = runner.invoke(
+        main,
+        ["install-shell-completion", "--shell", "bash"],
+        env={
+            "HOME": str(fake_home),
+            "SCITEX_DIR": str(tmp_path / "scitex"),
+        },
+    )
+    # Assert
+    assert result.exit_code == 0
+
+
+def test_install_never_creates_bashrc(runner: CliRunner, tmp_path):
+    # Arrange
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    # Act
+    runner.invoke(
+        main,
+        ["install-shell-completion", "--shell", "bash"],
+        env={
+            "HOME": str(fake_home),
+            "SCITEX_DIR": str(tmp_path / "scitex"),
+        },
+    )
+    # Assert
+    assert not (fake_home / ".bashrc").exists()
+
+
+def test_install_never_creates_zshrc(runner: CliRunner, tmp_path):
+    # Arrange
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    # Act
+    runner.invoke(
+        main,
+        ["install-shell-completion", "--shell", "bash"],
+        env={
+            "HOME": str(fake_home),
+            "SCITEX_DIR": str(tmp_path / "scitex"),
+        },
+    )
+    # Assert
+    assert not (fake_home / ".zshrc").exists()
+
+
+def test_install_never_creates_fish_config(runner: CliRunner, tmp_path):
+    # Arrange
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    # Act
+    runner.invoke(
+        main,
+        ["install-shell-completion", "--shell", "bash"],
+        env={
+            "HOME": str(fake_home),
+            "SCITEX_DIR": str(tmp_path / "scitex"),
+        },
+    )
+    # Assert
+    assert not (fake_home / ".config" / "fish" / "config.fish").exists()

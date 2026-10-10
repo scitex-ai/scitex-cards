@@ -43,9 +43,15 @@ def _now_minus(minutes: float) -> str:
 
 
 @pytest.fixture()
-def store_with_done_task() -> str:
+def store_with_done_task(postgres_dsn) -> str:
     """Seed the canonical DB with one done task carrying a full ``_log_meta``
     set so the timing compute has something to aggregate.
+
+    ``postgres_dsn`` is requested but is not the seed target: with no
+    writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN``, and the
+    ``add_task`` call below would otherwise resolve AMBIENTLY to the live
+    board — a write, not a bare ``KeyError``. The fixture fails first,
+    LOUDLY, with the reason and the remedy.
 
     THE INTENT WAS ALWAYS RIGHT; THE MECHANISM DID NOT EXIST. This fixture used
     to pass ``store=$SCITEX_CARDS_TASKS_YAML_SHARED`` and explain that doing so

@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """v15 persists caller retry identity under a database uniqueness guard."""
 
+from scitex_cards._database.schema_rungs import _migrate_v14_to_v15
 from scitex_cards._db import SCHEMA_VERSION, connect
-from scitex_cards._db_dm_idempotency import _migrate_v14_to_v15
 from scitex_cards._db_migrations import table_columns
 from scitex_cards._schema_ladder import SHAPE_LADDER
 

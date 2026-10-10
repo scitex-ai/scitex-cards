@@ -58,8 +58,14 @@ _STORE_DOC = {
 
 
 @pytest.fixture
-def store():
-    """Seed the canonical DB and hand the handler the pinned store-identity path."""
+def store(postgres_dsn):
+    """Seed the canonical DB and hand the handler the pinned store-identity path.
+
+    ``postgres_dsn`` is requested but is not the seed target: with no
+    writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN``, so
+    indexing it below would die with a bare ``KeyError`` — the fixture
+    fails first, LOUDLY, with the reason and the remedy.
+    """
     seed_db_from_doc(_STORE_DOC, os.environ["SCITEX_STORE_DSN"])
     store_path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     Path(store_path).write_text("", encoding="utf-8")
@@ -238,9 +244,12 @@ def test_priority_endpoint_rejects_non_string_ids_with_400(store):
 
 
 @pytest.fixture
-def two_card_store_after_reorder():
+def two_card_store_after_reorder(postgres_dsn):
     """Seed a two-card store (alpha/beta), reorder [beta, alpha], and return
     the {id: priority} read back through the canonical store.
+
+    ``postgres_dsn`` is requested but is not the seed target (same
+    no-cluster LOUD guard as ``store`` above).
 
     (After the cutover the old ``commented.yaml`` variant has no
     subject: the handler writes the DB, never a YAML file, so there is no

@@ -421,10 +421,16 @@
     / `--status-border-<s>` CSS vars (rendered by #status-color-vars) so
     the swatch matches the cards exactly, including `deferred`'s dashed
     border. `data-legend-status` per chip keeps the test robust.
+
+    Mobile declutter (card cards-mobile-declutter-20261007): the legend
+    lives inside a <details> disclosure, closed by default, so the phone
+    board opens on cards instead of a two-line chip wrap. Same chips,
+    same single-sourcing — only the disclosure wrapper is new.
   {% endcomment %}
+  <details class="status-legend-wrap" id="status-legend-wrap">
+    <summary class="status-legend-summary">Legend</summary>
   <div class="status-legend" id="status-legend"
        role="group" aria-label="Status color legend">
-    <span class="status-legend-title" aria-hidden="true">Legend</span>
     {% for s, c in status_colors.items %}
     <span class="status-legend-chip" data-legend-status="{{ s }}"
           title="{{ s }}" aria-label="status color: {{ s }}">
@@ -435,6 +441,7 @@
     </span>
     {% endfor %}
   </div>
+  </details>
 
   {% comment %}
     BLOCKING-YOU 360 px aside REMOVED (P12, lead a2a 2026-06-12). The
@@ -1817,6 +1824,17 @@
         renderActiveFilterChips();
         render();
       });
+      // Mobile declutter (card cards-mobile-declutter-20261007): on touch
+      // devices the search placeholder's desktop keyboard hints (/ to focus,
+      // Esc to blur, Tab to autocomplete) name keys that don't exist. Swap
+      // to a short prompt; the full hint stays for hardware keyboards, and
+      // the title attribute keeps the qualifier reference on both.
+      try {
+        if (window.matchMedia && matchMedia("(pointer: coarse)").matches) {
+          const search = document.getElementById("f-search");
+          if (search) search.setAttribute("placeholder", "🔎 Search cards…");
+        }
+      } catch (e) {}
     });
 
 
