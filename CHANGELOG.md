@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## [0.53.8] - 2026-10-10
+
+Catches the release line up with develop: the 0.53.6/0.53.7 tags were cut
+on side branches and never published, so this is the first publishable tag
+since 0.53.5 (PyPI/GH latest remain 0.53.4).
+
+- Board Timeline declutter on mobile: legend disclosure, touch-gated hints,
+  full-width search (#1073).
+- Database schema rungs v13–v15 moved into the `_database` subpackage
+  (Oct 3 checkpoint, #1071).
+- `install-shell-completion` migrated to the drop-in contract v1 (#1072).
+- List-importers skip unreadable pids instead of aborting the table;
+  `detect_vantage` survives a denied `/proc/1/root` (#1070).
+- Test isolation: `postgres_dsn` fail-LOUD guard rollout for the `_django`
+  store fixtures — store-touching tests ERROR with reason+remedy instead of
+  failing raw when no writable PostgreSQL opens (#1076).
+- CLA canonicalized to the em-dash Mar-12 text (#1074).
+
 ## [0.53.5] - 2026-10-03
 
 ### A missing SDK project picker degrades instead of blanking the page
