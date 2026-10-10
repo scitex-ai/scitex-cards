@@ -58,7 +58,7 @@ def _store_text() -> str:
 
 
 @pytest.fixture
-def store():
+def store(postgres_dsn):
     # The store is the database: seed the two cards into it and hand the graph
     # view the PINNED store-identity path (never a tmp_path YAML — a write
     # stamped with a tmp path would fail the next read's ownership check). The
@@ -66,6 +66,15 @@ def store():
     # provenance label. The board/services layer (get_board -> load_groups)
     # stat()s the identity file, which the _django autouse fixture already
     # creates at the pinned path.
+    #
+    # ``postgres_dsn`` is requested but is not the seed target. With no
+    # writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN`` from the
+    # environment, so indexing it would die with a bare ``KeyError`` — the
+    # fixture fails first, LOUDLY, with the reason and the remedy. The seed
+    # target stays the per-test variable: card reads resolve ambiently
+    # (``resolve_store_target(None)``) to this test's own throwaway schema,
+    # while ``postgres_dsn`` names the SESSION schema, which no read in this
+    # test ever opens — seeding it would seed a database nobody reads.
     seed_db_from_doc(safe_load(_store_text()) or {}, os.environ["SCITEX_STORE_DSN"])
     store_path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _reset_cache()

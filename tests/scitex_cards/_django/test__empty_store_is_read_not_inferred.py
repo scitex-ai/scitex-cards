@@ -52,12 +52,17 @@ _SEEDED = {
 
 
 @pytest.fixture
-def real_but_empty_store():
+def real_but_empty_store(postgres_dsn):
     """The per-test scratch database: initialised, schema-complete, no cards.
 
     THE LEGITIMATE ZERO. This is what a fresh workspace looks like once its
     store exists — the state the ``empty_store`` flag was invented for, and the
     only state that may now produce it.
+
+    ``postgres_dsn`` is requested but is not the seed target: with no
+    writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN``, so
+    indexing it below would die with a bare ``KeyError`` — the fixture
+    fails first, LOUDLY, with the reason and the remedy.
     """
     _reset_cache()
     _graph_cache_reset()
@@ -67,8 +72,12 @@ def real_but_empty_store():
 
 
 @pytest.fixture
-def seeded_store():
-    """The same database with one card in it."""
+def seeded_store(postgres_dsn):
+    """The same database with one card in it.
+
+    ``postgres_dsn`` requested but not the seed target (same no-cluster
+    LOUD guard as ``real_but_empty_store`` above).
+    """
     from conftest import seed_db_from_doc
 
     _reset_cache()

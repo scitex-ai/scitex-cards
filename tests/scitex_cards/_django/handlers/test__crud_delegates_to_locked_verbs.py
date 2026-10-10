@@ -70,7 +70,7 @@ _STORE_TEXT = (
 
 
 @pytest.fixture
-def store(env):
+def store(env, postgres_dsn):
     # Hermetic: no per-project lane union from the real ~/proj tree.
     env.set("SCITEX_CARDS_LANE_GLOBS", "")
     # The store is the database: seed the prior cards into it, then hand the
@@ -80,6 +80,15 @@ def store(env):
     # The board/services layer (get_board -> load_groups) still stat()s the
     # identity file, so it must EXIST though its content is never read (an empty
     # file suffices; the _django autouse fixture also guarantees this).
+    #
+    # ``postgres_dsn`` is requested but is not the seed target. With no
+    # writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN`` from the
+    # environment, so indexing it would die with a bare ``KeyError`` — the
+    # fixture fails first, LOUDLY, with the reason and the remedy. The seed
+    # target stays the per-test variable: card reads resolve ambiently
+    # (``resolve_store_target(None)``) to this test's own throwaway schema,
+    # while ``postgres_dsn`` names the SESSION schema, which no read in this
+    # test ever opens — seeding it would seed a database nobody reads.
     seed_db_from_doc(safe_load(_STORE_TEXT) or {}, os.environ["SCITEX_STORE_DSN"])
     store_path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     Path(store_path).write_text("", encoding="utf-8")

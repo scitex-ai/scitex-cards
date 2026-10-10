@@ -52,9 +52,15 @@ seed_db_from_doc = _mod.seed_db_from_doc
 
 
 @pytest.fixture()
-def store_with_timeline_tasks() -> str:
+def store_with_timeline_tasks(postgres_dsn) -> str:
     """Seed the canonical DB with one in-window + one out-of-window task plus
     a depends_on edge; return the PINNED store-identity path the view resolves.
+
+    ``postgres_dsn`` is requested but is not the seed target: with no
+    writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN``, and the
+    ``add_task`` calls below would otherwise resolve AMBIENTLY to the live
+    board — a write, not a bare ``KeyError``. The fixture fails first,
+    LOUDLY, with the reason and the remedy.
 
     The store is the database now: ``add_task`` writes it and the view's
     ``get_board`` reads it back. We pass the PINNED store path (never a tmp_path
@@ -93,9 +99,12 @@ def store_with_timeline_tasks() -> str:
 
 
 @pytest.fixture()
-def store_ungrouped() -> str:
+def store_ungrouped(postgres_dsn) -> str:
     """One OWNER-LESS task (no ``agent``/``assignee``/``group``) — should land
     in ``"(ungrouped)"`` regardless of ``lane_by``.
+
+    ``postgres_dsn`` is requested but is not the seed target (same
+    no-cluster LOUD guard as ``store_with_timeline_tasks`` above).
 
     Seeded DIRECTLY into the canonical DB on purpose: ``add_task`` now REQUIRES
     an owner (assignee/agent are mandatory — fail-loud, no silent fallback), so

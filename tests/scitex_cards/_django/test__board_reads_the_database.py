@@ -85,7 +85,9 @@ def _tasks_payload() -> dict:
 
 
 @pytest.fixture
-def populated_db_without_sidecar():
+def populated_db_without_sidecar(postgres_dsn):
+    # ``postgres_dsn`` requested but not the seed target (same no-cluster
+    # LOUD guard as the other store fixtures in _django/).
     """Cards in the canonical DB; no ``tasks.yaml`` beside it.
 
     This reproduces production rather than approximating it. The per-test
@@ -466,8 +468,12 @@ def test_a_store_that_cannot_be_read_never_answers_with_a_task_list(unreadable_s
 
 
 @pytest.fixture
-def real_but_empty_db():
-    """The per-test scratch database, bootstrapped and holding no cards."""
+def real_but_empty_db(postgres_dsn):
+    """The per-test scratch database, bootstrapped and holding no cards.
+
+    ``postgres_dsn`` requested but not the seed target (same no-cluster
+    LOUD guard as the other store fixtures in _django/).
+    """
     _reset_board_caches()
     yield os.environ["SCITEX_STORE_DSN"]
     _reset_board_caches()
@@ -497,8 +503,12 @@ def test_a_real_store_holding_no_cards_is_flagged_empty(real_but_empty_db):
 
 
 @pytest.fixture
-def db_with_sidecar_groups():
-    """Cards in the database, ``groups:`` in the sidecar beside it."""
+def db_with_sidecar_groups(postgres_dsn):
+    """Cards in the database, ``groups:`` in the sidecar beside it.
+
+    ``postgres_dsn`` requested but not the seed target (same no-cluster
+    LOUD guard as the other store fixtures in _django/).
+    """
     from conftest import seed_db_from_doc
 
     _reset_board_caches()

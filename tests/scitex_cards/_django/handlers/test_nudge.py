@@ -53,7 +53,13 @@ _STORE_TEXT = (
 
 
 @pytest.fixture
-def store(tmp_path):
+def store(tmp_path, postgres_dsn):
+    # ``postgres_dsn`` is requested but is not the seed target. With no
+    # writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN`` from
+    # the environment, so the ``?store=`` reads below would resolve
+    # AMBIENTLY to the live board — a silent production read, not a bare
+    # ``KeyError``. The fixture fails first, LOUDLY, with the reason and
+    # the remedy. (Same guard as the other ``store`` fixtures in _django/.)
     path = tmp_path / "tasks.yaml"
     path.write_text(_STORE_TEXT, encoding="utf-8")
     _reset_cache()

@@ -73,11 +73,16 @@ _STYLE_BLOCK = re.compile(r"<style[^>]*>(.*?)</style>", re.DOTALL)
 
 
 @pytest.fixture
-def store():
+def store(postgres_dsn):
     """Seed the canonical DB and reset the board cache around the test.
 
     The board page renders through the live board loader, so it needs a store
     it may read — an EXPLICIT, per-test one, never the fleet's.
+
+    ``postgres_dsn`` is requested but is not the seed target: with no
+    writable PostgreSQL the fleet guard clears ``SCITEX_STORE_DSN``, so
+    indexing it below would die with a bare ``KeyError`` — the fixture
+    fails first, LOUDLY, with the reason and the remedy.
     """
     from conftest import seed_db_from_doc
 
