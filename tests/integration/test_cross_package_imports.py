@@ -50,7 +50,7 @@ import pytest
 
 #: Exactly the cross-package modules imported under src/ (PS-140 verifies this).
 CROSS_PACKAGE_IMPORTS = [
-    'scitex_sdk.app._django',
+    'scitex_sdk.app',
     "scitex_config._ecosystem",
     "scitex_dev.ecosystem",
     "scitex_dev.jobs",
@@ -79,16 +79,27 @@ def test_board_appconfig_subclasses_scitex_app_when_installed():
     # Arrange -- importorskip on the ROOT, then import the submodule for real;
     # the old form skipped on the dotted path and so could not fail.
     pytest.importorskip("scitex_sdk")
-    importlib.import_module('scitex_sdk.app')
-    scitex_app_django = importlib.import_module('scitex_sdk.app._django')
+    scitex_sdk_app = importlib.import_module('scitex_sdk.app')
     from scitex_cards._django.apps import ScitexCardsConfig
 
     # Act
     is_scitex_app_subclass = issubclass(
-        ScitexCardsConfig, scitex_app_django.ScitexAppConfig
+        ScitexCardsConfig, scitex_sdk_app.ScitexAppConfig
     )
     # Assert
     assert is_scitex_app_subclass
+
+
+def test_board_appconfig_base_is_the_sdk_django_impl_by_identity():
+    # Arrange -- the public `scitex_sdk.app.ScitexAppConfig` must be the same
+    # object as the implementation, or the subclass above proves nothing.
+    pytest.importorskip("scitex_sdk")
+    scitex_sdk_app = importlib.import_module('scitex_sdk.app')
+    scitex_app_django = importlib.import_module('scitex_sdk.app._django')
+
+    # Act
+    # Assert
+    assert scitex_sdk_app.ScitexAppConfig is scitex_app_django.ScitexAppConfig
 
 
 def test_a_missing_submodule_of_a_present_package_raises_rather_than_skips():
