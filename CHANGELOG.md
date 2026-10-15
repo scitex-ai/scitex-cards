@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## [0.53.9] - 2026-10-15
+
+SDK-only migration (#1080): `scitex-app` / `scitex-ui` retired from all
+dependency sets; every consumer (Django app config via the
+`scitex_sdk.app` public root, project scope, branding and mount contexts
+via `scitex_sdk.ui`, board templates via `scitex_sdk/app/app_shell.html`)
+resolves through `scitex-sdk>=0.3.0` (public-root re-export verified in
+0.3.5, graceful fallback below it). Git-hook content lines route through
+`scitex-logging` `PlainConsole.write_content()`. Cards runtime transient
+state is ignored.
+
 ## [0.53.8] - 2026-10-10
 
 Catches the release line up with develop: the 0.53.6/0.53.7 tags were cut
