@@ -241,18 +241,19 @@ a {
   cursor: pointer;
   flex: 0 0 auto;
   border: 2px solid transparent;
-  transition:
-    transform 100ms ease,
-    border-color 100ms ease;
+  /* Calm: border-color feedback only — no hover grow (layout-adjacent
+   * motion with no information in it). */
+  transition: border-color 100ms ease;
 }
 .flt-dot:hover {
-  transform: scale(1.25);
   border-color: rgba(255, 255, 255, 0.4);
 }
 .flt-dot--blocking-operator {
   background: var(--gold);
+  /* Calm: static state glow — the infinite pulse cost perpetual
+   * compositor work for a dot whose meaning (operator-decision blocker)
+   * does not change between frames. */
   box-shadow: 0 0 6px 1px rgba(255, 193, 7, 0.65);
-  animation: pulse-gold 1.8s ease-in-out infinite;
 }
 .flt-dot--working {
   background: var(--green);
@@ -275,15 +276,6 @@ a {
   font-size: 0.72rem;
   font-style: italic;
   padding: 0 4px;
-}
-@keyframes pulse-gold {
-  0%,
-  100% {
-    box-shadow: 0 0 6px 1px rgba(255, 193, 7, 0.65);
-  }
-  50% {
-    box-shadow: 0 0 14px 4px rgba(255, 193, 7, 0.95);
-  }
 }
 
 /* === MAIN LAYOUT ======================================================== */
@@ -411,13 +403,11 @@ a {
   font-size: 0.9rem;
   line-height: 1;
   padding: 0 4px;
-  transition:
-    color 100ms ease,
-    transform 100ms ease;
+  /* Calm: color feedback only — no hover grow. */
+  transition: color 100ms ease;
 }
 .col-nudge-btn:hover {
   color: var(--gold);
-  transform: scale(1.15);
 }
 .col-nudge-btn:disabled {
   opacity: 0.5;
