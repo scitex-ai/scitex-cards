@@ -1,6 +1,6 @@
 /* board_v3 — open-first skeleton (instant-open shell).
  *
- * The server paints placeholder cards + a spinner BEFORE /graph resolves, so
+ * The server paints static placeholder cards + a ring BEFORE /graph resolves, so
  * first paint carries feedback even when the store rebuild takes seconds.
  * loadGraph()'s render() and the boardStates painters replace the skeleton
  * wholesale the moment data — or a named empty/error state — lands, and flip
@@ -19,18 +19,13 @@
   padding: 28px 16px;
 }
 
-/* Spinner: the board's accent ring, no extra asset. */
+/* Quiet loading ring: feedback without perpetual decorative motion. */
 .board-skeleton__spinner {
   width: 28px;
   height: 28px;
   border-radius: 50%;
   border: 3px solid var(--border);
-  border-top-color: var(--accent, #7c5cbf);
-  animation: board-skeleton-spin 0.9s linear infinite;
-}
-
-@keyframes board-skeleton-spin {
-  to { transform: rotate(360deg); }
+  border-top-color: var(--stx-brand, var(--text-muted));
 }
 
 .board-skeleton__msg {
@@ -62,14 +57,7 @@
 .sk-line {
   height: 12px;
   border-radius: 6px;
-  background: linear-gradient(
-    90deg,
-    var(--border) 25%,
-    var(--card-bg) 50%,
-    var(--border) 75%
-  );
-  background-size: 200% 100%;
-  animation: board-skeleton-shimmer 1.4s ease-in-out infinite;
+  background: var(--border);
 }
 
 .sk-line--title {
@@ -92,15 +80,9 @@
   height: 16px;
   border-radius: 8px;
   background: var(--border);
-  animation: board-skeleton-shimmer 1.4s ease-in-out infinite;
 }
 
-@keyframes board-skeleton-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-/* Motion-sensitive viewers get static placeholders, not animation. */
+/* Retain the reduced-motion boundary for any future loading variants. */
 @media (prefers-reduced-motion: reduce) {
   .board-skeleton__spinner,
   .sk-line,

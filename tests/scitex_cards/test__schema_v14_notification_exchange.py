@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 """v14 persists the responder-issued delivery exchange on notifications."""
 
+from scitex_cards._database.schema_rungs import _migrate_v13_to_v14
 from scitex_cards._db import connect, init_schema
 from scitex_cards._db_migrations import table_columns
-from scitex_cards._db_notification_exchange import _migrate_v13_to_v14
 from scitex_cards._schema_shape import SHAPE_LADDER
 
 

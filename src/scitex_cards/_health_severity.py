@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-__all__ = ["ADVISORY", "BLOCKING", "DELIVERY", "run_check"]
+__all__ = ["ADVISORY", "BLOCKING", "DELIVERY", "_run_check"]
 
 
 #: A failure here means THE CARDS DATABASE CANNOT BE USED AS EXPECTED. This is

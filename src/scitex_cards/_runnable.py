@@ -46,7 +46,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-
 #: Status values eligible for runnable-pickup.
 #:
 #: ``deferred`` replaced ``pending`` as the not-yet-started state when pending

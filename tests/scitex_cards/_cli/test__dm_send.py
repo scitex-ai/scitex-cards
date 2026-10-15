@@ -13,8 +13,11 @@ import ast
 import inspect
 import json
 import os
+import subprocess
+import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -69,7 +72,7 @@ def test_json_success_includes_the_durable_message_id(postgres_dsn):
     args = ("agent:recipient", "hello", "--json")
     # Act
     result = _invoke(*args)
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     # Assert
     assert result.exit_code == 0 and payload["message_id"].startswith("m_")
 
@@ -113,7 +116,7 @@ def test_json_success_does_not_claim_delivery_or_ack(postgres_dsn):
     args = ("agent:recipient", "hello", "--json")
     # Act
     result = _invoke(*args)
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     # Assert
     assert (
         payload["status"]["code"] == 202
@@ -126,7 +129,7 @@ def test_default_sender_is_persisted_in_postgres(postgres_dsn):
     key = thread_key("test-suite", "recipient")
     # Act
     result = _invoke("agent:recipient", "from the environment", "--json")
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     stored = messages_in(key)
     # Assert
     assert [row["id"] for row in stored] == [payload["message_id"]]
@@ -137,7 +140,7 @@ def test_sender_flag_overrides_the_environment_identity(postgres_dsn):
     sender = "agent:explicit"
     # Act
     result = _invoke("agent:recipient", "explicit sender", "--sender", sender, "--json")
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     stored = messages_in(thread_key("explicit", "recipient"))
     # Assert
     assert any(row["id"] == payload["message_id"] for row in stored)
@@ -185,6 +188,45 @@ def test_unresolved_sender_uses_native_http_status(env):
     )
 
 
+def test_first_unresolved_sender_in_fresh_process_emits_only_json(tmp_path):
+    # Arrange
+    code = """
+import json
+from click.testing import CliRunner
+from scitex_cards._cli import main
+result = CliRunner().invoke(main, [
+    "dm", "send", "agent:recipient", "nobody", "--json",
+    "--client-request-id", "req_fresh_identity",
+])
+payload = json.loads(result.output)
+print(json.dumps({"exit_code": result.exit_code, "payload": payload}))
+"""
+    child_env = {
+        "HOME": str(tmp_path),
+        "LANG": "C.UTF-8",
+        "PATH": str(Path(sys.executable).parent) + ":/usr/bin:/bin",
+        "PYTHONPATH": str(Path(subject.__file__).parents[2]),
+        "TMPDIR": str(tmp_path),
+        "TZ": "UTC",
+    }
+    # Act
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=child_env,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    payload = json.loads(result.stdout)
+    # Assert
+    assert (
+        result.returncode,
+        payload["exit_code"],
+        payload["payload"]["status"]["code"],
+        "No DM was persisted" in payload["payload"]["status"]["message"],
+    ) == (0, 1, 400, True)
+
+
 def test_invalid_shared_ledger_target_fails_before_persisting(env, postgres_dsn):
     # Arrange
     valid_store = os.environ["SCITEX_STORE_DSN"]
@@ -192,7 +234,7 @@ def test_invalid_shared_ledger_target_fails_before_persisting(env, postgres_dsn)
     key = thread_key("test-suite", "recipient")
     # Act
     result = _invoke("agent:recipient", "must not land", "--json")
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     env.set("SCITEX_STORE_DSN", valid_store)
     stored = messages_in(key)
     # Assert
@@ -226,12 +268,12 @@ def test_status_wire_does_not_reinvent_ok_or_retryable():
 
 def test_exchange_status_round_trips_through_shared_ledger(postgres_dsn):
     # Arrange
-    sent = json.loads(_invoke("agent:recipient", "tracked", "--json").output)
+    sent = json.loads(_invoke("agent:recipient", "tracked", "--json").stdout)
     # Act
     result = CliRunner().invoke(
         main, ["dm", "get-status", sent["exchange_id"], "--json"]
     )
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     # Assert
     assert (
         payload["status"]["code"],
@@ -244,7 +286,7 @@ def test_exchange_status_round_trips_through_shared_ledger(postgres_dsn):
 
 def test_same_responder_exchange_id_reaches_notification_row(postgres_dsn):
     # Arrange
-    sent = json.loads(_invoke("agent:recipient", "one exchange", "--json").output)
+    sent = json.loads(_invoke("agent:recipient", "one exchange", "--json").stdout)
     # Act
     notifications = poll_inbox("recipient", unseen_only=False)
     matching = [n for n in notifications if n.get("msg_id") == sent["message_id"]]
@@ -257,7 +299,7 @@ def test_same_responder_exchange_id_reaches_notification_row(postgres_dsn):
 
 def test_delivery_retry_reuses_the_same_notification_and_exchange(postgres_dsn):
     # Arrange
-    sent = json.loads(_invoke("agent:recipient", "retry rail", "--json").output)
+    sent = json.loads(_invoke("agent:recipient", "retry rail", "--json").stdout)
     # Act -- a consumer may die after either poll; neither poll acknowledges.
     first = poll_inbox("recipient")
     second = poll_inbox("recipient")

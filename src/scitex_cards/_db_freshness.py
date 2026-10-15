@@ -70,9 +70,9 @@ if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
-from ._schema_probe import row_values
-
 from pathlib import Path
+
+from ._schema_probe import row_values
 
 #: ``schema_meta`` key holding the resolved path of the store this database IS.
 #: (Was ``yaml_path`` before the cutover, when the database mirrored a

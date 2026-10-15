@@ -42,12 +42,11 @@ and skip -- loudly -- when it is unreachable, rather than passing on a mock.
 
 from __future__ import annotations
 
-from ._store_url import describe_store_target
-
 from typing import Any, Iterable
 
 from ._store_url import (
     BACKEND_POSTGRES,
+    describe_store_target,
     reject_non_postgres_target,
     to_paramstyle,
 )

@@ -41,6 +41,8 @@ if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
 
 import json
 
+from .._schema_probe import _sole_value
+
 # Shape-agnostic row access. psycopg's dict_row is a real dict and raises
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
@@ -51,7 +53,6 @@ from .ids import (
     resolve_dm_db,
     utc_now_iso,
 )
-from .._schema_probe import _sole_value
 
 
 def _open(db, store) -> StoreConnection:

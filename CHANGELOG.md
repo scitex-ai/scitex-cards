@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+## [0.53.8] - 2026-10-10
+
+Catches the release line up with develop: the 0.53.6/0.53.7 tags were cut
+on side branches and never published, so this is the first publishable tag
+since 0.53.5 (PyPI/GH latest remain 0.53.4).
+
+- Board Timeline declutter on mobile: legend disclosure, touch-gated hints,
+  full-width search (#1073).
+- Database schema rungs v13–v15 moved into the `_database` subpackage
+  (Oct 3 checkpoint, #1071).
+- `install-shell-completion` migrated to the drop-in contract v1 (#1072).
+- List-importers skip unreadable pids instead of aborting the table;
+  `detect_vantage` survives a denied `/proc/1/root` (#1070).
+- Test isolation: `postgres_dsn` fail-LOUD guard rollout for the `_django`
+  store fixtures — store-touching tests ERROR with reason+remedy instead of
+  failing raw when no writable PostgreSQL opens (#1076).
+- CLA canonicalized to the em-dash Mar-12 text (#1074).
+
+## [0.53.7] - 2026-10-04
+
+### App/UI ownership consolidated into scitex-sdk
+
+Direct scitex-app/scitex-ui distributions retired from core dependencies;
+every remaining consumer (i18n settings, project_scope, context processors,
+tag libraries, app shells, floor contract, test doubles) resolves through
+scitex-sdk>=0.3.0 (floor qualified against the published 0.3.0 wheel).
+Graceful degradation preserved where the SDK is absent or predates an API.
+
+## [0.53.6] - 2026-10-04
+
+### Board and DM are prominent top tabs
+
+The shared Board | DM page switcher was a small inline segmented control;
+it read as a minor switch, not top-level navigation. Both surfaces now show
+Board and DM as equal full-width top tabs with a straight accent underline
+on the active page (44px targets on desktop and phone). Routes, markup,
+aria-current, the unread badge and the mount-aware `api_base` hrefs are
+unchanged.
+>>>>>>> origin/main
+
+## [0.53.5] - 2026-10-03
+
 ### A missing SDK project picker degrades instead of blanking the page
 
 `{% load %}` of a template library that is not installed is a
@@ -45,6 +87,19 @@ and carry explicit totals, truncation state, and an opaque continuation
 cursor. Pydantic publishes and enforces the input constraints at dispatch;
 malformed, stale, or cross-filter cursors fail with an actionable restart
 message. Explicit filters retain the same matching semantics.
+
+### Other product fixes
+
+- Use the canonical SDK project-picker scope and wait for deferred board modules
+  before their first use (#1050, #1052).
+- Apply the SDK diagnostic visibility decision to board chrome and omit
+  diagnostic Store metadata from browser copy and exports (#1056, #1057).
+- Keep Board DM read acknowledgements on the canonical backend and hide load
+  error details when internal chrome is disabled (#1058).
+- Require explicit server Store configuration and reuse the shared App locale
+  settings (#1059).
+- Record the delivered source milestones and remaining public-release
+  requirements in the release evidence document (#1060).
 
 ## [0.53.1] - 2026-09-15
 

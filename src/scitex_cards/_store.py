@@ -430,6 +430,7 @@ def resolve_store(store: str | Path | None = None) -> dict:
 
     from ._db import ENV_STORE_DSN, resolve_db_path
     from ._paths import PKG_SHORT
+    from ._store_pin import _check_against, instance_at, pinned_instance
     from ._store_target import resolve_store_target
     from ._store_url import (
         backend_of,
@@ -438,7 +439,6 @@ def resolve_store(store: str | Path | None = None) -> dict:
         is_postgres_url,
         is_unexpanded_variable,
     )
-    from ._store_pin import _check_against, instance_at, pinned_instance
     from ._store_uuid import expected_store_uuid, store_uuid_at
 
     # The resolved store is the DATABASE — the sole store identity. It may be a

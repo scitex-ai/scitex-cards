@@ -20,6 +20,7 @@ from scitex_cards._process_inventory import (
     UNREADABLE,
     UNRESOLVED,
     describe_self,
+    detect_vantage,
     scan,
 )
 
@@ -199,6 +200,104 @@ def test_the_venv_is_found_from_argv0_not_from_the_resolved_interpreter(tmp_path
 
     # Assert
     assert inv.rows[0].venv_version == "9.9.9"
+
+
+def test_an_unreadable_exe_keeps_the_row_with_an_unreadable_venv(tmp_path):
+    """The shared-host case: /proc/<other-uid>/exe raises PermissionError.
+
+    Infra measured scan() aborting the whole host table on compute-01/02/03
+    because the exe resolution had no guard. The row must survive on its
+    cmdline half (argv[0] still names the interpreter) with the venv half
+    UNREADABLE — skipping the row undercounts the population, and aborting
+    loses every other row too.
+    """
+    # Arrange
+    root = tmp_path / "proc"
+    root.mkdir()
+    # Hermetic venv: the interpreter's home must exist ON DISK for _venv_of
+    # (it looks for pyvenv.cfg in the parents), so build it under tmp_path.
+    # Naming a real host path (e.g. /opt/venv-sac) makes the test pass only
+    # on machines that happen to carry that venv — green on compute nodes,
+    # red in CI, which is exactly backwards for a gate.
+    venv = tmp_path / "venv-sac"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "pyvenv.cfg").write_text("home = /usr/bin\n")
+    d = _proc(root, 4242, f"{venv}/bin/python -m scitex_cards worker")
+    real_exists = Path.exists
+
+    def _deny_exe(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN202
+        if self == d / "exe":
+            raise PermissionError("other uid")
+        # Bare call, never forwarding args: Path.exists() takes no parameters
+        # on Python < 3.12, so forwarding the 3.12+ follow_symlinks keyword
+        # is a TypeError there. The default there is the behaviour we want.
+        return real_exists(self)
+
+    Path.exists = _deny_exe  # type: ignore[method-assign] — restored in finally; real fs, no mock
+    try:
+        # Act
+        inv = scan(proc_root=root, self_pid=1, parent_pid=2)
+    finally:
+        Path.exists = real_exists
+    # Assert — the row survives on its cmdline half; the exe half is gone so
+    # the venv can only come from argv[0], never from the unreadable link.
+    assert [(r.pid, r.venv_path) for r in inv.rows] == [(4242, str(venv))]
+
+
+def test_a_vanishing_pid_does_not_abort_the_table(tmp_path):
+    """A pid exiting mid-scan leaves a cmdline the exe check never sees.
+
+    Same family as the unreadable exe: per-pid failures must stay per-pid.
+    The surviving row still reports, and the enumeration counts both.
+    """
+    # Arrange
+    root = tmp_path / "proc"
+    root.mkdir()
+    _proc(root, 4242, "/opt/venv-sac/bin/python -m scitex_cards worker")
+    gone = _proc(root, 4343, "/usr/bin/python -m scitex_cards worker")
+    (gone / "cmdline").unlink()
+    # Act
+    inv = scan(proc_root=root, self_pid=1, parent_pid=2)
+    # Assert
+    assert ([r.pid for r in inv.rows], inv.enumerated) == ([4242], 2)
+
+
+def test_a_denied_proc_root_answers_host_rather_than_raising(tmp_path):
+    """The compute-02 case: /proc/1/root raises PermissionError on exists().
+
+    Same class as the exe fix one line over — an unguarded ``exists()`` on
+    another UID's directory aborts the enumeration before it starts. The
+    direction matters: undetectable answers ``"host"``, because claiming
+    ``"container"`` would discard a real empty result as a vantage artifact.
+    """
+    # Arrange
+    root = tmp_path / "proc"
+    root.mkdir()
+    real_exists = Path.exists
+
+    def _deny_root(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN202
+        if self == root / "1" / "root" / ".dockerenv":
+            raise PermissionError("other uid")
+        # Bare call: see _deny_exe above — forwarding follow_symlinks is a
+        # TypeError on Python < 3.12.
+        return real_exists(self)
+
+    Path.exists = _deny_root  # type: ignore[method-assign] — restored in finally
+    # SAC_NAME must not decide this: the subject is the proc_root guard, and
+    # this container carries SAC_NAME, which would answer container through
+    # the third clause whatever the guard does.
+    import os
+
+    saved = os.environ.pop("SAC_NAME", None)
+    try:
+        # Act
+        vantage = detect_vantage(root)
+    finally:
+        if saved is not None:
+            os.environ["SAC_NAME"] = saved
+        Path.exists = real_exists
+    # Assert
+    assert vantage == "host"
 
 
 def test_describe_self_reports_the_version_actually_imported():

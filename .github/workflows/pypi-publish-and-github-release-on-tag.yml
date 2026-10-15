@@ -148,6 +148,16 @@ jobs:
           unset SCITEX_STORE_DSN SCITEX_CARDS_DB SCITEX_CARDS_NOTIFY_DSN
           echo "SCITEX_STORE_DSN=postgresql://scitex:***@127.0.0.1:5432/scitex" \
             >> "$GITHUB_ENV"
+      # The browser source checks require the locked compiler, just as the
+      # required PR matrix does; committed bundles do not replace TypeScript.
+      - name: Prepare the locked frontend before release tests
+        working-directory: src/scitex_cards/_django/frontend
+        run: |
+          set -euo pipefail
+          node --version
+          npm --version
+          npm ci
+          npm run build
       # MIRROR the org pytest-matrix reusable workflow's invocation EXACTLY —
       # including the coverage flags and the package-derived --cov path. Not
       # cosmetic: a simplified `pytest tests/` here selected a different plugin

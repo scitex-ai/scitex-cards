@@ -255,7 +255,18 @@ class LocalBackend:
         unseen_only: bool = True,
         ack: bool = False,
         store: Any = None,
+        *,
+        notification_id: str | None = None,
+        limit: int | None = None,
+        after: str | None = None,
     ) -> dict:
+        if notification_id is not None or limit is not None or after is not None:
+            from ._notification_recovery import recover_notifications
+
+            return recover_notifications(
+                agent, unseen_only=unseen_only, ack=ack, store=store,
+                notification_id=notification_id, limit=limit, after=after,
+            )
         # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
         self._warn_currency()
         # HANDOVER IS NOT CONFIRMATION (_inbox_confirm): ack=True advances the
@@ -317,7 +328,11 @@ class LocalBackend:
         # to rewrite history; rotating here keeps the durable delivery id while
         # every poller observes the same successor exchange.
         from ._dm_exchange import rotate_failed_notification_exchange
-        from ._inbox_receipt import outstanding_records_off_page, receipts, unconfirmed_ids
+        from ._inbox_receipt import (
+            outstanding_records_off_page,
+            receipts,
+            unconfirmed_ids,
+        )
 
         outstanding = {
             notification_id
@@ -479,11 +494,9 @@ class LocalBackend:
         other = peer or _threads.OPERATOR_NAME
         key = _threads.thread_key(sender, other)
         if ack:
-            _threads.mark_read(key, sender, store=store)
-            # AND THE RECEIPT GOES TO THE STORE, for the same reason the board's
-            # does: the messages below now come from `dm_messages`, so an ack
-            # that only touched the sidecar would leave a thread permanently
-            # unread. Idempotent by `(message_id, reader)`.
+            # The messages and unread state are canonical, so ACK writes only
+            # their receipts. A local sidecar lock must not block this rail.
+            # Idempotent by `(message_id, reader)`.
             from ._dm import write as _dm_write
 
             unread_ids = [

@@ -9,7 +9,6 @@ just this default.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from .._model import load_tasks, save_tasks

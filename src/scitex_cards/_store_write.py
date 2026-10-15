@@ -41,6 +41,8 @@ from pathlib import Path
 
 from ._model import (
     WRITE_SOURCE as _WRITE_SOURCE,
+)
+from ._model import (
     StaleStoreError,
     TaskValidationError,
     _validate_tasks,

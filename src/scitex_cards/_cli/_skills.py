@@ -11,8 +11,11 @@ from __future__ import annotations
 import json
 
 import click
+import scitex_logging as slogging
 
 from ._compat import spec_command_kwargs, spec_group_kwargs
+
+logger = slogging.getLogger(__name__)
 
 _SKILLS_PKG = "scitex-cards"
 
@@ -79,7 +82,7 @@ def skills_list_cmd(as_json: bool) -> None:
         click.echo(json.dumps([{"name": p.stem, "path": str(p)} for p in files]))
         return
     if not files:
-        click.echo(f"no skills found at {root}", err=True)
+        logger.error("no skills found at %s", root)
         raise SystemExit(1)
     for path in files:
         click.echo(f"{path.stem:32s}  {path.relative_to(root)}")
@@ -100,9 +103,9 @@ def skills_get_cmd(name: str, as_json: bool) -> None:
     target_stem = name[:-3] if name.endswith(".md") else name
     match = next((p for p in _list_skill_files(root) if p.stem == target_stem), None)
     if match is None:
-        click.echo(f"skill not found: {name}", err=True)
+        logger.error("skill not found: %s", name)
         available = ", ".join(p.stem for p in _list_skill_files(root)[:8])
-        click.echo(f"available: {available}", err=True)
+        logger.error("available: %s", available)
         raise SystemExit(1)
     if as_json:
         click.echo(
@@ -178,7 +181,7 @@ def skills_install_cmd(
     del yes  # accepted for §2 compliance; install never prompts.
     src = _skills_root().resolve()
     if not src.is_dir():
-        click.echo(f"no skills directory at {src}", err=True)
+        logger.error("no skills directory at %s", src)
         raise SystemExit(1)
 
     base = (

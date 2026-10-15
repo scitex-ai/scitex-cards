@@ -28,7 +28,6 @@ from ._model import (
 )
 from ._paths import refuse_ambient_store_creation as _refuse_ambient_store_creation
 from ._store_arg import refuse_ineffective_store
-from ._store_clocks import _clear_completion_stamp_on_leaving_done
 from ._store_enums import resolve_enum_clears as _resolve_enum_clears
 from ._store_events import _emit_card_event
 from ._store_list import _resolved_store

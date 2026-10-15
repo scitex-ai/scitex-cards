@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""§1a shell-completion commands — self-contained, cache-file pattern.
+"""§1a shell-completion commands — self-contained, drop-in pattern.
 
-Writes a static click-generated completion script and sources it from the
-shell rc (rather than the eval-the-binary form, which re-invokes Python on
-every shell start).
+Writes a static click-generated completion script to the per-package
+drop-in directory (``~/.scitex/cards/runtime/completion/``). The
+installer never touches shell startup files: it writes the script
+atomically, skips the write when the content is unchanged, and prints
+the installed path.
 """
 
 from __future__ import annotations
+
+import os
 
 import click
 
@@ -21,7 +25,6 @@ _PROGS = (
     ("scitex-cards", "_SCITEX_CARDS_COMPLETE"),
     ("scitex-cards", "_SCITEX_CARDS_COMPLETE"),
 )
-_RC_MARKER = "# scitex-cards-completion: scitex-cards"
 
 
 def _completion_source(shell: str) -> str:
@@ -37,6 +40,24 @@ def _completion_source(shell: str) -> str:
         comp_cls(main, {}, prog, complete_var).source()
         for prog, complete_var in _PROGS
     )
+
+
+def _atomic_write_text(target, content: str) -> bool:
+    """Write ``content`` to ``target`` atomically; skip when unchanged.
+
+    Returns True when the file was written, False when the existing
+    content already matched (idempotent no-op).
+    """
+    try:
+        existing = target.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        existing = None
+    if existing == content:
+        return False
+    tmp = target.with_name(f"{target.name}.tmp-{os.getpid()}")
+    tmp.write_text(content, encoding="utf-8")
+    os.replace(tmp, target)
+    return True
 
 
 @click.command(
@@ -66,14 +87,17 @@ def print_shell_completion_cmd(shell: str) -> None:
 @click.command(
     "install-shell-completion",
     **spec_command_kwargs(
-        summary="Install tab-completion by writing the script + sourcing it from your rc.",
+        summary="Install tab-completion into the per-package drop-in directory.",
         description=(
             "Writes the static completion script to "
-            "~/.scitex/cards/runtime/completion/ and adds an idempotent "
-            "source line to your shell rc file.",
+            "~/.scitex/cards/runtime/completion/ and prints the installed "
+            "path. Source that path from your shell to enable tab-completion."
         ),
         examples=(
-            ("{prog} install-shell-completion --shell bash", "Install for bash."),
+            (
+                "{prog} install-shell-completion --shell bash",
+                "Write the bash drop-in script and print its path.",
+            ),
         ),
     ),
 )
@@ -87,7 +111,7 @@ def print_shell_completion_cmd(shell: str) -> None:
 @click.option(
     "--dry-run",
     is_flag=True,
-    help="Print the target path and rc line that would be written; change nothing.",
+    help="Print the target path that would be written; change nothing.",
 )
 @click.option(
     "--yes",
@@ -96,37 +120,23 @@ def print_shell_completion_cmd(shell: str) -> None:
     help="Proceed without confirmation (this command never prompts anyway).",
 )
 def install_shell_completion_cmd(shell: str, dry_run: bool, yes: bool) -> None:
-    """Cache the completion script and add an idempotent source line to the rc."""
-    from pathlib import Path
-
+    """Write the completion drop-in script and print its path."""
     from .._paths import _user_root
 
     del yes  # accepted for §2 compliance; install never prompts.
     target_dir = _user_root() / "runtime" / "completion"
     target = target_dir / "scitex-cards"
-    rc = {
-        "bash": Path.home() / ".bashrc",
-        "zsh": Path.home() / ".zshrc",
-        "fish": Path.home() / ".config" / "fish" / "config.fish",
-    }[shell]
-    source_line = f"[ -f {target} ] && source {target}  {_RC_MARKER}"
+    script = _completion_source(shell)
 
     if dry_run:
         click.echo(f"[dry-run] would write completion script -> {target}")
-        click.echo(f"[dry-run] would add to {rc}: {source_line}")
         return
 
     target_dir.mkdir(parents=True, exist_ok=True)
-    target.write_text(_completion_source(shell), encoding="utf-8")
+    _atomic_write_text(target, script)
 
-    existing = rc.read_text(encoding="utf-8") if rc.exists() else ""
-    if _RC_MARKER not in existing:
-        rc.parent.mkdir(parents=True, exist_ok=True)
-        with rc.open("a", encoding="utf-8") as handle:
-            handle.write(f"\n{source_line}\n")
-
-    click.echo(f"Installed {shell} completion -> {target}")
-    click.echo("Open a new shell (or `source` your rc) to pick it up.")
+    click.echo(str(target))
+    click.echo("Source that path from your shell to enable tab-completion.")
 
 
 def register(group: click.Group) -> None:

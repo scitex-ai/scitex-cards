@@ -51,9 +51,9 @@ WHAT CHANGED IN THE REPORT, and why each is a restatement rather than a loss:
 
 from __future__ import annotations
 
-from ._schema_probe import table_names
-
 from pathlib import Path
+
+from ._schema_probe import table_names
 
 
 def _first_line(exc: BaseException) -> str:

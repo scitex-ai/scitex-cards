@@ -140,6 +140,10 @@ async def poll_notifications(
     unseen_only: bool = True,
     ack: bool = False,
     tasks_path: str | None = None,
+    *,
+    notification_id: str | None = None,
+    limit: int | None = None,
+    after: str | None = None,
 ) -> str:
     """PULL an agent's pending card-message notifications (STANDALONE).
 
@@ -155,6 +159,13 @@ async def poll_notifications(
     ``ack_notifications(agent, ids)``. Anything you never confirm is still
     unseen and COMES BACK on the next poll — so a consumer that dies between
     read and confirm loses nothing.
+
+    For bounded history recovery supply ``notification_id`` for one exact ID,
+    or ``limit`` (1..100) with optional ``after`` (a notification ID cursor).
+    Use ``unseen_only=False`` to include seen history. Bounded mode refuses
+    ``ack=True`` and does not heartbeat or rotate exchanges. Its ``unconfirmed``
+    IDs cover only the returned page. ``page.next_cursor`` continues that page;
+    historical NULL arrival sequences retain deterministic ID order.
 
     ``agent`` is resolved to its stable user-id via
     :func:`scitex_cards._users.resolve_user` (so a rename still finds the
@@ -211,6 +222,15 @@ async def poll_notifications(
             unseen_only=unseen_only,
             ack=ack,
             store=tasks_path,
+            **{
+                key: value for key, value in
+                (
+                    ("notification_id", notification_id),
+                    ("limit", limit),
+                    ("after", after),
+                )
+                if value is not None
+            },
         )
     )
     return json.dumps(result)

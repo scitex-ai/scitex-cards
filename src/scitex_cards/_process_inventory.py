@@ -134,15 +134,52 @@ def detect_vantage(proc_root: Path) -> str:
     A container's ``/proc`` shows only its own namespace, so an empty result
     there means WRONG VANTAGE, not "not running" — the distinction that cost a
     wrong fleet-wide conclusion on 2026-08-21.
+
+    Every ``exists()`` here is guarded: on a shared host ``/proc/1/root`` is
+    another UID's directory and the check itself raises ``PermissionError``
+    (measured on compute-02). An undetectable vantage answers ``"host"`` —
+    the conservative direction, since claiming ``"container"`` would discard
+    a real empty result as a vantage artifact while claiming ``"host"``
+    merely reports what was seen.
     """
-    return "container" if (proc_root / "1" / "root" / ".dockerenv").exists() or Path(
-        "/.dockerenv"
-    ).exists() or os.environ.get("SAC_NAME") else "host"
+
+    def _exists(path: Path) -> bool:
+        try:
+            return path.exists()
+        except (OSError, PermissionError):
+            return False
+
+    return (
+        "container"
+        if _exists(proc_root / "1" / "root" / ".dockerenv")
+        or _exists(Path("/.dockerenv"))
+        or os.environ.get("SAC_NAME")
+        else "host"
+    )
 
 
 def _read(path: Path) -> str:
     try:
         return path.read_text(errors="replace")
+    except (OSError, PermissionError):
+        return ""
+
+
+def _exe_of(entry: Path) -> str:
+    """The process's executable, or '' when it cannot be read.
+
+    On a shared host, ``/proc/<pid>/exe`` for another UID raises
+    ``PermissionError`` — out of ``exists()`` itself, not just the read, so
+    there is no \"check first, read after\" that avoids it. An unreadable exe
+    is not an unreadable PROCESS: the cmdline half (read through ``_read``,
+    which already swallows this) still identifies the interpreter via
+    argv[0], so the row is kept with the venv half UNREADABLE. Skipping the
+    row instead would undercount the population; aborting the loop instead
+    loses the whole host table — which is what infra measured on
+    compute-01/02/03.
+    """
+    try:
+        return os.path.realpath(entry / "exe") if (entry / "exe").exists() else ""
     except (OSError, PermissionError):
         return ""
 
@@ -224,7 +261,7 @@ def scan(
         cmdline = _read(entry / "cmdline").replace("\x00", " ").strip()
         if not cmdline or not any(m in cmdline for m in _MARKERS):
             continue
-        exe = os.path.realpath(entry / "exe") if (entry / "exe").exists() else ""
+        exe = _exe_of(entry)
         venv = ""
         for candidate in _interpreter_candidates(cmdline, exe):
             venv = _venv_of(candidate)

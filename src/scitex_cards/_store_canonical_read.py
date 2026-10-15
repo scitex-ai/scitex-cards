@@ -24,9 +24,8 @@ recreates exactly the asymmetry that outage was made of.
 
 from __future__ import annotations
 
-from ._store_url import describe_store_target
-
 from ._store_errors import StoreNotProvisionedError, StoreUnavailableError
+from ._store_url import describe_store_target
 
 
 def _read_canonical_db_or_raise() -> dict:

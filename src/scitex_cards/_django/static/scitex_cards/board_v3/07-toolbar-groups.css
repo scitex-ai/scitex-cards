@@ -25,20 +25,18 @@
  * Their rules are deleted, not merely unused — test__toolbar_groups.py
  * pins their absence.
  *
- * Token contract: every color sources from the board_v3 :root palette in
- * 01-filterbar.css (--border, --purple, --text-muted, --gold). The +Add
- * Task button uses the brand --purple accent so it pops as the operator's
- * most-used action.
+ * Status colors stay in the board palette. Control chrome consumes the
+ * existing SciTeX brand/on-brand pair with readable board fallbacks.
  *
- * Responsive: at ≤780px the .fb-right groups each take their own row
- * with the PRIMARY zone sticky to the right edge. The legacy
+ * Responsive: at ≤780px groups share available room and wrap as needed.
+ * The primary action stays at the right edge. The legacy
  * 05-responsive.css (≤768px) still owns the deep phone-mobile rules. */
 
 /* ── Inside-group gap (12-16 px) ───────────────────────────────────────── */
 .stx-cards-filterbar__group {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -56,7 +54,7 @@
   /* fb-center already sets `display:flex; align-items:center; flex:1 1
    * auto`. Re-state the gap so search + filters popover keep 12px
    * between them. */
-  gap: 12px;
+  gap: 8px;
 }
 
 /* The search input wraps inside .filt-search-wrap; let it grow. The
@@ -93,41 +91,40 @@
   flex: 0 0 auto;
 }
 
-/* + Add Task gets the brand accent so the operator's most-used action
- * pops. The base .add-task-btn rules live in 04-collapse-and-groups.css
- * (per its file owner banner) — this rule LIFTS the visual weight only
- * when the button sits inside the primary zone, leaving any other
- * .add-task-btn (e.g. inside a modal) untouched.
- *
- * Token-only colors: --purple is the brand accent; --gold is the
- * board's other accent (LOUD operator-decision). White text on purple
- * is supplied by the existing .add-task-btn rule. */
+/* Keep the primary action clear without a halo or moving hover target.
+ * This rule applies only to the toolbar button, leaving modal controls
+ * untouched. Pair the SDK brand fill with its matching foreground. */
 .stx-cards-filterbar__primary > .add-task-btn {
-  /* Slightly bolder presence than the legacy button: stronger border,
-   * brand-purple background even on the resting state, soft purple
-   * halo on hover for the "press me" cue. No new hardcoded color —
-   * all tokens. */
-  border-color: var(--purple, var(--stx-accent, #6d4cad));
-  background: var(--purple, var(--stx-accent, #6d4cad));
-  color: var(--text, #fff);
-  font-weight: 700;
-  box-shadow: 0 1px 6px rgba(109, 76, 173, 0.35);
-  transition:
-    background 120ms ease,
-    box-shadow 120ms ease,
-    transform 120ms ease;
+  border-color: var(--stx-brand, var(--text));
+  background: var(--stx-brand, var(--text));
+  color: var(--stx-on-brand, var(--text-inverse, var(--bg)));
+  font-weight: 600;
+  box-shadow: none;
+  transition: opacity 120ms ease;
 }
 
-.stx-cards-filterbar__primary > .add-task-btn:hover,
+.stx-cards-filterbar__primary > .add-task-btn:hover {
+  opacity: 0.9;
+}
+
 .stx-cards-filterbar__primary > .add-task-btn:focus-visible {
-  /* The hover-bg token isn't a strong enough lift — use the gold
-   * accent for the halo so the brand accent stays the fill, and
-   * lift the shadow + slight scale to read as "this is THE action". */
-  box-shadow:
-    0 0 0 2px var(--gold, #ffc107),
-    0 2px 10px rgba(109, 76, 173, 0.55);
-  outline: none;
-  transform: translateY(-1px);
+  outline: 2px solid var(--stx-brand, var(--text));
+  outline-offset: 2px;
+}
+
+/* Override the earlier layout sheet only inside this toolbar. Status
+ * tokens and layout selection/callbacks keep their existing meaning. */
+.stx-cards-filterbar__group--view .filt-layout-btn--on,
+.stx-cards-filterbar__group--view .filt-layout-btn--on:hover {
+  background: var(--stx-brand, var(--text));
+  color: var(--stx-on-brand, var(--text-inverse, var(--bg)));
+}
+.stx-cards-filterbar__group--view .filt-layout-btn:focus-visible {
+  outline: 2px solid var(--stx-brand, var(--text));
+  outline-offset: -3px;
+}
+.stx-cards-filterbar__group--view .filt-layout-btn--on:focus-visible {
+  outline-color: var(--stx-on-brand, var(--text-inverse, var(--bg)));
 }
 
 /* ── Group-local refinements ──────────────────────────────────────────── */
@@ -142,24 +139,24 @@
 }
 
 /* ── Responsive wrap (≤780px) ─────────────────────────────────────────── */
-/* At narrow widths each group drops to its own row inside the .fb-right
- * band, with the PRIMARY zone stuck to the right edge of the last row.
+/* At narrow widths groups share a row when they fit, otherwise wrap.
+ * Keep all controls accessible, with the primary action at the right.
  * The legacy 05-responsive.css (≤768px) covers the deeper phone-mode
  * layout (drawers, FAB, vertical column stack); this rule covers the
  * tablet / narrow-laptop window where wrapping kicks in earlier. */
 @media (max-width: 780px) {
   .fb-right {
+    flex: 1 1 auto;
     flex-wrap: wrap;
-    gap: 12px;
-    row-gap: 8px;
+    gap: 6px;
   }
-  .stx-cards-filterbar__group {
-    flex: 1 1 100%;
+  .fb-right > .stx-cards-filterbar__group {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
   }
   .stx-cards-filterbar__divider {
-    /* Hide vertical dividers when each group lives on its own row
-     * — a divider that stretches across one row's worth of space
-     * would read as visual noise rather than separation. */
+    /* Wrapping groups do not need a stretched vertical separator. */
     display: none;
   }
   .stx-cards-filterbar__primary {
@@ -168,5 +165,19 @@
   }
   .stx-cards-filterbar__group--search {
     flex-wrap: wrap;
+  }
+  .stx-cards-filterbar__group--view > .filt-layout {
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+    margin-right: 0;
+  }
+  .filt-layout-seg {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+  .filt-layout-btn {
+    min-height: 44px;
+    padding: 4px 6px;
   }
 }

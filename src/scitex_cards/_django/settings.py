@@ -12,6 +12,8 @@ import importlib.util
 import os
 from pathlib import Path
 
+from scitex_sdk.app.i18n import i18n_settings, with_locale_middleware
+
 BASE_DIR = Path(__file__).resolve().parent
 
 _DEV_SECRET_KEY = "scitex-cards-standalone-dev-key-not-for-production"
@@ -45,6 +47,11 @@ PUBLIC_HOST = os.environ.get("SCITEX_CARDS_PUBLIC_HOST", "").strip()
 BOARD_PASSWORD = os.environ.get("SCITEX_CARDS_PASSWORD", "").strip()
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
+
+if "SCITEX_UI_ELEMENT_INSPECTOR" in os.environ:
+    SCITEX_UI_ELEMENT_INSPECTOR = (
+        os.environ["SCITEX_UI_ELEMENT_INSPECTOR"].lower() == "true"
+    )
 
 ALLOWED_HOSTS = ["127.0.0.1", "localhost", "0.0.0.0"]
 
@@ -122,11 +129,13 @@ INSTALLED_APPS = [
 # Optional: scitex-sdk shared shell components (static + templates served via
 # AppDirectoriesFinder). Absent installs fall back to the bare React SPA.
 try:
-    import scitex_sdk.ui  # noqa: F401
+    import scitex_sdk.ui as scitex_ui  # noqa: F401
 
     INSTALLED_APPS.append("scitex_sdk.ui")
 except ImportError:
     pass
+
+globals().update(i18n_settings())
 
 MIDDLEWARE = [
     # GZip FIRST so it wraps every response below it. /graph is ~5 MB of JSON
@@ -148,6 +157,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
 ]
+MIDDLEWARE = with_locale_middleware(MIDDLEWARE)
 
 ROOT_URLCONF = "scitex_cards._django.urls"
 
@@ -167,8 +177,8 @@ TEMPLATES = [
 # Enable the SDK Alt+I element inspector (DEBUG/staff-gated) on the
 # board. The shell template already includes the partial; this context
 # processor sets the gating flag it checks. Guard on the module actually
-# existing rather than just scitex-sdk being installed,
-# so an older SDK degrades gracefully instead of raising on import.
+# existing rather than just scitex-sdk being installed, so an older SDK
+# degrades gracefully instead of raising on import.
 if importlib.util.find_spec("scitex_sdk.ui.context_processors") is not None:
     TEMPLATES[0]["OPTIONS"]["context_processors"].append(
         "scitex_sdk.ui.context_processors.element_inspector"

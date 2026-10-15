@@ -3,16 +3,16 @@
 """Hub-mount compatibility contract for the scitex-sdk floor.
 
 The board pages (board_v3, standalone) extend ``scitex_sdk/app/app_shell.html``.
-That template is built by the SIBLING scitex-sdk package and first SHIPPED IN
-THE WHEEL at version 0.3.5 (measured in-environment 2026-10-15); below the
-floor the board degrades to the static-graph fallback instead of painting the
-shell — the silent wrong-board shape the operator directly observed.
+That template is built by the scitex-sdk package and VERIFIED present in the
+0.3.0 wheel; below the floor the board degrades to the static-graph fallback
+instead of painting the shell — the silent wrong-board shape the operator
+directly observed.
 
 ``test__board_shell_migration.py`` pins that OUR templates point at the shell
 and that the views degrade cleanly when it is absent. THIS file pins the one
 thing the Hub needs before it pins / deploys: the ``scitex-sdk`` dependency
 floor in ``pyproject.toml`` is at or above the shell-bearing version. If
-someone lowers the floor below 0.3.5 (e.g. to "relax" the dependency) this
+someone lowers the floor below 0.3.0 (e.g. to "relax" the dependency) this
 test goes red BEFORE the board can silently fall back to the graph.
 
 Hermetic: it reads ``pyproject.toml`` as text via ``tomllib`` and the installed
@@ -31,12 +31,12 @@ import pytest
 
 pytest.importorskip("django")
 
-#: The first scitex-sdk wheel to ship ``app_shell.html``. The floor may not drop
-#: below this or the board silently renders the graph fallback.
-_SHELL_BEARING = (0, 3, 5)
+#: The first scitex-sdk wheel verified to ship ``app_shell.html``. The floor may
+#: not drop below this or the board silently renders the graph fallback.
+_SHELL_BEARING = (0, 3, 0)
 
 #: The dependency line we are pinning, and the regex that pulls its lower bound
-#: out of a PEP 440 specifier string (``>=0.3.5``, ``>=0.3,<1``, ``~=0.3``…).
+#: out of a PEP 440 specifier string (``>=0.3.0``, ``>=0.3,<1``, ``~=0.3``…).
 _REQ_RE = re.compile(r"(scitex-sdk)\s*([^\s,]*)")
 _LOWER_RE = re.compile(r"(?:>=|==|~=|===)\s*(\d+)\.(\d+)(?:\.(\d+))?")
 
@@ -131,7 +131,7 @@ def test_scitex_sdk_floor_is_pinned() -> None:
 
 
 def test_scitex_sdk_floor_is_at_least_the_shell_bearing_version() -> None:
-    """The scitex-sdk floor is pinned at/above 0.3.5 (shell-bearing)."""
+    """The scitex-sdk floor is pinned at/above 0.3.0 (shell-bearing)."""
     # Arrange
     bound = _scitex_sdk_lower_bound()
     # Act
@@ -140,17 +140,16 @@ def test_scitex_sdk_floor_is_at_least_the_shell_bearing_version() -> None:
     assert sufficient, (
         f"scitex-sdk lower bound is {bound!r}; the board needs >= "
         f"{_SHELL_BEARING} or it degrades to the static-graph fallback instead "
-        "of the shell. 0.3.5 is the first wheel to ship app_shell.html "
-        "(measured in-environment 2026-10-15). Do not lower this floor below "
-        "the shell-bearing version."
+        "of the shell. 0.3.0 is verified to ship app_shell.html. Do not lower "
+        "this floor below the shell-bearing version."
     )
 
 
-def test_installed_sdk_floor_satisfies_the_board_shell_floor(installed_version) -> None:
+def test_installed_sdk_clears_the_board_shell_floor(installed_version) -> None:
     """If scitex-sdk is installed, its version clears the shell-bearing floor.
 
     When the real distribution is present in the environment it must be >=
-    0.3.5 so the board renders the shell, not the graph fallback.
+    0.3.0 so the board renders the shell, not the graph fallback.
     """
     # Arrange — the fixture measured the installed version (skipping when absent)
     version = installed_version

@@ -42,6 +42,12 @@ if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
 import json
 from pathlib import Path
 
+# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
+# KeyError on a positional index, and since #693 open_db can hand this
+# module a PostgreSQL connection. _schema_probe imports nothing from this
+# package, so a module-level import here cannot cycle.
+from .._schema_probe import _sole_value
+from .._store_tx import begin_write_transaction
 from .ids import (
     derived_message_id,
     origin_host,
@@ -55,13 +61,6 @@ from .write import (
     insert_receipt,
     record_member_event,
 )
-
-# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
-# KeyError on a positional index, and since #693 open_db can hand this
-# module a PostgreSQL connection. _schema_probe imports nothing from this
-# package, so a module-level import here cannot cycle.
-from .._schema_probe import _sole_value
-from .._store_tx import begin_write_transaction
 
 #: The tables a merge payload carries, PARENT FIRST. Order is not cosmetic:
 #: ``dm_messages`` has a foreign key onto ``dm_threads`` and ``dm_receipts``

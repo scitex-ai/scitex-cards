@@ -49,7 +49,7 @@ from env).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from . import _inbox
 from ._health_backend_mode import check_backend_mode
@@ -239,7 +239,6 @@ from ._health_cards import (  # noqa: E402,F401  (re-export)
     _check_no_falsely_blocked,
     _check_terminal_state_honest,
 )
-
 
 # --------------------------------------------------------------------------- #
 # Aggregator                                                                  #

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scitex-cards"
-version = "0.53.4"
+version = "0.53.8"
 description = "Canonical task-card store with pluggable adapters (mermaid dependency graphs)"
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -34,6 +34,8 @@ dependencies = [
     "click",
     "ruamel.yaml",
     "scitex_config",
+    # Levelled diagnostics and the byte-preserving CLI protocol console.
+    "scitex-logging>=0.2.2",
     # PROMOTED FROM THE `postgres` EXTRA, 2026-08-02, by this test (scitex-dev):
     # WHEN THIS IS MISSING, DOES THE FAILURE NAME ITSELF?
     #
@@ -80,17 +82,23 @@ dependencies = [
     # recognise: the board IS how the operator reads the store, and the MCP
     # server IS how every agent writes to it.
     "django>=4.2",
-    # >=0.3.5 is MEASURED, 2026-10-15: the board pages (board_v3.html,
-    # standalone.html) extend `scitex_sdk/app/app_shell.html`, and that template
-    # first ships in the installed 0.3.5 wheel (verified in-environment:
-    # scitex_sdk/app/templates/scitex_sdk/app/app_shell.html, outer content
-    # block app_content, extends scitex_sdk/ui/standalone_shell.html).
-    # The SDK UI component ships the project-scope API, the scitex_project_picker
-    # library, and the combobox/theme/context-menu static assets the pages
-    # consume — below the floor the pages degrade to the static-graph fallback
+    # >=0.3.0 is the shell-bearing floor, VERIFIED 2026-10-15 by wheel
+    # inspection rather than a changelog: scitex_sdk-0.3.0-py3-none-any.whl
+    # ships scitex_sdk/app/templates/scitex_sdk/app/app_shell.html (nested
+    # app_content > scitex_app_content, same shape as installed 0.3.5), the
+    # scitex_project_picker library + template, the project_scope API, and
+    # the combobox/theme/context-menu static assets the pages consume.
+    # Below the floor the pages degrade to the static-graph fallback
     # and the rich-board rendering tests fail — the silent wrong-board shape
     # the migration gate (test__board_shell_migration.py) exists to surface.
-    "scitex-sdk>=0.3.5",
+    # NOTE the public-root ``scitex_sdk.app.ScitexAppConfig`` re-export only
+    # lands after 0.3.0 (absent from the 0.3.0 wheel, present in installed
+    # 0.3.5): below it ``_django/apps.py`` falls back to plain AppConfig by
+    # design, which is a degraded-install guard, not a supported config.
+    "scitex-sdk>=0.3.0",
+    # scitex-app/scitex-ui retired: every remaining consumer (i18n settings,
+    # project_scope, context_processors, tag libraries, app shells) resolves
+    # through scitex-sdk (verified against the published wheels).
     # <4 is MEASURED, 2026-09-05: fastmcp 4.0.3 stopped holding mcp below
     # 2.0, so an unbounded resolution now installs mcp 2.1.1, whose
     # ServerSession no longer takes the initialization options positionally.
@@ -101,16 +109,6 @@ dependencies = [
     # and this line must not outlive that decision.
     "fastmcp>=2.0,<4",
     "pydantic>=2,<3",
-    # The mandated output transport. PS-220 (source-uses-print-not-scitex-
-    # logging) requires every human-facing record in shippable source to go
-    # through scitex-logging, so `import scitex_logging as slogging` is
-    # unguarded module-level code on the package's core paths — a hard
-    # requirement, not an optional capability, and PS-233 requires an unguarded
-    # import to resolve from `[project.dependencies]` rather than an extra.
-    # Floor >=0.2.0 is MEASURED: the version the PS-220 pass (~70 modules
-    # acquiring their logger via `scitex_logging.getLogger` at module top)
-    # was built and tested against.
-    "scitex-logging>=0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -156,9 +154,9 @@ dev = [
     # tests; include them so a fresh `pip install -e .[dev]` runs the full
     # suite rather than silently skipping the board tests (PS-210).
     "django>=4.2",
-    "scitex-sdk>=0.3.5",
-    # >=0.3.5, and the number is MEASURED rather than aspirational (see the
-    # `dependencies` note for what the board consumes from the SDK):
+    "scitex-sdk>=0.3.0",
+    # Floor restated from `dependencies` (shell-bearing 0.3.0, wheel-verified
+    # 2026-10-15) rather than re-argued here.
     #
     #   <0.3.5  — the shell template's DEFAULT favicon. Our templates declare no
     #            <link rel="icon"> of their own any more, so an older shell
@@ -169,9 +167,11 @@ dev = [
     #            which is exactly why a file-exists check could not have caught
     #            this and a floor has to.
     #
-    # A resolver honouring an older SDK gets a page that renders and is subtly
-    # wrong — the failure mode a floor exists to prevent. Do not loosen it.
-    "psycopg[binary]>=3.1",
+    # chat.html has documented the 0.11.1 requirement since #581 and said "the
+    # upgrade ships alongside this"; it never did, so the declaration sat two
+    # minor versions under what the code needs. A resolver honouring 0.7.1 gets
+    # a page that renders and is subtly wrong — the failure mode a floor exists
+    # to prevent. Do not loosen it.
     # Same PS-210 reason as the web extras above, and caught by the same rule:
     # the backend tests import psycopg UNGUARDED, so without it here a fresh
     # `pip install -e .[dev]` collects them and errors rather than running the
@@ -212,7 +212,7 @@ web = [
     # else's build for a change of mine. Ordering it the other way costs nothing
     # and lands the noise on nobody.
     "django>=4.2",
-    "scitex-sdk",
+    "scitex-sdk>=0.3.0",
 ]
 mcp = [
     # Same redundant-alias contract as `web` above. FastMCP is the canonical

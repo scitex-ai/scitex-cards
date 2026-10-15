@@ -29,6 +29,7 @@ probes) keep using it; callers that can address either backend take
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import NoReturn
 
@@ -248,31 +249,20 @@ def resolve_store_tier(explicit: str | Path | None = None) -> str:
 
 
 def require_configured_store_target(explicit: str | Path | None = None) -> str:
-    """The store target, but ONLY if somebody actually chose it.
+    """Require a server's store choice before using the shared resolver.
 
-    For SERVERS. ``gui serve`` and friends run unattended for days and are
-    believed by whoever loads the page, so "I could not find a store, here is a
-    filename I made up" is the one answer they must never give.
-
-    RAISES :class:`StoreTargetNotConfigured` on :data:`TIER_DEFAULT`.
-
-    NO LONGER THE ONLY DOOR, AND THAT IS THE POINT. This function was written
-    under a deliberate restraint: making the DEFAULT tier raise everywhere would
-    break every zero-config install and every test that relied on one, so the
-    refusal was enforced at the doors where a guess does damage, one door at a
-    time, each with a stated reason. Measured 2026-08-13, that policy had
-    reached 1 of 31 production call sites, while compute-04's own cron jobs
-    entered the default tier on every run. The operator abolished the tier
-    instead, so :func:`resolve_store_target` now refuses at source and this
-    function can no longer be the difference between safe and unsafe.
-
-    IT IS KEPT, AND CALLED, ANYWAY. It is the NAMED, greppable statement that a
-    server requires a chosen store -- ``_cli/_store_guard`` calls it to turn the
-    refusal into a ``ClickException``, and a reader asking "what does serve
-    require?" needs an answer that is a symbol, not an absence. The rule the
-    constitution states -- fail fast, fail loud, no silent fallbacks, no
-    surprises -- is now enforced at the resolver AND restated here.
+    A nonblank explicit target wins; otherwise a nonblank ``SCITEX_STORE_DSN``
+    is required. An explicitly blank target is refused rather than falling
+    through to an environment choice. The shared resolver still owns target
+    validation and preserves its default for ordinary non-server callers.
     """
+    selected = str(explicit) if explicit is not None else os.environ.get(ENV_STORE_DSN, "")
+    if not selected.strip():
+        raise StoreTargetNotConfigured(
+            "REFUSING to serve: choose an explicit store target or set a nonblank "
+            f"${ENV_STORE_DSN} before starting the board. "
+            "The shared resolver's default is not a server store selection."
+        )
     return resolve_store_target(explicit)
 
 

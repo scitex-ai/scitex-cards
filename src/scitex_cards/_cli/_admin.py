@@ -20,14 +20,13 @@ usage of "resolve."
 
 from __future__ import annotations
 
-from .._store_url import describe_store_target
-
 import json
 
 import click
 
 from .._db import resolve_db_path
 from .._store_target import store_label
+from .._store_url import describe_store_target
 from ._compat import spec_command_kwargs, spec_group_kwargs
 
 

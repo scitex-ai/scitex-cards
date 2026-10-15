@@ -145,12 +145,17 @@
     // Instant-open: the error panel replaces the skeleton (see above).
     cols.setAttribute("aria-busy", "false");
     const full = String((err && err.message) || err || "unknown error");
+    // Reuse the server's browser decision; API DEBUG remains independent.
+    const internalChrome = cols.dataset.cardsInternalChrome === "true";
+    const diagnosis = internalChrome
+      ? `<p class="board-state__cause">${escapeHtml(_lead(full))}</p>` +
+        `<details class="board-state__detail"><summary>What the server said</summary>` +
+        `<pre>${escapeHtml(full)}</pre></details>`
+      : "";
     cols.innerHTML =
       `<div class="loading board-state board-state--error">` +
       `<p class="board-state__lead">The board could not load its cards.</p>` +
-      `<p class="board-state__cause">${escapeHtml(_lead(full))}</p>` +
-      `<details class="board-state__detail"><summary>What the server said</summary>` +
-      `<pre>${escapeHtml(full)}</pre></details></div>`;
+      diagnosis + `</div>`;
     return true;
   }
 

@@ -194,8 +194,8 @@ def sdk_library():
     resolves and ``views._project_picker_library_registered`` answers True.
 
     AND ``scitex_sdk.ui.project_scope``, which is the SEPARATE half — an installed
-    SDK can in principle ship one without the other, and an SDK predating
-    project scope ships neither. Without this module ``host_project_provider_url``
+    scitex-ui can in principle ship one without the other, and on this host
+    (0.20.2) it ships neither. Without this module ``host_project_provider_url``
     raises ImportError and the availability flag is false no matter what the
     settings say, so the "picker present" branch would be untestable here rather
     than merely untested.

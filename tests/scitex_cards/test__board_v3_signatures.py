@@ -219,6 +219,77 @@ class TestP1SearchAsLauncher:
         assert "min-width: 220px" in css_text
 
 
+class TestMobileDeclutter:
+    """Pins for the cards-mobile-declutter-20261007 slice (operator photo:
+    legend wraps 2 lines, desktop kbd hints on mobile, search cutoff)."""
+
+    def test_legend_lives_in_a_disclosure_wrap(self, board_text):
+        # Arrange
+        # Act
+        # Assert
+        assert "status-legend-wrap" in board_text
+
+    def test_legend_disclosure_has_a_summary(self, board_text):
+        # Arrange
+        # Act
+        # Assert
+        assert "<summary" in board_text
+
+    def test_legend_keeps_its_id(self, board_text):
+        # Arrange
+        # Act
+        # Assert
+        assert 'id="status-legend"' in board_text
+
+    def test_legend_chips_keep_data_status(self, board_text):
+        # Arrange
+        # Act
+        # Assert
+        assert "data-legend-status" in board_text
+
+    def test_legend_chips_still_single_sourced(self, board_text):
+        # Arrange
+        # Act
+        # Assert
+        assert "status_colors.items" in board_text
+
+    def test_touch_media_query_present(self, css_text):
+        # Arrange
+        # Act
+        # Assert
+        assert "(pointer: coarse)" in css_text
+
+    def test_touch_hides_desktop_kbd_hints(self, css_text):
+        # Arrange
+        # Act
+        # Assert
+        assert ".desktop-kbd-hint" in css_text
+
+    def test_search_rule_present(self, css_text):
+        # Arrange
+        # Act
+        # Assert
+        assert ".filt-search" in css_text
+
+    def test_search_goes_full_width_on_narrow(self, css_text):
+        # Arrange
+        # Act
+        # Assert
+        assert "width: 100%" in css_text
+
+    def test_touch_placeholder_swap_checks_pointer(self, board_js):
+        # Arrange
+        # Act
+        # Assert
+        assert "pointer: coarse" in board_js
+
+    def test_touch_placeholder_swap_short_prompt(self, board_js):
+        # Arrange
+        # Act
+        # Assert
+        assert "Search cards" in board_js
+
+
 # -----------------------------------------------------------------------------
 # Column + Table layouts REMOVED (operator TG, 2026-07-13:
 # "Column, Table view がいらないです、削除してください")

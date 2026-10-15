@@ -43,7 +43,9 @@ export function mountCardsBoard(
     root = null;
   }
   root = createRoot(container);
-  root.render(createElement(CardsBoard));
+  root.render(createElement(CardsBoard, {
+    internalChromeEnabled: container.dataset.cardsInternalChrome === "true",
+  }));
 }
 
 export function unmountCardsBoard(): void {

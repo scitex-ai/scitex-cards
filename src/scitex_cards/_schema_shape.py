@@ -73,9 +73,6 @@ from dataclasses import dataclass
 from ._schema_probe import (
     _is_postgres,
     _sole_value,
-    has_column,
-    has_table,
-    has_trigger,
 )
 
 __all__ = [
@@ -83,6 +80,7 @@ __all__ = [
     "SCHEMA_VERSION_FLOOR_TRIGGER",
     "SCHEMA_VERSION_DOWNGRADE_KEYS",
     "downgrade_report",
+    "DowngradeReport",
     "SHAPE_LADDER",
     "ShapeAgreement",
     "SchemaShape",
@@ -103,8 +101,11 @@ from ._schema_floor import (  # noqa: E402
     downgrade_report,
     stamp_schema_version,
 )
-from ._schema_ladder import LADDER_FLOOR, SHAPE_LADDER  # noqa: E402
-from ._schema_ladder import _rung_present  # noqa: E402
+from ._schema_ladder import (  # noqa: E402
+    LADDER_FLOOR,
+    SHAPE_LADDER,
+    _rung_present,  # noqa: E402
+)
 from ._schema_probe import has_table as _has_table  # noqa: E402
 
 

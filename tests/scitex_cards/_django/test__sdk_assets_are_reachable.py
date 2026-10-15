@@ -53,14 +53,14 @@ _TEMPLATES = Path(views.__file__).parent / "templates" / "scitex_cards"
 
 #: `{% static 'scitex_sdk/ui/...' %}` with either quote style. Only SDK paths:
 #: our own assets ship in this wheel and are covered by the packaging tests.
-_STATIC = re.compile(r"""\{%\s*static\s+['"](scitex_sdk/ui/[^'"]+)['"]\s*%\}""")
+_STATIC = re.compile('\\{%\\s*static\\s+[\'"](scitex_sdk/ui/[^\'"]+)[\'"]\\s*%\\}')
 
 #: Hand-written IIFE bundles from the SDK that MUST attach a global, mapped to
 #: the symbol our code feature-detects. Extend this when a page starts consuming
 #: another one. A bundle absent from this map is not "exempt" — it is merely not
 #: yet depended on by a `window.`-guarded branch in this repo.
 _GLOBAL_BUNDLES = {
-    "scitex_sdk/ui/js/app/combobox.js": "Combobox",
+    'scitex_sdk/ui/js/app/combobox.js': "Combobox",
 }
 
 
@@ -110,7 +110,7 @@ def test_the_combobox_bundle_is_among_them(referenced) -> None:
     # Arrange
     # Act
     # Assert
-    assert "scitex_sdk/ui/js/app/combobox.js" in referenced
+    assert 'scitex_sdk/ui/js/app/combobox.js' in referenced
 
 
 # === (1) the files arrive ==================================================
@@ -210,7 +210,7 @@ def test_the_combobox_exposes_the_fuzzy_matcher_as_a_static() -> None:
     meets two different search behaviours in one app.
     """
     # Arrange
-    resolved = _installed_path("scitex_sdk/ui/js/app/combobox.js")
+    resolved = _installed_path('scitex_sdk/ui/js/app/combobox.js')
     # Act
     script = (
         "const fs = require('fs');\n"

@@ -42,14 +42,14 @@ handle rather than a falsy value it can ignore.
 
 from __future__ import annotations
 
+import enum
+from dataclasses import dataclass, field
+
 # Shape-agnostic row access. psycopg's dict_row is a real dict and raises
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
 from ._schema_probe import _sole_value
-
-import enum
-from dataclasses import dataclass, field
 
 __all__ = [
     "Enforcement",

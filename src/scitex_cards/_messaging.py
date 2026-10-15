@@ -129,6 +129,10 @@ def poll_notifications(
     unseen_only: bool = True,
     ack: bool = False,
     store: Any = None,
+    *,
+    notification_id: str | None = None,
+    limit: int | None = None,
+    after: str | None = None,
 ) -> dict:
     """PULL ``agent``'s pending notifications. READING NEVER CONFIRMS.
 
@@ -141,11 +145,22 @@ def poll_notifications(
     ``ack=True`` is DEPRECATED and destroys undelivered messages by advancing
     the cursor at handover; it is honoured, not recommended. See the MCP
     tool's docstring for the incident that named it.
+
+    For a finite recovery read use ``notification_id`` (one exact ID), or
+    ``limit=1..100`` and optional ``after=<notification ID>``. Set
+    ``unseen_only=False`` to recover seen history. These selectors refuse
+    ``ack=True`` and perform no heartbeat, rotation or confirmation. The
+    returned ``unconfirmed`` set describes only this bounded page.
     """
     from ._backend import get_backend
 
+    selectors = {
+        key: value for key, value in
+        (("notification_id", notification_id), ("limit", limit), ("after", after))
+        if value is not None
+    }
     return get_backend().poll_notifications(
-        agent, unseen_only=unseen_only, ack=ack, store=store
+        agent, unseen_only=unseen_only, ack=ack, store=store, **selectors
     )
 
 

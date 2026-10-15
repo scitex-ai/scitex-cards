@@ -66,8 +66,6 @@ states for the unconfigured-store case.
 
 from __future__ import annotations
 
-from ._store_url import describe_store_target
-
 import os
 from pathlib import Path
 from typing import Final, Optional
@@ -75,10 +73,9 @@ from typing import Final, Optional
 from ._store_instance import (
     Certainty,
     IdentityCheck,
-    IdentityVerdict,
     StoreInstance,
-    check_store_identity,
 )
+from ._store_url import describe_store_target
 
 #: Environment variable carrying the caller's EXPECTATION of WHICH SERVER it
 #: should find. Deliberately parallel in shape and precedence to
@@ -227,7 +224,6 @@ def check_resolution(
     checking a store it does not run on.
     """
     from ._store_target import resolve_store_target
-
     from ._store_uuid import expected_store_uuid, store_uuid_at
 
     _arg = store if isinstance(store, (str, type(None))) else str(store)
