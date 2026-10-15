@@ -72,11 +72,13 @@ def add_task(
     ``test__tolerated_warnings_reach_the_writer.py``). That warn-only
     contract belongs to the STORE layer (shared-store writes, where the
     bad row may be another, newer agent's). This verb is a SOURCE, so it
-    stays strict like ``update_task`` / ``upsert_task`` and the board
-    create handler: a caller-supplied ``status`` outside
-    ``VALID_STATUSES`` — including the abolished ``"pending"`` — raises
-    ``TaskValidationError`` BEFORE the store guard. Only STRUCTURAL
-    faults (duplicate id, missing id/title, ...) raise
+    stays strict on ABOLISHED values like ``update_task`` / ``upsert_task``
+    and the board create handler: a caller-supplied ``status`` in
+    ``ABOLISHED_STATUSES`` (``"pending"``, abolished 2026-07-10) raises
+    ``TaskValidationError`` BEFORE the store guard, carrying the abolition
+    hint. A merely-UNKNOWN value is not refused — it may be a newer
+    agent's status, so it flows to the warn-only save path. Only
+    STRUCTURAL faults (duplicate id, missing id/title, ...) raise
     ``TaskValidationError`` at save time. Unknown keys are accepted at this layer
     (forward-compat); the validator decides whether they're shape-valid.
 
@@ -91,9 +93,8 @@ def add_task(
         On duplicate id or any other structural fault — `save_tasks`
         re-runs the full validation gate before touching disk — on an
         explicit ``status=None`` (a card cannot be born status-less), or
-        on a ``status`` outside ``VALID_STATUSES`` (including abolished
-        ``"pending"``, which carries the abolition hint naming what to
-        pick instead).
+        on an ABOLISHED ``status`` (``"pending"``, which carries the
+        abolition hint naming what to pick instead).
     """
     from . import _task
     from ._store import _read_write_doc, _resolve_creator_or_raise, _utc_now_iso
@@ -119,29 +120,27 @@ def add_task(
     _enum_in = _resolve_enum_clears({"status": status, **extras}, source="add_task")
     status = _enum_in.pop("status")
     extras = _enum_in
-    # A caller-supplied ``status`` outside VALID_STATUSES must not reach the
-    # warn-only save path: the saver only WARNS on bad values (operator
-    # ruling 2026-07-10 — a status value must never cost someone their card
-    # ON THE SHARED STORE, where the bad row may be another, newer agent's),
-    # so without this a direct Python/MCP caller passing
-    # ``status="pending"`` would mint a row in an abolished status no live
-    # view serves (measured 2026-10-14: the probe row reached the live
-    # board, warning only). Same source-strict class as the
-    # update/upsert/reopen/restore gates: a SOURCE must never mint a value
-    # the enum doesn't know. Refusing the CREATE costs nobody their card —
-    # no card exists yet, and the caller retries with a legal status — so
-    # the ruling still holds where it applies (reads tolerate legacy rows;
-    # save_tasks never destroys another writer's row). BEFORE the store
-    # guard so a doomed insert never touches the store; ``""``/whitespace
-    # sentinels never reach here (refused above by ``_resolve_enum_clears``)
-    # and ``None`` neither (refused above as status-less).
-    if status not in _task.VALID_STATUSES:
-        _hint = _task.ABOLISHED_STATUSES.get(status)
-        if _hint is not None:
-            raise _task.TaskValidationError(f"add_task: {_hint}")
+    # An ABOLISHED ``status`` must not reach the warn-only save path: the
+    # saver only WARNS on bad values (operator ruling 2026-07-10 — a status
+    # value must never cost someone their card ON THE SHARED STORE, where
+    # the bad row may be another, newer agent's), so without this a direct
+    # Python/MCP caller passing ``status="pending"`` would mint a row in a
+    # status abolished 2026-07-10 that no live view serves (measured
+    # 2026-10-14: the probe row reached the live board, warning only).
+    # Same source-strict class as the update/upsert/reopen/restore gates.
+    # Refusing the CREATE costs nobody their card — no card exists yet, and
+    # the caller retries with a legal status — so the ruling still holds
+    # where it applies (reads tolerate legacy rows; save_tasks never
+    # destroys another writer's row). A merely-UNKNOWN value is NOT refused
+    # here: it may be a newer agent's status (forward-compat), so it flows
+    # to the warn-only save path — the ``not-a-status`` tolerance pair in
+    # ``test__store.py`` pins that contract. BEFORE the store guard so a
+    # doomed insert never touches the store; ``""``/whitespace sentinels
+    # never reach here (refused above by ``_resolve_enum_clears``) and
+    # ``None`` neither (refused above as status-less).
+    if status in _task.ABOLISHED_STATUSES:
         raise _task.TaskValidationError(
-            f"add_task: invalid status {status!r}; "
-            f"must be one of {_task.VALID_STATUSES}"
+            f"add_task: {_task.ABOLISHED_STATUSES[status]}"
         )
     refuse_ineffective_store(store, verb="add_task")
     resolved = _resolved_store(store)

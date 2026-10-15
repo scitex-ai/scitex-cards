@@ -24,15 +24,13 @@ failure nothing reads.
 
 THE STORE STILL WARNS, NEVER REFUSES — the ruling holds where it applies
 (reads tolerate legacy rows; ``save_tasks`` never destroys another writer's
-row). But the VERBS are sources, and sources stay strict (same disposition
-as the board, which 400s via ``crud._check_status``): a caller SUPPLYING a
-status outside ``VALID_STATUSES`` gets ``TaskValidationError`` BEFORE the
-store is touched, with the abolition hint for ``pending``. Refusing a
-caller-supplied value costs nobody their card — no card exists yet on
-create, and on update the row keeps its prior (good) status — while a
-warn-only verb lets a sweep through one warning at a time. The tests below
-assert the refusal at the verb layer and keep the warn-only contract pinned
-at the store layer; an ordinary write stays byte-identical.
+row). The CREATE verb refuses ABOLISHED values only (``pending`` carries
+the abolition hint): a caller minting a known-dead status gets
+``TaskValidationError`` BEFORE the store is touched — refusing a create
+costs nobody their card, no card exists yet. A merely-UNKNOWN value still
+warns at the save path (forward-compat — it may be a newer agent's
+status), and the tests below pin both halves; an ordinary write stays
+byte-identical.
 
 Real round-trips against the conftest-isolated store, no mocks (STX-NM).
 
@@ -71,28 +69,27 @@ def seeded(postgres_dsn):
 # --------------------------------------------------------------------------
 
 
-def test_creating_a_card_with_an_unknown_status_is_refused():
+def test_creating_a_card_with_an_unknown_status_warns_the_caller(postgres_dsn):
     # Arrange
     unknown = "archived"
     # Act
-    def act():
-        add_task(id="w2", title="probe", status=unknown, assignee="t",
-                 created_by="t")
+    result = add_task(id="w2", title="probe", status=unknown, assignee="t",
+                      created_by="t")
     # Assert
-    with pytest.raises(TaskValidationError, match="archived"):
-        act()
+    assert result.get("warnings"), (
+        "add_task accepted an unknown status and told the caller nothing. This "
+        "is how a several-hundred-card sweep set `archived` unnoticed."
+    )
 
 
-def test_the_refusal_names_the_offending_value():
+def test_the_returned_warning_names_the_offending_value(postgres_dsn):
     # Arrange
     unknown = "archived"
     # Act
-    def act():
-        add_task(id="w3", title="probe", status=unknown, assignee="t",
-                 created_by="t")
+    result = add_task(id="w3", title="probe", status=unknown, assignee="t",
+                      created_by="t")
     # Assert
-    with pytest.raises(TaskValidationError, match="archived"):
-        act()
+    assert "archived" in " ".join(result["warnings"])
 
 
 def test_creating_a_card_with_an_abolished_status_is_refused_with_the_hint():
@@ -117,7 +114,7 @@ def test_the_refused_create_costs_no_card(seeded, postgres_dsn):
     """
     # Arrange
     with pytest.raises(TaskValidationError):
-        add_task(id="w5", title="probe", status="archived", assignee="t",
+        add_task(id="w5", title="probe", status="pending", assignee="t",
                  created_by="t")
     # Act
     stored = get_task(None, "w1")

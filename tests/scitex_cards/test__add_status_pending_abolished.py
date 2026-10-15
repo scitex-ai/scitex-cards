@@ -10,10 +10,12 @@ enum check: the save path only WARNS on bad values (operator ruling
 2026-07-10 that no live view serves. Measured 2026-10-14: the probe row
 reached the live board, warning only (closed afterwards with reason +
 comments preserved). Same flaw class as the update/upsert/reopen/restore
-holes and the same source-strict fix: a ``status`` outside
-``VALID_STATUSES`` raises ``TaskValidationError`` BEFORE the store guard,
-so a rejected create never touches the store. Sibling create surfaces
-already strict: the CLI ``add`` takes ``--status`` from a closed click
+holes and the same source-strict fix: an ABOLISHED ``status`` raises
+``TaskValidationError`` BEFORE the store guard, so a rejected create never
+touches the store. A merely-UNKNOWN value is deliberately NOT refused here
+(forward-compat — it may be a newer agent's status): it flows to the
+warn-only save path, whose contract the ``not-a-status`` tolerance pair in
+``test__store.py`` pins. Sibling create surfaces already strict: the CLI ``add`` takes ``--status`` from a closed click
 enum, the board ``handle_create`` 400s via ``crud._check_status``, and
 the project-board form validates against ``canonical_statuses`` — so
 only direct Python/MCP callers meet the refusal.
@@ -74,16 +76,23 @@ def test_rejection_points_at_the_abolition_date():
         act()
 
 
-def test_unknown_status_also_raises_before_the_store():
+def test_unknown_status_is_not_abolished():
     # Arrange
     # Act
-    def act():
-        add_task(None, id="add-pin-4", title="x", status="archived",
-                 assignee="agent:pin", created_by="agent:pin")
+    # Assert — the gate keys off ABOLISHED membership, so a merely-unknown
+    # value is not refused here: it flows to the warn-only save path (the
+    # ``not-a-status`` tolerance pair in ``test__store.py`` pins that).
+    assert "archived" not in ABOLISHED_STATUSES
 
+
+def test_gate_keys_off_abolished_membership_before_the_guard():
+    # Arrange
+    source = inspect.getsource(add_task)
+    # Act
+    gate_at = source.find("ABOLISHED_STATUSES")
+    guard_at = source.find("refuse_ineffective_store")
     # Assert
-    with pytest.raises(TaskValidationError, match="archived"):
-        act()
+    assert gate_at != -1 and guard_at != -1 and gate_at < guard_at
 
 
 def test_gate_sits_before_the_store_guard():
