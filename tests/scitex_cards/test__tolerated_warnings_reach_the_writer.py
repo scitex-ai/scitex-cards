@@ -133,6 +133,24 @@ def test_an_ordinary_create_carries_no_warnings_key(postgres_dsn):
     assert "warnings" not in result
 
 
+def test_an_add_of_an_unknown_status_still_keeps_the_card(postgres_dsn):
+    """Verb-level mirror of the save-layer keeps-the-card pin.
+
+    The collector tests below seed their off-enum row through ``add_task``,
+    so this pins the composition they rely on: a warn-accepted unknown
+    status is WRITTEN, not dropped. Without this, those tests would pass
+    vacuously (no off-enum row held, trivially nothing to inherit).
+    """
+    # Arrange
+    unknown = "archived"
+    # Act
+    add_task(id="w7", title="probe", status=unknown, assignee="t",
+             created_by="t")
+    stored = get_task(None, "w7")
+    # Assert
+    assert stored["status"] == unknown
+
+
 # --------------------------------------------------------------------------
 # update_task
 # --------------------------------------------------------------------------
@@ -186,7 +204,7 @@ def test_a_blocked_card_with_no_blocker_also_reaches_the_caller(seeded, postgres
 # --------------------------------------------------------------------------
 
 
-def test_a_clean_write_to_ANOTHER_card_inherits_nothing(seeded, postgres_dsn):
+def test_a_clean_write_to_ANOTHER_card_inherits_nothing(postgres_dsn):
     """A module-level list would carry the first write's warning into the
     second's result. The collector is per-context precisely to stop that.
 
@@ -196,9 +214,22 @@ def test_a_clean_write_to_ANOTHER_card_inherits_nothing(seeded, postgres_dsn):
     whole card, so the warning fired again on its own merits. That is the
     intended behaviour (it keeps telling you until the value is fixed), not a
     leak, and the test was measuring the wrong thing.
+
+    NOTE THE SEEDING. The off-enum row used to be seeded with
+    ``update_task(None, "w1", status="archived")``. The update verb is now
+    source-strict -- a caller-supplied status outside ``VALID_STATUSES``
+    raises before the store is touched (pinned beside the verb, and by
+    ``test_updating_to_an_unknown_status_is_refused`` above) -- so that
+    seeding raises instead of writing. The row is seeded through ``add_task``
+    instead, which warn-accepts merely-unknown values per the 2026-07-10
+    ruling (persistence pinned by
+    ``test_an_add_of_an_unknown_status_still_keeps_the_card`` above). The
+    store still HOLDS the off-enum row, which is all the Act/Assert below
+    needs -- the seeding route is not what is under test.
     """
     # Arrange
-    update_task(None, "w1", status="archived")
+    add_task(id="w8", title="off-enum", status="archived", assignee="t",
+             created_by="t")
     add_task(id="w9", title="clean", status="deferred", assignee="t", created_by="t")
     # Act
     clean = update_task(None, "w9", title="renamed")
@@ -206,14 +237,20 @@ def test_a_clean_write_to_ANOTHER_card_inherits_nothing(seeded, postgres_dsn):
     assert "warnings" not in clean
 
 
-def test_the_writer_is_not_told_about_other_cards_bad_values(seeded, postgres_dsn):
+def test_the_writer_is_not_told_about_other_cards_bad_values(postgres_dsn):
     """SCOPED TO THE CALLER'S CARD. `save_tasks` validates the WHOLE task list,
     so an unscoped collector would hand this writer a warning for every off-enum
     row in the document -- eleven of them on the live board today, about cards
     they never touched. Silence is a check nobody reads; noise is a check
-    everybody learns to ignore."""
+    everybody learns to ignore.
+
+    Seeded through ``add_task`` (warn-accepting) rather than ``update_task``
+    (source-strict for caller-supplied statuses) -- see the NOTE in
+    ``test_a_clean_write_to_ANOTHER_card_inherits_nothing`` above.
+    """
     # Arrange
-    update_task(None, "w1", status="archived")
+    add_task(id="w8", title="off-enum", status="archived", assignee="t",
+             created_by="t")
     add_task(id="w10", title="clean", status="deferred", assignee="t", created_by="t")
     # Act
     result = update_task(None, "w10", status="in_progress")
