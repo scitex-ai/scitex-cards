@@ -280,7 +280,7 @@ def test_react_board_select_rule_present_css_contains() -> None:
     # Act
     css = _read(_BOARD_REACT_CSS)
     # Assert
-    # Pull the rule block out and verify it binds to scitex-ui tokens.
+    # Pull the rule block out and verify it binds to SDK tokens.
     m = re.search(r"\.stx-cards-board select\s*\{([^}]*)\}", css, flags=re.DOTALL)
     block = m.group(1)
     assert (
@@ -296,7 +296,7 @@ def test_react_board_select_rule_present_m() -> None:
     # Act
     css = _read(_BOARD_REACT_CSS)
     # Assert
-    # Pull the rule block out and verify it binds to scitex-ui tokens.
+    # Pull the rule block out and verify it binds to SDK tokens.
     m = re.search(r"\.stx-cards-board select\s*\{([^}]*)\}", css, flags=re.DOTALL)
     block = m.group(1)
     assert m is not None, "could not extract `.stx-cards-board select` block"
@@ -310,7 +310,7 @@ def test_react_board_select_rule_present_case_3() -> None:
     # Act
     css = _read(_BOARD_REACT_CSS)
     # Assert
-    # Pull the rule block out and verify it binds to scitex-ui tokens.
+    # Pull the rule block out and verify it binds to SDK tokens.
     m = re.search(r"\.stx-cards-board select\s*\{([^}]*)\}", css, flags=re.DOTALL)
     block = m.group(1)
     assert (
@@ -326,7 +326,7 @@ def test_react_board_select_rule_present_case_4() -> None:
     # Act
     css = _read(_BOARD_REACT_CSS)
     # Assert
-    # Pull the rule block out and verify it binds to scitex-ui tokens.
+    # Pull the rule block out and verify it binds to SDK tokens.
     m = re.search(r"\.stx-cards-board select\s*\{([^}]*)\}", css, flags=re.DOTALL)
     block = m.group(1)
     assert (

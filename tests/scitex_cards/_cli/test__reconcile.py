@@ -8,6 +8,10 @@ Here we assert the verb registers, is DRY-RUN by default, and threads
 ``--json`` through. The per-test store holds a card with no linked PR (so the
 default seam returns no candidates without a network call) — exercising the
 wire end-to-end with no mocks.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every seed below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -38,7 +42,7 @@ def test_verb_is_registered():
     assert "reconcile-merged-prs" in names
 
 
-def test_dry_run_by_default_exits_zero():
+def test_dry_run_by_default_exits_zero(postgres_dsn):
     # Arrange
     _seed_card_without_pr()
     runner = CliRunner()
@@ -48,7 +52,7 @@ def test_dry_run_by_default_exits_zero():
     assert res.exit_code == 0
 
 
-def test_dry_run_by_default_prints_dry_run_banner():
+def test_dry_run_by_default_prints_dry_run_banner(postgres_dsn):
     # Arrange
     _seed_card_without_pr()
     runner = CliRunner()
@@ -58,7 +62,7 @@ def test_dry_run_by_default_prints_dry_run_banner():
     assert "DRY-RUN" in res.output
 
 
-def test_json_output_is_machine_readable():
+def test_json_output_is_machine_readable(postgres_dsn):
     # Arrange
     _seed_card_without_pr()
     runner = CliRunner()
@@ -69,7 +73,7 @@ def test_json_output_is_machine_readable():
     assert payload["applied"] is False
 
 
-def test_apply_flag_sets_applied_true():
+def test_apply_flag_sets_applied_true(postgres_dsn):
     # Arrange — no parseable pr_url, so nothing actually mutates.
     _seed_card_without_pr()
     runner = CliRunner()

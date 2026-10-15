@@ -74,8 +74,14 @@ def store(new_store):
 
 
 def _write_a_card(store, *, title="a card"):
-    """One ordinary card write against ``store`` — the thing under test."""
-    doc = {"tasks": [{"id": "card-1", "title": title, "status": "pending"}]}
+    """One ordinary card write against ``store`` — the thing under test.
+
+    Fixtures use ``status: deferred`` (the successor default since
+    ``pending`` was abolished 2026-07-10): every assertion below pins
+    notification-rail survival, never the card's status, so the seed must
+    be a live value, not the abolished one.
+    """
+    doc = {"tasks": [{"id": "card-1", "title": title, "status": "deferred"}]}
     mirror_doc_incremental(doc, store, store_path=store)
 
 

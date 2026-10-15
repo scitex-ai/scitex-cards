@@ -212,7 +212,12 @@ def _store(tmp_path):
                     status: in_progress
                   - id: unknown-pr-card
                     title: state unknowable
-                    status: pending
+                    # in_progress (NOT pending: abolished 2026-07-10) — this
+                    # card must be OPEN so the UNKNOWN-seam test below
+                    # exercises the fail-soft path; a pending seed passes via
+                    # SKIP_NOT_OPEN for the wrong reason (OPEN_STATUSES is
+                    # in_progress-only).
+                    status: in_progress
                     pr_url: https://github.com/o/r/pull/5
                 """
             )
@@ -253,7 +258,7 @@ def _dry_run(tmp_path):
     return path, reconcile_merged_prs(path, apply=False, merge_state_fn=seam)
 
 
-def test_dry_run_reports_the_merged_card_as_a_candidate(tmp_path):
+def test_dry_run_reports_the_merged_card_as_a_candidate(tmp_path, postgres_dsn):
     # Arrange
     _path, result = _dry_run(tmp_path)
     # Act
@@ -262,7 +267,7 @@ def test_dry_run_reports_the_merged_card_as_a_candidate(tmp_path):
     assert ids == ["merged-open-card"]
 
 
-def test_dry_run_closes_nothing(tmp_path):
+def test_dry_run_closes_nothing(tmp_path, postgres_dsn):
     # Arrange
     _path, result = _dry_run(tmp_path)
     # Act
@@ -271,7 +276,7 @@ def test_dry_run_closes_nothing(tmp_path):
     assert closed == []
 
 
-def test_dry_run_leaves_the_store_untouched(tmp_path):
+def test_dry_run_leaves_the_store_untouched(tmp_path, postgres_dsn):
     # Arrange
     path, _result = _dry_run(tmp_path)
     # Act
@@ -280,7 +285,7 @@ def test_dry_run_leaves_the_store_untouched(tmp_path):
     assert statuses["merged-open-card"] == "in_progress"
 
 
-def test_apply_closes_merged_card_and_comments(tmp_path):
+def test_apply_closes_merged_card_and_comments(tmp_path, postgres_dsn):
     # Arrange
     path = _store(tmp_path)
     seam = _fake_seam(_ALL_STATES)
@@ -291,7 +296,7 @@ def test_apply_closes_merged_card_and_comments(tmp_path):
     assert tasks["merged-open-card"]["status"] == "done"
 
 
-def test_apply_leaves_open_pr_card_untouched(tmp_path):
+def test_apply_leaves_open_pr_card_untouched(tmp_path, postgres_dsn):
     # Arrange
     path = _store(tmp_path)
     seam = _fake_seam({"https://github.com/o/r/pull/2": OPEN})
@@ -302,7 +307,7 @@ def test_apply_leaves_open_pr_card_untouched(tmp_path):
     assert tasks["open-pr-card"]["status"] == "blocked"
 
 
-def test_apply_appends_auto_close_comment(tmp_path):
+def test_apply_appends_auto_close_comment(tmp_path, postgres_dsn):
     # Arrange
     path = _store(tmp_path)
     seam = _fake_seam({"https://github.com/o/r/pull/1": MERGED})
@@ -314,7 +319,7 @@ def test_apply_appends_auto_close_comment(tmp_path):
     assert any("auto-closed" in (c.get("text") or "") for c in comments)
 
 
-def test_already_done_card_is_skipped(tmp_path):
+def test_already_done_card_is_skipped(tmp_path, postgres_dsn):
     # Arrange
     path = _store(tmp_path)
     seam = _fake_seam({"https://github.com/o/r/pull/3": MERGED})
@@ -324,7 +329,7 @@ def test_already_done_card_is_skipped(tmp_path):
     assert result.skipped.get(ACTION_SKIP_DONE, 0) >= 1
 
 
-def test_missing_pr_url_card_is_skipped(tmp_path):
+def test_missing_pr_url_card_is_skipped(tmp_path, postgres_dsn):
     # Arrange
     path = _store(tmp_path)
     seam = _fake_seam({})
@@ -334,7 +339,7 @@ def test_missing_pr_url_card_is_skipped(tmp_path):
     assert result.skipped.get(ACTION_SKIP_NO_PR, 0) >= 1
 
 
-def test_unknown_merge_state_never_closes(tmp_path):
+def test_unknown_merge_state_never_closes(tmp_path, postgres_dsn):
     # Arrange
     path = _store(tmp_path)
     seam = _fake_seam({"https://github.com/o/r/pull/5": UNKNOWN})
@@ -342,10 +347,10 @@ def test_unknown_merge_state_never_closes(tmp_path):
     reconcile_merged_prs(path, apply=True, merge_state_fn=seam)
     # Assert — fail-soft: an unknown state leaves the card open.
     tasks = {t["id"]: t for t in load_tasks(path)}
-    assert tasks["unknown-pr-card"]["status"] == "pending"
+    assert tasks["unknown-pr-card"]["status"] == "in_progress"
 
 
-def test_seam_exception_is_treated_as_unknown(tmp_path):
+def test_seam_exception_is_treated_as_unknown(tmp_path, postgres_dsn):
     # Arrange
     path = _store(tmp_path)
 
@@ -358,7 +363,7 @@ def test_seam_exception_is_treated_as_unknown(tmp_path):
     assert result.closed == []
 
 
-def test_idempotent_second_run_closes_nothing_new(tmp_path):
+def test_idempotent_second_run_closes_nothing_new(tmp_path, postgres_dsn):
     # Arrange
     path = _store(tmp_path)
     seam = _fake_seam({"https://github.com/o/r/pull/1": MERGED})

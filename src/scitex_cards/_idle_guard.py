@@ -20,9 +20,10 @@ allows the stop, so the loop is bounded by genuine disposition, not by force.
 
 Why STALE ``in_progress`` specifically (not all open cards)
 -----------------------------------------------------------
-* PENDING backlog is surfaced by the recurring digest nudge, not the stop guard —
+* Deferred backlog is surfaced by the recurring digest nudge, not the stop guard —
   blocking stop on a whole backlog would trap an agent that legitimately has many
-  queued cards.
+  queued cards (``deferred`` is the backlog state since ``pending`` was abolished
+  2026-07-10).
 * A freshly-TOUCHED ``in_progress`` card means the agent is actively working and
   is not the abandonment case (it will not be stopping mid-keystroke).
 * A ``blocked`` card is a legitimate park (waiting on operator/dependency).

@@ -14,8 +14,10 @@ existing ``*/10`` nudge cron (``print-stats --by agent --notify
 --nudge-quiet``) sweeps for them and nudges each OWNER directly.
 
 This module also hosts a SECOND, distinct detector for the PENDING
-backlog (:func:`detect_pending_backlog`): owned ``status=pending`` cards
-that have sat untouched longer than a (more lenient) threshold. Where
+backlog (:func:`detect_pending_backlog`): owned ``status=deferred`` cards
+(``deferred`` is the backlog state since ``pending`` was abolished
+2026-07-10) that have sat untouched longer than a (more lenient)
+threshold. Where
 stale-active says "close/update the work you said you were doing",
 pending-backlog says "start or triage the cards you accepted but never
 began". Both are expressed in terms of one generic core

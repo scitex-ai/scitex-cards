@@ -19,7 +19,7 @@ import scitex_logging as slogging
 
 from django.http import JsonResponse
 
-from .crud import _parse_body
+from .crud import _check_status, _parse_body
 
 logger = slogging.getLogger(__name__)
 
@@ -101,7 +101,23 @@ def handle_restore(request, board):
     Body: ``{task: {<full task dict>}, refs: [{id, field}, ...]}``. Appends the
     task (unless its id already exists) and re-adds each scrubbed reference
     (``other[field]`` gains the task id back, or ``parent`` is restored).
-    Returns the restored id.
+    Returns the restored id. A ``task.status`` outside ``VALID_STATUSES`` —
+    including the abolished ``"pending"`` (abolished 2026-07-10) — is a
+    400 via the same ``crud._check_status`` contract the create/update and
+    reopen verbs use, raised BEFORE the store lock so a rejected restore
+    never touches the store (the save path itself only warns on bad values,
+    so without this check the Delete→Undo affordance could mint a row the
+    enum forbids from a crafted ``task`` mapping). A mapping with NO status
+    defaults to ``"deferred"`` (the create-twin default), never a
+    status-less row. A restored status other than ``"blocked"`` drops the
+    ``blocker`` gate (the schema validator rejects a real blocker on a
+    non-``blocked`` row — without this a status-less+gated mapping
+    defaulted to ``deferred`` fails on its own gate, the same 400-on-own-
+    gate the ``/archive`` + ``close --reason`` twins were fixed for).
+    A snapshot stamp does not survive the restore unless
+    the card re-enters AS ``done`` — ``completed_at`` on a live row would
+    count as delivered forever (throughput aggregates never consult
+    ``status``), so the stamp is cleared for every other final status.
     """
     if request.method != "POST":
         return JsonResponse({"error": "restore endpoint requires POST"}, status=405)
@@ -116,6 +132,44 @@ def handle_restore(request, board):
             status=400,
         )
     tid = task["id"]
+
+    # The board is a SOURCE, so it stays strict like create/update and
+    # reopen: a restored status outside VALID_STATUSES (including abolished
+    # "pending") is a 400 here, BEFORE the store lock — the save path only
+    # warns, so without this a crafted `task` mapping could mint a
+    # forbidden row through the Delete→Undo affordance. A mapping with NO
+    # status at all defaults to "deferred" first (the handle_create twin
+    # default), so a crafted status-less mapping lands in the backlog
+    # instead of minting a status-less row the save path would only warn
+    # about (value faults warn per the 2026-07-10 ruling).
+    if not task.get("status"):
+        task["status"] = "deferred"
+    err = _check_status({"status": task.get("status")})
+    if err is not None:
+        return err
+
+    if task.get("status") != "blocked":
+        # Leaving `blocked` MUST clear the gate: the endpoint takes ANY
+        # mapping (no status precondition — missing defaults to `deferred`
+        # above), so it can restore a gated snapshot to a non-`blocked`
+        # status, and the schema validator REJECTS a real blocker on a
+        # non-`blocked` row (`_validate.py` rule (b)) — without this pop
+        # the restore of a gated card fails on its own gate. Same
+        # invariant the `/archive` twin keeps (`task.pop("blocker", None)`)
+        # and `handle_reopen` keeps on every non-`blocked` restore. A
+        # verbatim `blocked` snapshot keeps its gate.
+        task.pop("blocker", None)
+
+    # A restored card re-enters as LIVE work, so a snapshot stamp must not
+    # survive on it: throughput (fleet/timing.py + timeline.py) believes
+    # `completed_at` alone and never consults `status`, so restoring a
+    # done+stamped snapshot to a live status would count phantom delivery
+    # forever — the same lie `reopen_task` clears via `clear_completion_stamp`.
+    # Restored AS `done` keeps its genuine stamp (it really was completed).
+    if task.get("status") != "done":
+        from ..._store_lifecycle import clear_completion_stamp
+
+        clear_completion_stamp(task)
 
     from scitex_cards import TaskValidationError
     from scitex_cards._model import _save_doc_unlocked, _store_lock

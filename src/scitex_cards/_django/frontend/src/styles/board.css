@@ -14,7 +14,7 @@
 /* scitex-cards board layout */
 
 /* ── Theme palette ───────────────────────────────────────────────────────
- * The board lives inside the scitex-ui shell, which sets <html
+ * The board lives inside the SDK shell, which sets <html
  * data-theme="dark|light"> and exposes flipping CSS variables (theme.css).
  * We derive a board-local --stx-* palette from those shell variables so the
  * whole board follows the active theme. The literal after each var() is the
@@ -52,7 +52,7 @@
 }
 
 /* ── Full-screen standalone (Fix #2) ─────────────────────────────────────
- * The scitex-ui standalone shell wraps the board in a three-column layout
+ * The SDK standalone shell wraps the board in a three-column layout
  * (Console/Chat | Files | Viewer | App Content). For the standalone card
  * board those three sidebars are dead weight — hide them so the board's
  * #main-content (flex: 1) fills the full viewport width.
@@ -755,7 +755,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * dark mode (white popover, white track, dark text on dark page → unreadable).
  * Bind every <select> inside the board to the same token palette the rest
  * of the toolbar uses. The token chain (`--stx-input-bg`, `--stx-text`,
- * `--stx-border-strong`) is sourced from scitex-ui shell variables at the
+ * `--stx-border-strong`) is sourced from SDK shell variables at the
  * top of this file, so light/dark mode flip automatically.
  *
  * `<option>` styling is best-effort — Chrome / Firefox style the popover
@@ -1813,9 +1813,9 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * The band answers "which app is this, which version, which project, and how
  * long did it take" — the four facts the operator's Hub-mount report found
  * missing. It reads the SAME --stx-* tokens as the toolbar (which map onto
- * scitex-ui's semantic variables in the .stx-cards-board block above) rather
+ * the SDK's semantic variables in the .stx-cards-board block above) rather
  * than carrying a palette of its own: a private palette does not merely
- * diverge in style, it starves every scitex-ui component the page later
+ * diverge in style, it starves every SDK component the page later
  * adopts — the failure documented at length in the chat-palette guard.
  *
  * It is OUTSIDE .stx-cards-board__header but INSIDE .stx-cards-board, so the

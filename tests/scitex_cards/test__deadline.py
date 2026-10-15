@@ -12,6 +12,16 @@ DB from an in-memory doc (via ``_write``) and read it back through
 it) directly — the DB's TEXT columns would coerce the malformed inputs
 (int -> str, '' -> stored text) and change the failure message, so the
 validator is called with the exact malformed input it must reject.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the ACCEPT tests below seed/read the ambient
+per-test store, which is refused without a writable cluster. The REJECT
+tests stay unguarded by design: they call the validator directly and
+never open the store.
+
+Fixtures seed ``deferred`` (the successor default, open and in
+VALID_STATUSES): ``pending`` was abolished 2026-07-10 and every assertion
+here pins deadline/scheduled validation, not statuses.
 """
 
 from __future__ import annotations
@@ -43,11 +53,11 @@ def _write(tmp_path, text):
 
 
 class TestDeadlineAbsent:
-    def test_no_deadline_loads_clean(self, tmp_path):
+    def test_no_deadline_loads_clean(self, tmp_path, postgres_dsn):
         # Arrange
         store = _write(
             tmp_path,
-            "tasks:\n  - {id: a, title: A, status: pending}\n",
+            "tasks:\n  - {id: a, title: A, status: deferred}\n",
         )
         # Act
         tasks = load_tasks(store)
@@ -56,11 +66,11 @@ class TestDeadlineAbsent:
 
 
 class TestDeadlineBareDate:
-    def test_accepts_yyyy_mm_dd(self, tmp_path):
+    def test_accepts_yyyy_mm_dd(self, tmp_path, postgres_dsn):
         # Arrange
         store = _write(
             tmp_path,
-            "tasks:\n  - {id: a, title: A, status: pending, deadline: '2026-06-15'}\n",
+            "tasks:\n  - {id: a, title: A, status: deferred, deadline: '2026-06-15'}\n",
         )
         # Act
         tasks = load_tasks(store)
@@ -69,12 +79,12 @@ class TestDeadlineBareDate:
 
 
 class TestDeadlineDateTime:
-    def test_accepts_iso_datetime_with_offset(self, tmp_path):
+    def test_accepts_iso_datetime_with_offset(self, tmp_path, postgres_dsn):
         # Arrange
         store = _write(
             tmp_path,
             "tasks:\n"
-            "  - {id: a, title: A, status: pending, "
+            "  - {id: a, title: A, status: deferred, "
             "deadline: '2026-06-15T18:00:00+09:00'}\n",
         )
         # Act
@@ -84,11 +94,11 @@ class TestDeadlineDateTime:
 
 
 class TestScheduledFieldRoundTrip:
-    def test_scheduled_alone_loads(self, tmp_path):
+    def test_scheduled_alone_loads(self, tmp_path, postgres_dsn):
         # Arrange
         store = _write(
             tmp_path,
-            "tasks:\n  - {id: a, title: A, status: pending, scheduled: '2026-06-10'}\n",
+            "tasks:\n  - {id: a, title: A, status: deferred, scheduled: '2026-06-10'}\n",
         )
         # Act
         tasks = load_tasks(store)
@@ -106,7 +116,7 @@ class TestDeadlineEmptyStringRejected:
         # malformed input.)
         with pytest.raises(TaskValidationError, match="invalid deadline"):
             _validate_tasks(
-                [{"id": "a", "title": "A", "status": "pending", "deadline": ""}],
+                [{"id": "a", "title": "A", "status": "deferred", "deadline": ""}],
                 source="<test>",
                 strict=False,
             )
@@ -125,7 +135,7 @@ class TestDeadlineNonStringRejected:
                     {
                         "id": "a",
                         "title": "A",
-                        "status": "pending",
+                        "status": "deferred",
                         "deadline": 20260615,
                     }
                 ],
@@ -145,7 +155,7 @@ class TestDeadlineUnparseableRejected:
                     {
                         "id": "a",
                         "title": "A",
-                        "status": "pending",
+                        "status": "deferred",
                         "deadline": "next Tuesday",
                     }
                 ],
@@ -165,7 +175,7 @@ class TestScheduledUnparseableRejected:
                     {
                         "id": "a",
                         "title": "A",
-                        "status": "pending",
+                        "status": "deferred",
                         "scheduled": "soon",
                     }
                 ],
@@ -185,7 +195,7 @@ class TestDeadlineBeforeScheduledRejected:
                     {
                         "id": "a",
                         "title": "A",
-                        "status": "pending",
+                        "status": "deferred",
                         "deadline": "2026-06-10",
                         "scheduled": "2026-06-15",
                     }
@@ -194,12 +204,12 @@ class TestDeadlineBeforeScheduledRejected:
                 strict=False,
             )
 
-    def test_equal_dates_accepted(self, tmp_path):
+    def test_equal_dates_accepted(self, tmp_path, postgres_dsn):
         # Arrange
         store = _write(
             tmp_path,
             "tasks:\n"
-            "  - {id: a, title: A, status: pending,"
+            "  - {id: a, title: A, status: deferred,"
             " deadline: '2026-06-15', scheduled: '2026-06-15'}\n",
         )
         # Act
@@ -209,12 +219,12 @@ class TestDeadlineBeforeScheduledRejected:
 
 
 class TestDeadlineAfterScheduledAccepted:
-    def test_deadline_after_scheduled_is_valid(self, tmp_path):
+    def test_deadline_after_scheduled_is_valid(self, tmp_path, postgres_dsn):
         # Arrange
         store = _write(
             tmp_path,
             "tasks:\n"
-            "  - {id: a, title: A, status: pending,"
+            "  - {id: a, title: A, status: deferred,"
             " deadline: '2026-06-20', scheduled: '2026-06-15'}\n",
         )
         # Act

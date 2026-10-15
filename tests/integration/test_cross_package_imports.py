@@ -24,7 +24,7 @@ while covering less than it claimed.
        importlib.import_module(FULL_PATH)     # peer present -> must IMPORT or FAIL
 
 2. IT COVERED 3 OF 7 WHILE ASSERTING IT COVERED ALL. The list named
-   ``scitex_app._django``, ``scitex_dev._mcp_cli`` and ``scitex_ui`` under a
+   ``scitex_sdk.app.apps``, ``scitex_dev._mcp_cli`` and ``scitex_sdk.ui`` under a
    docstring saying it "must list exactly the cross-package modules imported
    under src/". src/ imported seven. scitex-dev ran their collector against this
    tree and confirmed the generator is correct and this FILE was stale — written
@@ -75,7 +75,7 @@ def test_cross_package_dependency_imports_cleanly(module_name):
     assert module is not None
 
 
-def test_board_appconfig_subclasses_scitex_app_when_installed():
+def test_board_appconfig_subclasses_sdk_when_installed():
     # Arrange -- importorskip on the ROOT, then import the submodule for real;
     # the old form skipped on the dotted path and so could not fail.
     pytest.importorskip("scitex_sdk")
@@ -83,11 +83,11 @@ def test_board_appconfig_subclasses_scitex_app_when_installed():
     from scitex_cards._django.apps import ScitexCardsConfig
 
     # Act
-    is_scitex_app_subclass = issubclass(
+    is_sdk_subclass = issubclass(
         ScitexCardsConfig, scitex_sdk_app.ScitexAppConfig
     )
     # Assert
-    assert is_scitex_app_subclass
+    assert is_sdk_subclass
 
 
 def test_board_appconfig_base_is_the_sdk_django_impl_by_identity():

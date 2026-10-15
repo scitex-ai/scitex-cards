@@ -22,7 +22,7 @@ import os
 from django.http import JsonResponse
 
 from ..._comment_ids import stamp_comment_id
-from .crud import _parse_body
+from .crud import _check_status, _parse_body
 
 logger = slogging.getLogger(__name__)
 
@@ -36,7 +36,18 @@ def handle_reopen(request, board):
     The schema validator rejects ``blocker`` on non-blocked rows, so when the
     restored status is anything other than ``"blocked"`` the field is dropped.
     Appends a ``[UNDONE via board-v3]`` comment and publishes a notification.
-    Unknown id -> 404.
+    Unknown id -> 404. A ``prior_status`` outside ``VALID_STATUSES`` —
+    including the abolished ``"pending"`` (abolished 2026-07-10) — is a
+    400 via the same ``crud._check_status`` contract the create/update
+    verbs use, raised BEFORE the store lock so a rejected reopen never
+    touches the store (the save path itself only warns on bad values, so
+    without this check the Undo affordance could mint a row the enum
+    forbids).
+
+    Reopening a ``done`` card drops ``_log_meta.completed_{at,by}`` via
+    the named ``_clear_completion_stamp_on_leaving_done`` clock — the
+    throughput aggregates believe ``completed_at`` alone, so a reopened
+    row keeping the stamp would count as delivered forever.
 
     Lossless today because notification fan-out is in-process — the
     dependent agent has not been told yet via SacChannel.
@@ -60,6 +71,14 @@ def handle_reopen(request, board):
     # Default blocker only when restoring to blocked AND caller didn't supply one.
     if new_status == "blocked" and not new_blocker:
         new_blocker = "operator-decision"
+
+    # The board is a SOURCE, so it stays strict like create/update: a
+    # prior_status outside VALID_STATUSES (including abolished "pending")
+    # is a 400 here, BEFORE the store lock — the save path only warns,
+    # so without this the Undo affordance could mint a forbidden row.
+    err = _check_status({"status": new_status})
+    if err is not None:
+        return err
 
     from scitex_cards import TaskValidationError
     from scitex_cards._model import _save_doc_unlocked, _store_lock
@@ -91,6 +110,17 @@ def handle_reopen(request, board):
         else:
             # Schema disallows blocker on non-blocked rows.
             task.pop("blocker", None)
+
+        # Leaving `done` must drop the completion stamp: throughput
+        # (fleet/timing.py + timeline.py) believes `completed_at` alone and
+        # never consults `status`, so a reopened row keeping the stamp is
+        # counted as delivered work forever — the same lie `reopen_task`
+        # clears via this same clock. This handler bypasses `update_task`,
+        # so it calls the clock itself (`pre_status` captured above).
+        # No-op unless the card is leaving `done`.
+        from ..._store_clocks import _clear_completion_stamp_on_leaving_done
+
+        _clear_completion_stamp_on_leaving_done(task, pre_status)
 
         reopen_comment = stamp_comment_id(
             {

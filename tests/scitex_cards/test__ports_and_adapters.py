@@ -6,6 +6,16 @@ No mocks (STX-NM / PA-306). Real tmp paths for the file-sync adapter,
 real in-process callbacks for the pubsub adapter, real dict payloads
 for the ACL + liveness adapters. AAA pattern; descriptive names; one
 core assertion per test where practical.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the two LocalFileSync DB tests seed the ambient
+per-test store via ``seed_db_from_doc(doc, $SCITEX_STORE_DSN)`` — the
+live-WRITE path — so without a writable cluster they must ERROR at
+fixture setup with the no-writable-PostgreSQL reason+remedy instead of
+failing bare mid-test on the refused placeholder. The round-trip test
+inherits the guard through its fixture; every other test here is pure
+(isinstance checks, in-process pubsub, tmp-file mtime probes) and stays
+unguarded by design.
 """
 
 from __future__ import annotations
@@ -86,7 +96,7 @@ def _write_tasks_yaml(tmp_path, body: str):
     return p
 
 
-def test_local_file_sync_load_returns_validated_tasks(tmp_path):
+def test_local_file_sync_load_returns_validated_tasks(tmp_path, postgres_dsn):
     # Arrange — the database is the store; seed the canonical DB, then point the
     # adapter at the pinned STORE identity path (reads ignore the path and
     # read the DB; the STORE path is what the ownership stamp round-trips on).
@@ -95,7 +105,9 @@ def test_local_file_sync_load_returns_validated_tasks(tmp_path):
     from conftest import seed_db_from_doc
 
     seed_db_from_doc(
-        {"tasks": [{"id": "a", "title": "A", "status": "pending"}]},
+        # in_progress: pending was abolished 2026-07-10 — fixtures must seed
+        # a live status, not the tolerated legacy value.
+        {"tasks": [{"id": "a", "title": "A", "status": "in_progress"}]},
         os.environ["SCITEX_STORE_DSN"],
     )
     sync = LocalFileSync(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
@@ -113,14 +125,16 @@ def test_local_file_sync_load_returns_validated_tasks(tmp_path):
 #: tested YAML-text serialization, which no longer exists — there is no file to
 #: carry or drop a comment.)
 @pytest.fixture()
-def local_file_sync_round_trip(tmp_path):
+def local_file_sync_round_trip(tmp_path, postgres_dsn):
     """Seed the DB, then load, mutate, save and reload through the adapter."""
     import os
 
     from conftest import seed_db_from_doc
 
     seed_db_from_doc(
-        {"tasks": [{"id": "a", "title": "A", "status": "pending"}]},
+        # in_progress: pending was abolished 2026-07-10 — fixtures must seed
+        # a live status; the test then moves it to done (worked, completed).
+        {"tasks": [{"id": "a", "title": "A", "status": "in_progress"}]},
         os.environ["SCITEX_STORE_DSN"],
     )
     sync = LocalFileSync(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
@@ -140,16 +154,21 @@ def test_local_file_sync_save_round_trips_task_data(local_file_sync_round_trip):
 
 
 def test_local_file_sync_reload_detects_external_mutation(tmp_path):
-    # Arrange
+    # Arrange — pure mtime probe: prime the snapshot via stat only.
+    # sync.load() is deliberately NOT used here: post DB-canonical cutover
+    # it reads the canonical database (ignoring file content) and refuses
+    # clusterless, so it cannot baseline a tmp-file probe.
     import os
     import time
 
     p = _write_tasks_yaml(
         tmp_path,
-        "tasks:\n  - {id: a, title: A, status: pending}\n",
+        # in_progress: pending was abolished 2026-07-10 — even inert probe
+        # text must not teach the dead value as live.
+        "tasks:\n  - {id: a, title: A, status: in_progress}\n",
     )
     sync = LocalFileSync(p)
-    sync.load()  # baseline mtime captured
+    sync.reload_if_changed()  # prime baseline mtime snapshot (stat only)
     # Act — external write that bumps mtime.
     time.sleep(0.01)  # ensure mtime tick
     os.utime(p, None)
@@ -158,13 +177,16 @@ def test_local_file_sync_reload_detects_external_mutation(tmp_path):
 
 
 def test_local_file_sync_reload_returns_false_when_quiet(tmp_path):
-    # Arrange
+    # Arrange — pure mtime probe (stat only; see companion test for why
+    # sync.load() cannot baseline here post DB-canonical cutover).
     p = _write_tasks_yaml(
         tmp_path,
-        "tasks:\n  - {id: a, title: A, status: pending}\n",
+        # in_progress: pending was abolished 2026-07-10 — even inert probe
+        # text must not teach the dead value as live.
+        "tasks:\n  - {id: a, title: A, status: in_progress}\n",
     )
     sync = LocalFileSync(p)
-    sync.load()
+    sync.reload_if_changed()  # prime baseline mtime snapshot (stat only)
     # Act
     changed = sync.reload_if_changed()
     # Assert — no external write means reload-detection is a no-op.

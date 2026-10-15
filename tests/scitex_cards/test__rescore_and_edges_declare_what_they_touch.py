@@ -44,7 +44,13 @@ def _by_id(tasks: list[dict]) -> dict:
 
 
 @pytest.fixture
-def board(tmp_path: Path) -> Path:
+def board(tmp_path: Path, postgres_dsn) -> Path:
+    """A board carrying three deferred cards.
+
+    ``postgres_dsn`` is requested but is not the seed target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     path = tmp_path / "cards.yaml"
     # `a` owns an agent because the edge tests need a waiter to subscribe;
     # giving it here rather than re-writing the board inside those tests,

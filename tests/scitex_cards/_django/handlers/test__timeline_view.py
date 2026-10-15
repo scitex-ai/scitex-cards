@@ -15,6 +15,11 @@ the floor "Time View" handler covers:
 
 Django RequestFactory; no mocks (STX-NM / PA-306). AAA pattern, one
 assertion per test.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the two bare-``add_task`` tests below write the
+ambient per-test store, which is refused without a writable cluster.
+Seeded tests inherit the guard through their fixtures.
 """
 
 from __future__ import annotations
@@ -121,7 +126,10 @@ def store_ungrouped(postgres_dsn) -> str:
             {
                 "id": "t-naked",
                 "title": "No lane",
-                "status": "pending",
+                # ``deferred`` is the backlog state since ``pending`` was
+                # abolished 2026-07-10 — the lane assertion never reads
+                # status, so this seed must stay a live value.
+                "status": "deferred",
                 "created_at": now,
                 "last_activity": now,
             }
@@ -331,7 +339,7 @@ def test_timeline_view_edges_only_when_both_endpoints_visible(
     } in edges
 
 
-def test_timeline_view_edge_dropped_when_endpoint_out_of_window():
+def test_timeline_view_edge_dropped_when_endpoint_out_of_window(postgres_dsn):
     """If one endpoint of an edge is OUTSIDE the window, the edge is
     dropped from the payload — keeps the wire payload bounded and
     matches the brief's contract."""
@@ -407,7 +415,7 @@ def test_timeline_view_method_post_returns_405(store_with_timeline_tasks):
     assert response.status_code == 405
 
 
-def test_timeline_view_completed_task_in_window_renders():
+def test_timeline_view_completed_task_in_window_renders(postgres_dsn):
     """A task that COMPLETED inside the window must appear (the
     ``_log_meta.completed_at`` path is one of the three window-membership
     tests). The bar fades in the UI, but the event is still in events."""

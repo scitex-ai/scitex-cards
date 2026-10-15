@@ -25,7 +25,7 @@ def _render_dm() -> str:
     return views.chat_page(request).content.decode("utf-8")
 
 
-def test_dm_page_uses_the_released_scitex_ui_workspace_shell() -> None:
+def test_dm_page_uses_the_released_sdk_workspace_shell() -> None:
     # Arrange
     body = _render_dm()
     # Act

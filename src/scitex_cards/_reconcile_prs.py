@@ -3,9 +3,11 @@
 """Deterministic card-freshness automation: auto-close a card once its
 linked PR has MERGED.
 
-Most ``in_progress`` / ``blocked`` (and some ``pending``) cards represent
+Most ``in_progress`` cards represent
 work that ends in a merged PR. The card's ``pr_url`` field is the soft link
-(set by the git-link feature / authors). This module scans those cards,
+(set by the git-link feature / authors). This module scans those cards
+(``OPEN_STATUSES`` — ``in_progress`` only: ``blocked`` / ``deferred`` are
+excluded by design, ``pending`` was abolished 2026-07-10),
 asks GitHub whether the linked PR is merged, and — for the ones that are —
 flips the card to ``done`` (reusing :func:`scitex_cards._store.complete_task`)
 plus an audit comment. It is the periodic counterpart of the manual

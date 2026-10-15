@@ -3,7 +3,7 @@
  * copied link reopens the same view.
  *
  * Only the *view* is persisted — never task data (that's the shared store).
- * The theme is owned by the scitex-ui shell (`<html data-theme>`), so it is
+ * The theme is owned by the SDK shell (`<html data-theme>`), so it is
  * deliberately not persisted here.
  */
 

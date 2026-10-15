@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 
 export type ColorMode = "light" | "dark";
 
-/** Read the active theme from the scitex-ui shell.
+/** Read the active theme from the SDK shell.
  *
- * The shell sets `<html data-theme="dark|light">` (see scitex_ui theme.css)
+ * The shell sets `<html data-theme="dark|light">` (see SDK theme.css)
  * and toggles it live. We mirror that so React Flow's `colorMode` and the
  * canvas chrome (Background dots, MiniMap) follow the shell instead of being
  * pinned. Defaults to "dark" when the attribute is absent — the board's

@@ -251,6 +251,7 @@ def sweep_reminders(
     owners: set[str] | None = None,
     resolve_user: Callable[[str], Any] | None = None,
     liveness_ttl: int | None = None,
+    state: dict[str, dict] | None = None,
 ) -> dict[str, list[str]]:
     """One nag sweep: enqueue a due DIGEST per owner + escalate stuck cards.
 
@@ -267,6 +268,18 @@ def sweep_reminders(
     ``None``) and ``liveness_ttl`` (seconds) are injectable seams so tests
     drive the alive/stale/unknown machine with real fakes; left ``None`` they
     resolve to :func:`scitex_cards._users.resolve_user` and the configured TTL.
+
+    ``state`` is the bookkeeping seam: a caller-owned ``{"owners", "cards"}``
+    dict the sweep reads and mutates in place, skipping the database load AND
+    save. Left ``None`` (production, store-backed tests) the state loads from
+    / saves to the database via :func:`load_reminder_state` /
+    :func:`save_reminder_state`. Hermetic tests thread one dict across sweeps
+    — without it, a PG-free second sweep always reads empty state (the
+    database layer fail-softs on a non-Postgres store), so cadence suppression
+    and escalation latches are untestable without a cluster. A present-but-
+    malformed section (``None`` or a non-dict, e.g. a default-built box) is
+    normalised to ``{}`` in place — the sweep never raises on its
+    bookkeeping (notifyd tick).
 
     Fail-soft: a per-owner enqueue error is logged and the sweep continues.
     Never raises into the caller (notifyd tick).
@@ -324,7 +337,23 @@ def sweep_reminders(
     if allow:
         buckets = {o: c for o, c in buckets.items() if o in allow}
 
-    state = load_reminder_state(store)
+    if state is None:
+        state = load_reminder_state(store)
+        _persist_state = True
+    else:
+        # Caller-owned bookkeeping (the hermetic-test seam): normalise the
+        # sections in place and skip the database round-trip entirely — the
+        # box IS the store, so in-place mutation already persists. A
+        # present-but-malformed section (None, or a non-dict from a
+        # default-built box) becomes {} — mirroring the `or {}` tolerance
+        # of save_reminder_state, so the sweep never raises on bookkeeping.
+        state.setdefault("owners", {})
+        state.setdefault("cards", {})
+        if not isinstance(state.get("owners"), dict):
+            state["owners"] = {}
+        if not isinstance(state.get("cards"), dict):
+            state["cards"] = {}
+        _persist_state = False
     owner_state: dict[str, dict] = state["owners"]
     card_state: dict[str, dict] = state["cards"]
 
@@ -458,7 +487,8 @@ def sweep_reminders(
         if cid not in stale_card_ids:
             del card_state[cid]
 
-    save_reminder_state(state, store)
+    if _persist_state:
+        save_reminder_state(state, store)
     return {
         "digested": digested,
         "escalated": escalated,

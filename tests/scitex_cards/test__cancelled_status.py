@@ -12,6 +12,11 @@ count toward runnable liveness.
 Real fakes, NO mocks (STX-NM / PA-306): real ``tmp_path`` YAML stores,
 real list-of-dicts inputs, a plain list-recorder ``enqueue``, a real
 ``resolve_key`` dict, and an injected ``now``. AAA structure.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every seed below targets the ambient per-test
+store, which is refused without a writable cluster. Pure predicate /
+sweep / aggregate tests stay untouched.
 """
 
 from __future__ import annotations
@@ -89,7 +94,7 @@ def test_cancelled_is_distinct_from_done_and_failed():
     assert trio <= statuses
 
 
-def test_load_tasks_accepts_cancelled_status(tmp_path):
+def test_load_tasks_accepts_cancelled_status(tmp_path, postgres_dsn):
     # Arrange — a store with a single cancelled card.
     store = _write_store(
         tmp_path, "tasks:\n  - {id: x, title: Abandoned, status: cancelled}\n"
@@ -100,7 +105,7 @@ def test_load_tasks_accepts_cancelled_status(tmp_path):
     assert tasks[0]["status"] == "cancelled"
 
 
-def test_load_tasks_warns_on_unknown_status(tmp_path):
+def test_load_tasks_warns_on_unknown_status(tmp_path, postgres_dsn):
     # Guard, updated for the tolerant reader (2026-07-10 outage fix): an
     # unknown status VALUE no longer takes the whole store down — it may have
     # been written by a newer agent, and raising here is exactly how adding
@@ -115,7 +120,7 @@ def test_load_tasks_warns_on_unknown_status(tmp_path):
         load_tasks(store)
 
 
-def test_load_tasks_keeps_an_unknown_status_value(tmp_path):
+def test_load_tasks_keeps_an_unknown_status_value(tmp_path, postgres_dsn):
     """The tolerant reader must PRESERVE the value it warned about, not
     normalize or drop it — a newer agent's status has to survive a
     round-trip through an older reader."""

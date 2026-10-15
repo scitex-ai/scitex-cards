@@ -23,13 +23,25 @@ WHAT IS ASSERTED, and why not "the variable is not the live DSN". Naming the
 forbidden value is the weaker test: it passes on any host whose live board
 happens to be spelled differently, which is every host but one. So the
 assertions are POSITIVE — the variable holds a schema-scoped throwaway, or it
-holds nothing — and neither of those can be the live board's public schema
-regardless of how that board is spelled.
+holds the refused placeholder — and neither of those can resolve the live
+board's public schema regardless of how that board is spelled.
+
+WHY "OR THE REFUSED PLACEHOLDER" AND NOT "OR NOTHING". The 2026-08-30 draft
+of this contract said absent-when-unpinned, and the harness implemented the
+opposite on purpose (HEAD 44cfc480 wires ``_refused_placeholder`` into
+``_point_env_at``): with ``$SCITEX_STORE_DSN`` absent, the resolvers walk
+their precedence chain to the user-canonical target — the live board — which
+is the exact enabling condition of all three 2026-07 wipes. A filename is
+refused by every store door before anything is touched, so the placeholder
+fails LOUDLY on configuration instead of quietly succeeding against
+production. Absence is the one value that must never be reached; these tests
+pin SET-EITHER-WAY.
 """
 
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 
@@ -67,14 +79,47 @@ def root_conftest(pytestconfig):
     )
 
 
+def _assert_set_either_way(observed: "str | None") -> str:
+    """Pin the harness's SET-EITHER-WAY contract for ``$SCITEX_STORE_DSN``.
+
+    Returns the observed value for further assertions. Fails when the
+    variable is absent (absence resolves the live board — the exact
+    enabling condition of the 2026-07 wipes), when it is an UNSCOPED
+    postgres DSN (that shape resolves the live board's tables), or when
+    it is anything other than the two safe shapes: a ``search_path``-scoped
+    throwaway schema, or the refused placeholder filename the store doors
+    reject before touching anything.
+    """
+    assert observed, (
+        "$SCITEX_STORE_DSN is absent: the resolvers fall through to the "
+        "user-canonical target — the live board. The harness must SET it "
+        "either way (throwaway schema, or refused placeholder)."
+    )
+    if observed.startswith(("postgres://", "postgresql://")):
+        scope = re.search(r"search_path(?:%3D|=)([^&]*)", observed)
+        assert scope is not None and scope.group(1).lower() != "public", (
+            f"postgres DSN without a non-public search_path scope resolves "
+            f"the live board's tables: {observed!r} (the throwaway must "
+            f"carry search_path=<schema> with public off the path)"
+        )
+    else:
+        # The refused placeholder: a filename, rejected by every store door
+        # before the filesystem is touched — fail-LOUD, zero live writes.
+        assert observed.endswith("cards.db"), (
+            f"$SCITEX_STORE_DSN is neither a scoped DSN nor the refused "
+            f"placeholder: {observed!r}"
+        )
+    return observed
+
+
 def test_the_primitive_dsn_variable_is_pinned_per_test(root_conftest):
-    """The active value names a throwaway schema, never inherited state."""
+    """The active value is SET-EITHER-WAY, never absent, never live-resolving."""
     # Arrange
     _ = root_conftest
     # Act
     observed = os.environ.get(ENV_STORE_DSN)
     # Assert
-    assert observed is not None and "search_path%3Dcards_test_" in observed
+    _assert_set_either_way(observed)
 
 
 def test_a_pinned_dsn_is_scoped_to_a_throwaway_schema(root_conftest):
@@ -95,14 +140,31 @@ def test_a_pinned_dsn_is_scoped_to_a_throwaway_schema(root_conftest):
     assert scoped_if_present
 
 
-def test_an_unavailable_cluster_leaves_no_dsn_at_all(root_conftest):
-    """The other arm of the same guarantee — removal, not inheritance."""
+def test_an_unavailable_cluster_leaves_the_refused_placeholder(root_conftest):
+    """The no-cluster arm of the same guarantee — placeholder, not absence.
+
+    Absence is the dangerous value (resolvers fall through to the live
+    board), so when no throwaway PostgreSQL could be opened the harness
+    points the variable at the refused placeholder: a filename every store
+    door rejects before touching anything. Stated as an implication —
+    with a cluster present this test asserts nothing beyond the scoped-DSN
+    arm — because a skip here would report the same green as a pass on a
+    host where nothing was pinned.
+    """
     # Arrange
     pinned = root_conftest._EPHEMERAL_DSN
     # Act
-    absent_if_unpinned = pinned is not None or ENV_STORE_DSN not in os.environ
+    observed = os.environ.get(ENV_STORE_DSN)
     # Assert
-    assert absent_if_unpinned
+    if pinned is None:
+        assert observed is not None and not observed.startswith(
+            ("postgres://", "postgresql://")
+        ), (
+            "no cluster was opened, so $SCITEX_STORE_DSN must be the refused "
+            f"placeholder (fail-LOUD filename), never absent: {observed!r}"
+        )
+    else:
+        _assert_set_either_way(observed)
 
 
 def test_the_reason_is_recorded_when_nothing_could_be_opened(root_conftest):
@@ -116,34 +178,34 @@ def test_the_reason_is_recorded_when_nothing_could_be_opened(root_conftest):
 
 
 def test_the_card_store_variable_is_still_pinned_too():
-    """POSITIVE CONTROL for the three tests above.
+    """POSITIVE CONTROL for the tests above.
 
     Each of them would also pass against a conftest that had been gutted —
     "the variable is absent" is what a broken harness looks like as well as
     what a correct one looks like. This asserts the pin that has been in place
-    since 2026-07 is still in place, so an empty reading above is evidence
+    since 2026-07 is still in place, so a passing reading above is evidence
     about ``SCITEX_STORE_DSN`` rather than about the harness having stopped.
 
-    THE ASSERTION IS NO LONGER A ``cards.db`` SUFFIX. That suffix described a
-    scratch FILE, and there is one storage engine now: a filename names no
-    store at all, and the source doors refuse it. The per-test pin is a
-    schema-scoped DSN, so the control checks the property that actually makes
-    it safe — the same one asserted of ``$SCITEX_STORE_DSN`` above, for the
-    same reason. ``public`` is off the ``search_path``, so an unqualified read
-    cannot resolve the live board's tables; it fails to find the relation
-    rather than quietly returning the fleet's cards.
+    THE ASSERTION IS SET-EITHER-WAY, not a ``cards.db`` suffix and not a bare
+    ``search_path`` substring. The suffix era described a scratch FILE that
+    worked as a store; there is one storage engine now and a filename names
+    no store — which is exactly why the harness points the variable at one
+    when no cluster could be opened (refused by every door, fail-LOUD). The
+    property that actually makes the pin safe is the shared helper's: SET
+    (absence resolves live), and either ``search_path``-scoped (``public``
+    off the path, so an unqualified read cannot resolve the live board's
+    tables) or the refused placeholder.
 
-    Still a control rather than a fourth copy of the same test: it reads a
-    DIFFERENT variable, pinned by a DIFFERENT mechanism (the per-test autouse
-    fixture, not the import-time session pin), so a gutted conftest cannot
-    make both read correctly by accident.
+    Still a control rather than a fourth copy of the same test: it reads the
+    variable WITHOUT the ``root_conftest`` fixture, pinned by the per-test
+    autouse fixture rather than observed through the session pin, so a
+    gutted conftest cannot make both read correctly by accident.
     """
     # Arrange
-    expected_marker = "search_path"
     # Act
-    observed = os.environ.get("SCITEX_STORE_DSN", "")
+    observed = os.environ.get("SCITEX_STORE_DSN")
     # Assert
-    assert expected_marker in observed
+    _assert_set_either_way(observed)
 
 
 # EOF

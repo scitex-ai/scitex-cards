@@ -18,6 +18,13 @@ to change, the pairing is the safety property.
 No mocks. Real store, real ``_inbox`` records: the bug being guarded against
 was mock-shaped (every layer reported success while nothing arrived), so a
 mocked store here would test the wrong thing on purpose.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 4 ``pending`` checks below seed and read the
+ambient per-test store via ``_inbox.enqueue`` / ``pending`` / ``poll_inbox``
+(the live-WRITE path), which is refused without a writable cluster. The
+12 pure ``present`` rendering/budget tests stay unguarded by design
+(no store touch).
 """
 
 from __future__ import annotations
@@ -76,7 +83,7 @@ def _records(count, body_chars=200):
 # --------------------------------------------------------------------------- #
 # The pull is a PURE READ                                                     #
 # --------------------------------------------------------------------------- #
-def test_pending_returns_the_unseen_notification():
+def test_pending_returns_the_unseen_notification(postgres_dsn):
     # Arrange
     ids = _seed(1)
 
@@ -87,7 +94,7 @@ def test_pending_returns_the_unseen_notification():
     assert [r["id"] for r in got] == ids
 
 
-def test_pending_does_not_advance_the_cursor():
+def test_pending_does_not_advance_the_cursor(postgres_dsn):
     """READING NEVER CONFIRMS. A read that acks turns a transient failure into
     permanent loss — the exact defect that destroyed five operator DMs."""
     # Arrange
@@ -103,7 +110,7 @@ def test_pending_does_not_advance_the_cursor():
     assert len(still_unseen) == 1
 
 
-def test_pending_finds_notifications_filed_under_the_resolved_user_id():
+def test_pending_finds_notifications_filed_under_the_resolved_user_id(postgres_dsn):
     """A producer files under the stable ``u_*`` id for a REGISTERED agent.
     Reading only the raw name is the same silent-miss shape as the outage:
     the message is in the store, readable, and the reader looks elsewhere."""
@@ -125,7 +132,7 @@ def test_pending_finds_notifications_filed_under_the_resolved_user_id():
     assert [r["id"] for r in got] == [filed]
 
 
-def test_pending_reports_nothing_for_an_agent_with_no_mail():
+def test_pending_reports_nothing_for_an_agent_with_no_mail(postgres_dsn):
     # Arrange — nothing enqueued for this name.
 
     # Act

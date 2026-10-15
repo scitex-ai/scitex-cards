@@ -26,6 +26,14 @@ whose ``.parent`` hosts the ``tasks/<id>/`` dirs (the git test uses a
 real repo-internal lane for exactly that reason).
 
 Real ``tmp_path`` lanes + real ``git init``; no mocks (STX-NM / PA-306).
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every test below seeds the ambient per-test
+store via ``seed_db_from_doc(doc, $SCITEX_STORE_DSN)`` — the
+live-WRITE path — so without a writable cluster they must ERROR at
+fixture setup with the no-writable-PostgreSQL reason+remedy instead
+of failing bare mid-test on the refused placeholder. No pure tests
+in this file: every check seeds the store.
 """
 
 from __future__ import annotations
@@ -86,14 +94,14 @@ def _git_init(root: Path) -> None:
 class TestNoteByteEquality:
     """The `note` field's bytes must round-trip through README.md."""
 
-    def test_note_appears_verbatim_in_readme_head(self, tmp_path):
+    def test_note_appears_verbatim_in_readme_head(self, tmp_path, postgres_dsn):
         # Arrange — short note, no title overflow, no long comments.
         original_note = "First line.\nSecond line.\n\nThird with 日本語."
         _seed_db(
             "tasks:\n"
             "  - id: a\n"
             "    title: A\n"
-            "    status: pending\n"
+            "    status: deferred\n"
             f"    note: {yaml.safe_dump(original_note).strip()}\n",
         )
         lane = _store_lane()
@@ -105,10 +113,10 @@ class TestNoteByteEquality:
         )
         assert readme.startswith(original_note)
 
-    def test_note_is_stripped_from_persisted_row(self, tmp_path):
+    def test_note_is_stripped_from_persisted_row(self, tmp_path, postgres_dsn):
         # Arrange
         _seed_db(
-            "tasks:\n  - {id: a, title: A, status: pending, note: 'body here'}\n",
+            "tasks:\n  - {id: a, title: A, status: deferred, note: 'body here'}\n",
         )
         lane = _store_lane()
         # Act
@@ -126,11 +134,11 @@ class TestNoteByteEquality:
 class TestTrimming:
     """Title >120 gets trimmed in the row; full title goes into README."""
 
-    def test_long_title_trimmed_in_persisted_row(self, tmp_path):
+    def test_long_title_trimmed_in_persisted_row(self, tmp_path, postgres_dsn):
         # Arrange
         long_title = "T" * (_mig.MAX_TITLE_CHARS + 50)
         _seed_db(
-            f"tasks:\n  - {{id: a, title: '{long_title}', status: pending}}\n",
+            f"tasks:\n  - {{id: a, title: '{long_title}', status: deferred}}\n",
         )
         lane = _store_lane()
         # Act
@@ -139,11 +147,11 @@ class TestTrimming:
         rows = load_tasks(lane)
         assert len(rows[0]["title"]) == _mig.MAX_TITLE_CHARS
 
-    def test_long_title_full_preserved_in_readme(self, tmp_path):
+    def test_long_title_full_preserved_in_readme(self, tmp_path, postgres_dsn):
         # Arrange
         long_title = "U" * (_mig.MAX_TITLE_CHARS + 50)
         _seed_db(
-            f"tasks:\n  - {{id: a, title: '{long_title}', status: pending}}\n",
+            f"tasks:\n  - {{id: a, title: '{long_title}', status: deferred}}\n",
         )
         lane = _store_lane()
         # Act
@@ -161,10 +169,10 @@ class TestTrimming:
 class TestIdempotent:
     """Re-running the migrator on an already-migrated lane is a no-op."""
 
-    def test_second_apply_writes_nothing(self, tmp_path):
+    def test_second_apply_writes_nothing(self, tmp_path, postgres_dsn):
         # Arrange — initial migration.
         _seed_db(
-            "tasks:\n  - {id: a, title: A, status: pending, note: 'body'}\n",
+            "tasks:\n  - {id: a, title: A, status: deferred, note: 'body'}\n",
         )
         lane = _store_lane()
         _mig.apply_lane(lane)
@@ -180,10 +188,10 @@ class TestIdempotent:
 class TestDryRun:
     """`apply_lane(dry_run=True)` does NOT write to disk."""
 
-    def test_dry_run_leaves_no_readme(self, tmp_path):
+    def test_dry_run_leaves_no_readme(self, tmp_path, postgres_dsn):
         # Arrange
         _seed_db(
-            "tasks:\n  - {id: a, title: A, status: pending, note: 'body'}\n",
+            "tasks:\n  - {id: a, title: A, status: deferred, note: 'body'}\n",
         )
         lane = _store_lane()
         # Act
@@ -191,10 +199,10 @@ class TestDryRun:
         # Assert
         assert not (lane.parent / "tasks" / "a" / "README.md").exists()
 
-    def test_dry_run_leaves_store_unchanged(self, tmp_path):
+    def test_dry_run_leaves_store_unchanged(self, tmp_path, postgres_dsn):
         # Arrange
         _seed_db(
-            "tasks:\n  - {id: a, title: A, status: pending, note: 'body'}\n",
+            "tasks:\n  - {id: a, title: A, status: deferred, note: 'body'}\n",
         )
         lane = _store_lane()
         # Act
@@ -210,7 +218,7 @@ class TestDryRun:
 class TestGitCommit:
     """When the lane's parent is a git repo, the migrator commits."""
 
-    def test_real_git_repo_gets_migrate_commit(self, tmp_path):
+    def test_real_git_repo_gets_migrate_commit(self, tmp_path, postgres_dsn):
         # Arrange — make a git repo, place the lane inside it. The migrator
         # reads rows from the canonical DB (seeded here) and writes this
         # card's tasks/<id>/README.md under the lane's parent, so the
@@ -221,7 +229,7 @@ class TestGitCommit:
         _git_init(repo)
         lane = repo / ".scitex" / "card" / "tasks.yaml"
         _seed_db(
-            "tasks:\n  - {id: a, title: A, status: pending, note: 'body'}\n",
+            "tasks:\n  - {id: a, title: A, status: deferred, note: 'body'}\n",
         )
         # Act
         result = _mig.apply_lane(lane)

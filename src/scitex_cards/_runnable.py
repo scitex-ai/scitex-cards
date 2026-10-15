@@ -8,7 +8,8 @@ upstream closure). Lead a2a `74db4f2d`, 2026-06-14 — TRACK 1
 (dependency-aware tickets) dispatch backbone.
 
 Filter (RUNNABLE-NOW):
-  * ``status`` ∈ {``pending``, ``in_progress``}
+  * ``status`` ∈ {``deferred``, ``in_progress``} (``deferred`` is the
+    backlog state since ``pending`` was abolished 2026-07-10)
   * ``blocker`` is None (an explicitly-blocked row is not runnable)
   * EVERY id in ``depends_on`` references a task whose ``status`` ∈
     {``done``, ``goal``}. A dep on a not-yet-finished task means
@@ -241,8 +242,8 @@ class _NegStr:
 BLOCKED_REASONS: frozenset[str] = frozenset({
     "explicit-blocker",  # status=blocked + blocker field set
     "manual-block",      # status=blocked + no blocker field
-    "depends-on",        # status=pending/in_progress + unresolved depends_on
-    "reverse-blocks",    # status=pending/in_progress + an upstream Z has "blocks: [me]"
+    "depends-on",        # status=deferred/in_progress + unresolved depends_on
+    "reverse-blocks",    # status=deferred/in_progress + an upstream Z has "blocks: [me]"
 })
 
 
@@ -303,11 +304,14 @@ def blocked_tasks(
 
     Notes
     -----
-    Tasks with ``status`` in {done, deferred, failed, goal} are
-    EXCLUDED from the result — they aren't "blocked," they're
-    finished (or, in `goal`'s case, an umbrella that's blocked-by-
-    design). The dispatcher should care about "things I could pick
-    up if X resolved," not "everything that's not running."
+    Tasks with ``status`` outside {deferred, in_progress, blocked} are
+    EXCLUDED from the result — done / failed / goal / cancelled aren't
+    "blocked," they're finished (or, in `goal`'s case, an umbrella that's
+    blocked-by-design). ``deferred`` IS included: it is the backlog state
+    since ``pending`` was abolished 2026-07-10, and a deferred card with
+    an unresolved dep is exactly "things I could pick up if X resolved."
+    The dispatcher should care about "things I could pick up if X
+    resolved," not "everything that's not running."
     """
     snapshot = [t for t in tasks if isinstance(t, dict)]
     status_by_id: dict[str, str] = {
@@ -326,9 +330,10 @@ def blocked_tasks(
 
     for t in snapshot:
         # Filter the candidate set to "things the dispatcher cares
-        # about" — status must be pending/in_progress/blocked. Done /
-        # deferred / failed / goal are not "blocked," they're finished
-        # or by-design.
+        # about" — status must be deferred/in_progress/blocked. Done /
+        # failed / goal / cancelled are not "blocked," they're finished
+        # or by-design (deferred IS a candidate: the backlog state since
+        # pending was abolished 2026-07-10).
         st = t.get("status")
         if st not in RUNNABLE_STATUSES and st != "blocked":
             continue
@@ -376,7 +381,7 @@ def _diagnose_blocked(
             return ("explicit-blocker", [str(blocker)])
         return ("manual-block", [])
 
-    # status ∈ {pending, in_progress}
+    # status ∈ {deferred, in_progress}
     unresolved_deps = [
         up_id
         for up_id in (task.get("depends_on") or [])

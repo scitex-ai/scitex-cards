@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the scitex-cards root CLI group + core verbs (no mocks; CliRunner)."""
+"""Tests for the scitex-cards root CLI group + core verbs (no mocks; CliRunner).
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every seed below targets the ambient per-test
+store, which is refused without a writable cluster.
+"""
 
 from __future__ import annotations
 
@@ -36,7 +41,7 @@ def _seed():
     )
 
 
-def test_list_tasks_command_prints_resolved_task_ids():
+def test_list_tasks_command_prints_resolved_task_ids(postgres_dsn):
     # Arrange
     runner = CliRunner()
     _seed()
@@ -46,7 +51,7 @@ def test_list_tasks_command_prints_resolved_task_ids():
     assert "design" in result.output
 
 
-def test_list_tasks_json_emits_parseable_array():
+def test_list_tasks_json_emits_parseable_array(postgres_dsn):
     # Arrange
     runner = CliRunner()
     _seed()
@@ -57,7 +62,7 @@ def test_list_tasks_json_emits_parseable_array():
     assert ids == ["design", "build"]
 
 
-def test_render_graph_print_mermaid_emits_flowchart_source():
+def test_render_graph_print_mermaid_emits_flowchart_source(postgres_dsn):
     # Arrange
     runner = CliRunner()
     _seed()
@@ -67,7 +72,7 @@ def test_render_graph_print_mermaid_emits_flowchart_source():
     assert result.output.startswith("flowchart TB")
 
 
-def test_render_graph_print_mermaid_includes_dependency_edge():
+def test_render_graph_print_mermaid_includes_dependency_edge(postgres_dsn):
     # Arrange
     runner = CliRunner()
     _seed()

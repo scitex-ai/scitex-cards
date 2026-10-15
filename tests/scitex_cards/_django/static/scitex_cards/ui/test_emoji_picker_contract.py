@@ -13,7 +13,7 @@ running the module, and all three are the kind of thing that breaks silently:
    literal characters. A single absolute URL added later would reintroduce
    the failure without any local symptom.
 
-2. HARVESTABILITY. The picker is written to move into scitex-ui as a shared
+2. HARVESTABILITY. The picker is written to move into the SDK as a shared
    primitive. That only stays true while it depends on nothing about this
    page: no ``.msg``, no ``#compose``, no chat ids. The moment a rule reaches
    for a chat ancestor, lifting the file stops being a move and becomes a
@@ -143,7 +143,7 @@ def test_emoji_are_literal_characters_not_codepoint_escapes() -> None:
 def test_stylesheet_names_no_chat_specific_ancestor(chat_specific: str) -> None:
     """The component must style itself from its own class names only. A rule
     hung off a chat ancestor is a dependency that does not travel with the
-    file into scitex-ui."""
+    file into the SDK."""
     # Arrange
     # Act
     css = _strip_comments(_read(_CSS_FILE))
@@ -200,7 +200,7 @@ def test_stylesheet_follows_the_os_dark_preference() -> None:
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_an_explicit_theme_attribute_overrides_the_os(theme: str) -> None:
-    """scitex-ui's contract is <html data-theme="…">. An explicit choice must
+    """The SDK's contract is <html data-theme="…">. An explicit choice must
     beat the OS preference in BOTH directions, or a viewer who picked light
     on a dark laptop gets a dark widget on a light page."""
     # Arrange

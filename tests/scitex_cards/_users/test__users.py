@@ -33,8 +33,13 @@ def _full_user_kwargs():
 
 
 @pytest.fixture()
-def round_tripped_user(tmp_path):
+def round_tripped_user(tmp_path, postgres_dsn):
     """A fully-specified user plus the copy read FRESH off disk.
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+
 
     The reload tests below each pin ONE persisted field; splitting them
     means a dropped field names itself instead of hiding behind whichever
@@ -45,7 +50,7 @@ def round_tripped_user(tmp_path):
     return created, _users.get_user(created.id, store=store)
 
 
-def test_register_user_generates_stable_prefixed_id(tmp_path):
+def test_register_user_generates_stable_prefixed_id(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -54,7 +59,7 @@ def test_register_user_generates_stable_prefixed_id(tmp_path):
     assert user.id.startswith("u_")
 
 
-def test_register_user_id_is_twelve_hex_chars(tmp_path):
+def test_register_user_id_is_twelve_hex_chars(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -64,7 +69,7 @@ def test_register_user_id_is_twelve_hex_chars(tmp_path):
     assert len(token) == 12 and all(c in "0123456789abcdef" for c in token)
 
 
-def test_register_user_ids_are_unique(tmp_path):
+def test_register_user_ids_are_unique(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -138,7 +143,7 @@ def test_reloaded_user_carries_a_created_at_stamp(round_tripped_user):
     assert created_at
 
 
-def test_register_user_string_names_coerced_to_list(tmp_path):
+def test_register_user_string_names_coerced_to_list(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -151,12 +156,20 @@ def test_register_user_string_names_coerced_to_list(tmp_path):
 # tasks in the SAME file are untouched by a user write                       #
 # --------------------------------------------------------------------------- #
 @pytest.fixture()
-def store_with_two_tasks(tmp_path):
+def store_with_two_tasks(tmp_path, postgres_dsn):
     """A store carrying two tasks, plus the task payload as it stood BEFORE
-    any user write touched the same file."""
+    any user write touched the same file.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    ambient ``add_task`` below would raise — the fixture fails first,
+    LOUDLY, with the reason and the remedy. (Same guard as the ``store``
+    fixtures in _django/.)
+    """
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(
-        store, id="t1", title="Task one", status="pending", assignee="agent:test-suite"
+        # `pending` was abolished 2026-07-10 — `deferred` is the successor default.
+        store, id="t1", title="Task one", status="deferred", assignee="agent:test-suite"
     )
     _store.add_task(
         store,
@@ -187,26 +200,38 @@ def test_user_write_leaves_the_users_section_readable(store_with_two_tasks):
     assert [u.names[0] for u in _users.load_users(store)] == ["owner-1"]
 
 
-def test_task_write_after_user_write_keeps_users(tmp_path):
-    """The user survives a subsequent task write (round-trip preserves it)."""
+def test_task_write_after_user_write_keeps_users(tmp_path, postgres_dsn):
+    """The user survives a subsequent task write (round-trip preserves it).
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the fixture above: the ``add_task`` below writes
+    the ambient store, which is refused without a cluster.
+    """
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     user = _users.register_user(kind="agent", names=["owner-1"], store=store)
     # Act
     _store.add_task(
-        store, id="t1", title="Task one", status="pending", assignee="agent:test-suite"
+        # `pending` was abolished 2026-07-10 — `deferred` is the successor default.
+        store, id="t1", title="Task one", status="deferred", assignee="agent:test-suite"
     )
     # Assert
     assert _users.get_user(user.id, store=store) is not None
 
 
-def test_task_write_after_user_write_records_the_task(tmp_path):
+def test_task_write_after_user_write_records_the_task(tmp_path, postgres_dsn):
+    """Records the task alongside the user.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard: the ``add_task`` below writes the ambient store.
+    """
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _users.register_user(kind="agent", names=["owner-1"], store=store)
     # Act
     _store.add_task(
-        store, id="t1", title="Task one", status="pending", assignee="agent:test-suite"
+        # `pending` was abolished 2026-07-10 — `deferred` is the successor default.
+        store, id="t1", title="Task one", status="deferred", assignee="agent:test-suite"
     )
     # Assert
     assert [t["id"] for t in _model.load_tasks(store)] == ["t1"]
@@ -215,7 +240,7 @@ def test_task_write_after_user_write_records_the_task(tmp_path):
 # --------------------------------------------------------------------------- #
 # validate_user: fail-loud                                                   #
 # --------------------------------------------------------------------------- #
-def test_validate_user_rejects_bad_kind(tmp_path):
+def test_validate_user_rejects_bad_kind(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -224,7 +249,7 @@ def test_validate_user_rejects_bad_kind(tmp_path):
         _users.register_user(kind="robot", names=["x"], store=store)
 
 
-def test_validate_user_rejects_empty_names(tmp_path):
+def test_validate_user_rejects_empty_names(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -233,7 +258,7 @@ def test_validate_user_rejects_empty_names(tmp_path):
         _users.register_user(kind="agent", names=[], store=store)
 
 
-def test_validate_user_rejects_empty_string_name(tmp_path):
+def test_validate_user_rejects_empty_string_name(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -242,7 +267,7 @@ def test_validate_user_rejects_empty_string_name(tmp_path):
         _users.register_user(kind="agent", names=[""], store=store)
 
 
-def test_validate_user_rejects_malformed_host_at_name(tmp_path):
+def test_validate_user_rejects_malformed_host_at_name(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     malformed = "host@"  # empty name half
@@ -254,7 +279,7 @@ def test_validate_user_rejects_malformed_host_at_name(tmp_path):
         )
 
 
-def test_validate_user_accepts_bare_host_at_name(tmp_path):
+def test_validate_user_accepts_bare_host_at_name(tmp_path, postgres_dsn):
     """A bare name (no '@') is a valid host-unknown id per
     canonical_agent_id."""
     # Arrange
@@ -270,7 +295,7 @@ def test_validate_user_accepts_bare_host_at_name(tmp_path):
 # --------------------------------------------------------------------------- #
 # name uniqueness across the registry                                        #
 # --------------------------------------------------------------------------- #
-def test_duplicate_name_on_register_rejected(tmp_path):
+def test_duplicate_name_on_register_rejected(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     _users.register_user(kind="agent", names=["dup"], store=store)
@@ -280,7 +305,7 @@ def test_duplicate_name_on_register_rejected(tmp_path):
         _users.register_user(kind="human", names=["dup"], store=store)
 
 
-def test_duplicate_name_on_add_alias_rejected(tmp_path):
+def test_duplicate_name_on_add_alias_rejected(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     a = _users.register_user(kind="agent", names=["a-name"], store=store)
@@ -291,7 +316,7 @@ def test_duplicate_name_on_add_alias_rejected(tmp_path):
         _users.add_alias(a.id, "b-name", store=store)
 
 
-def test_add_alias_is_idempotent(tmp_path):
+def test_add_alias_is_idempotent(tmp_path, postgres_dsn):
     """Re-adding a name the user already has must be a no-op, not a raise."""
     # Arrange
     store = tmp_path / "tasks.yaml"
@@ -302,7 +327,7 @@ def test_add_alias_is_idempotent(tmp_path):
     assert _users.get_user(a.id, store=store) is not None
 
 
-def test_add_alias_no_op_does_not_duplicate_the_name(tmp_path):
+def test_add_alias_no_op_does_not_duplicate_the_name(tmp_path, postgres_dsn):
     """...and it must not leave ["a-name", "a-name"] behind."""
     # Arrange
     store = tmp_path / "tasks.yaml"
@@ -316,7 +341,7 @@ def test_add_alias_no_op_does_not_duplicate_the_name(tmp_path):
 # --------------------------------------------------------------------------- #
 # resolve_user: alias, host_at_name, unknown, post-rename old alias          #
 # --------------------------------------------------------------------------- #
-def test_resolve_user_by_alias(tmp_path):
+def test_resolve_user_by_alias(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     user = _users.register_user(kind="agent", names=["scitex-dev"], store=store)
@@ -326,7 +351,7 @@ def test_resolve_user_by_alias(tmp_path):
     assert found is not None and found.id == user.id
 
 
-def test_resolve_user_by_host_at_name(tmp_path):
+def test_resolve_user_by_host_at_name(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     user = _users.register_user(
@@ -341,7 +366,7 @@ def test_resolve_user_by_host_at_name(tmp_path):
     assert found is not None and found.id == user.id
 
 
-def test_resolve_user_unknown_returns_none(tmp_path):
+def test_resolve_user_unknown_returns_none(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     _users.register_user(kind="agent", names=["scitex-dev"], store=store)
@@ -352,10 +377,15 @@ def test_resolve_user_unknown_returns_none(tmp_path):
 
 
 @pytest.fixture()
-def renamed_user(tmp_path):
+def renamed_user(tmp_path, postgres_dsn):
     """A user originally named proj-scitex-dev, then renamed: the rename adds
     the new name as an alias while KEEPING the old one, so historic card
-    references still resolve. Yields (store, user)."""
+    references still resolve. Yields (store, user).
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     store = tmp_path / "tasks.yaml"
     user = _users.register_user(kind="agent", names=["proj-scitex-dev"], store=store)
     _users.add_alias(user.id, "scitex-dev", store=store)
@@ -384,7 +414,7 @@ def test_new_name_resolves_to_the_same_stable_id(renamed_user):
 # --------------------------------------------------------------------------- #
 # delivery endpoint: turn_url / a2a_port field + user_turn_url helper         #
 # --------------------------------------------------------------------------- #
-def test_register_user_persists_explicit_turn_url(tmp_path):
+def test_register_user_persists_explicit_turn_url(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     created = _users.register_user(
@@ -399,7 +429,7 @@ def test_register_user_persists_explicit_turn_url(tmp_path):
     assert reloaded is not None and reloaded.turn_url == "https://explicit/v1/turn/x"
 
 
-def test_register_user_persists_a2a_port(tmp_path):
+def test_register_user_persists_a2a_port(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     created = _users.register_user(
@@ -415,7 +445,7 @@ def test_register_user_persists_a2a_port(tmp_path):
     assert reloaded is not None and reloaded.a2a_port == 19007
 
 
-def test_user_turn_url_prefers_explicit_over_port(tmp_path):
+def test_user_turn_url_prefers_explicit_over_port(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     user = _users.register_user(
@@ -432,7 +462,7 @@ def test_user_turn_url_prefers_explicit_over_port(tmp_path):
     assert url == "https://explicit/turn"
 
 
-def test_user_turn_url_derives_from_port_and_host_at_name(tmp_path):
+def test_user_turn_url_derives_from_port_and_host_at_name(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     user = _users.register_user(
@@ -448,7 +478,7 @@ def test_user_turn_url_derives_from_port_and_host_at_name(tmp_path):
     assert url == "http://my-host:19007/v1/turn"
 
 
-def test_user_turn_url_bare_host_at_name_uses_loopback(tmp_path):
+def test_user_turn_url_bare_host_at_name_uses_loopback(tmp_path, postgres_dsn):
     """A bare (host-unknown) id → loopback host, mirroring the sac-registry
     a2a_port derivation convention."""
     # Arrange
@@ -462,7 +492,7 @@ def test_user_turn_url_bare_host_at_name_uses_loopback(tmp_path):
     assert url == "http://127.0.0.1:18080/v1/turn"
 
 
-def test_user_turn_url_none_when_no_endpoint(tmp_path):
+def test_user_turn_url_none_when_no_endpoint(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     user = _users.register_user(kind="agent", names=["proj-none"], store=store)
@@ -472,7 +502,7 @@ def test_user_turn_url_none_when_no_endpoint(tmp_path):
     assert url is None
 
 
-def test_validate_user_rejects_non_positive_a2a_port(tmp_path):
+def test_validate_user_rejects_non_positive_a2a_port(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -481,7 +511,7 @@ def test_validate_user_rejects_non_positive_a2a_port(tmp_path):
         _users.register_user(kind="agent", names=["x"], a2a_port=0, store=store)
 
 
-def test_validate_user_rejects_non_int_a2a_port(tmp_path):
+def test_validate_user_rejects_non_int_a2a_port(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -490,7 +520,7 @@ def test_validate_user_rejects_non_int_a2a_port(tmp_path):
         _users.register_user(kind="agent", names=["x"], a2a_port="19007", store=store)
 
 
-def test_validate_user_rejects_empty_string_turn_url(tmp_path):
+def test_validate_user_rejects_empty_string_turn_url(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -503,7 +533,9 @@ def test_validate_user_rejects_empty_string_turn_url(tmp_path):
 #: and `to_dict` omits them entirely so the YAML stays compact. The three
 #: tests below split that one guarantee.
 @pytest.fixture()
-def endpointless_user(tmp_path):
+def endpointless_user(tmp_path, postgres_dsn):
+    # ``postgres_dsn`` is requested but is not the seed target — same
+    # fail-LOUD guard as the ``store`` fixtures in _django/.
     store = tmp_path / "tasks.yaml"
     created = _users.register_user(kind="human", names=["alice"], store=store)
     return created, _users.get_user(created.id, store=store)
@@ -539,7 +571,7 @@ def test_endpoint_absent_user_omits_a2a_port_from_the_yaml(endpointless_user):
 # --------------------------------------------------------------------------- #
 # set_notify                                                                  #
 # --------------------------------------------------------------------------- #
-def test_set_notify_replaces_dict(tmp_path):
+def test_set_notify_replaces_dict(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     user = _users.register_user(kind="agent", names=["x"], notify={"a": 1}, store=store)
@@ -550,7 +582,7 @@ def test_set_notify_replaces_dict(tmp_path):
     assert reloaded is not None and reloaded.notify == {"b": 2}
 
 
-def test_set_notify_unknown_user_raises(tmp_path):
+def test_set_notify_unknown_user_raises(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -562,7 +594,7 @@ def test_set_notify_unknown_user_raises(tmp_path):
 # --------------------------------------------------------------------------- #
 # list_users / get_user                                                      #
 # --------------------------------------------------------------------------- #
-def test_list_users_returns_all(tmp_path):
+def test_list_users_returns_all(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     _users.register_user(kind="agent", names=["a"], store=store)
@@ -573,8 +605,12 @@ def test_list_users_returns_all(tmp_path):
     assert sorted(u.names[0] for u in users) == ["a", "b"]
 
 
-def test_list_users_empty_when_no_section(tmp_path):
-    """Tasks but no users: an absent section reads as [], never a KeyError."""
+def test_list_users_empty_when_no_section(tmp_path, postgres_dsn):
+    """Tasks but no users: an absent section reads as [], never a KeyError.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard: the ``add_task`` below writes the ambient store.
+    """
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="t1", title="Task one", assignee="agent:test-suite")
@@ -584,7 +620,7 @@ def test_list_users_empty_when_no_section(tmp_path):
     assert users == []
 
 
-def test_get_user_unknown_returns_none(tmp_path):
+def test_get_user_unknown_returns_none(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     _users.register_user(kind="agent", names=["a"], store=store)
@@ -724,7 +760,7 @@ def test_is_alive_accepts_plain_offset_stamp():
 # --------------------------------------------------------------------------- #
 # last_seen persistence + touch_user heartbeat                               #
 # --------------------------------------------------------------------------- #
-def test_a_new_user_has_never_been_seen(tmp_path):
+def test_a_new_user_has_never_been_seen(tmp_path, postgres_dsn):
     """Registration is not a heartbeat — `last_seen` starts empty."""
     # Arrange
     store = tmp_path / "tasks.yaml"
@@ -734,7 +770,7 @@ def test_a_new_user_has_never_been_seen(tmp_path):
     assert created.last_seen is None
 
 
-def test_touch_user_stamps_last_seen(tmp_path):
+def test_touch_user_stamps_last_seen(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     _users.register_user(kind="agent", names=["hb"], store=store)
@@ -744,7 +780,7 @@ def test_touch_user_stamps_last_seen(tmp_path):
     assert touched is not None and touched.last_seen
 
 
-def test_last_seen_round_trips_on_reload(tmp_path):
+def test_last_seen_round_trips_on_reload(tmp_path, postgres_dsn):
     """...and the stamp is on DISK, not only on the returned object."""
     # Arrange
     store = tmp_path / "tasks.yaml"
@@ -756,7 +792,7 @@ def test_last_seen_round_trips_on_reload(tmp_path):
     assert reloaded is not None and reloaded.last_seen == touched.last_seen
 
 
-def test_touch_user_by_id_finds_the_record(tmp_path):
+def test_touch_user_by_id_finds_the_record(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     user = _users.register_user(
@@ -771,7 +807,7 @@ def test_touch_user_by_id_finds_the_record(tmp_path):
     assert touched is not None
 
 
-def test_touch_user_by_host_at_name_finds_the_record(tmp_path):
+def test_touch_user_by_host_at_name_finds_the_record(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     _users.register_user(
@@ -786,7 +822,7 @@ def test_touch_user_by_host_at_name_finds_the_record(tmp_path):
     assert touched is not None
 
 
-def test_touch_user_unknown_returns_none(tmp_path):
+def test_touch_user_unknown_returns_none(tmp_path, postgres_dsn):
     """An unregistered actor has no record to stamp → None (never raises)."""
     # Arrange
     store = tmp_path / "tasks.yaml"
@@ -798,10 +834,15 @@ def test_touch_user_unknown_returns_none(tmp_path):
 
 
 @pytest.fixture()
-def touched_user(tmp_path):
+def touched_user(tmp_path, postgres_dsn):
     """A fully-specified user, heartbeat-stamped once. The heartbeat write
     rewrites the whole users section, so each field below gets its own test:
-    a dropped key must name itself."""
+    a dropped key must name itself.
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     store = tmp_path / "tasks.yaml"
     created = _users.register_user(
         kind="agent",
@@ -859,8 +900,13 @@ def test_touch_user_writes_the_last_seen_stamp(touched_user):
     assert last_seen
 
 
-def test_store_action_stamps_last_seen_on_actor(tmp_path, env):
-    """A store action (comment) by a REGISTERED actor stamps its last_seen."""
+def test_store_action_stamps_last_seen_on_actor(tmp_path, env, postgres_dsn):
+    """A store action (comment) by a REGISTERED actor stamps its last_seen.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard: the ``add_task``/``comment_task`` below write the
+    ambient store, which is refused without a cluster.
+    """
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _users.register_user(kind="agent", names=["actor-1"], store=store)

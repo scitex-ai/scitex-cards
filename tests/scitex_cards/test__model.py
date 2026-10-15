@@ -36,13 +36,13 @@ def _write(tmp_path, text):
     return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 
-def test_load_tasks_returns_validated_list_in_order(tmp_path):
+def test_load_tasks_returns_validated_list_in_order(tmp_path, postgres_dsn):
     # Arrange
     store = _write(
         tmp_path,
         "tasks:\n"
         "  - {id: a, title: First, status: done}\n"
-        "  - {id: b, title: Second, status: pending}\n",
+        "  - {id: b, title: Second, status: deferred}\n",
     )
     # Act
     tasks = load_tasks(store)
@@ -50,7 +50,7 @@ def test_load_tasks_returns_validated_list_in_order(tmp_path):
     assert [t["id"] for t in tasks] == ["a", "b"]
 
 
-def test_load_tasks_accepts_goal_status(tmp_path):
+def test_load_tasks_accepts_goal_status(tmp_path, postgres_dsn):
     # Arrange
     store = _write(tmp_path, "tasks:\n  - {id: north, title: Big Goal, status: goal}\n")
     # Act
@@ -83,7 +83,7 @@ def test_load_tasks_raises_on_duplicate_id():
 _BAD_STATUS_STORE = "tasks:\n  - {id: x, title: X, status: wibble}\n"
 
 
-def test_load_tasks_warns_on_an_unknown_status_value(tmp_path):
+def test_load_tasks_warns_on_an_unknown_status_value(tmp_path, postgres_dsn):
     # Arrange
     store = _write(tmp_path, _BAD_STATUS_STORE)
     # Act
@@ -93,7 +93,7 @@ def test_load_tasks_warns_on_an_unknown_status_value(tmp_path):
         load_tasks(store)
 
 
-def test_load_tasks_still_returns_the_row_with_its_unknown_status(tmp_path):
+def test_load_tasks_still_returns_the_row_with_its_unknown_status(tmp_path, postgres_dsn):
     # Arrange
     store = _write(tmp_path, _BAD_STATUS_STORE)
     # Act
@@ -106,7 +106,7 @@ def test_load_tasks_still_returns_the_row_with_its_unknown_status(tmp_path):
 
 def test_load_tasks_raises_on_missing_title():
     # Arrange — a NOT-NULL title cannot be seeded; test the validator directly.
-    tasks = [{"id": "notitle", "status": "pending"}]
+    tasks = [{"id": "notitle", "status": "deferred"}]
     # Act
     ctx = pytest.raises(TaskValidationError)
     # Assert
@@ -116,7 +116,7 @@ def test_load_tasks_raises_on_missing_title():
 
 def test_load_tasks_raises_on_missing_id():
     # Arrange
-    tasks = [{"title": "No Id", "status": "pending"}]
+    tasks = [{"title": "No Id", "status": "deferred"}]
     # Act
     ctx = pytest.raises(TaskValidationError)
     # Assert
@@ -134,7 +134,7 @@ def test_load_tasks_raises_when_tasks_not_a_list():
         _validate_tasks("not-a-list", source="x", strict=False)
 
 
-def test_load_tasks_accepts_integer_priority(tmp_path):
+def test_load_tasks_accepts_integer_priority(tmp_path, postgres_dsn):
     # Arrange
     store = _write(
         tmp_path,
@@ -166,7 +166,7 @@ def test_load_tasks_rejects_boolean_priority():
         _validate_tasks(tasks, source="x", strict=False)
 
 
-def test_save_tasks_round_trip_preserves_priority(tmp_path):
+def test_save_tasks_round_trip_preserves_priority(tmp_path, postgres_dsn):
     # Arrange
     store = _write(
         tmp_path,
@@ -181,7 +181,7 @@ def test_save_tasks_round_trip_preserves_priority(tmp_path):
     assert reloaded[0]["priority"] == 7
 
 
-def test_save_tasks_round_trips_data_across_rewrite(tmp_path):
+def test_save_tasks_round_trips_data_across_rewrite(tmp_path, postgres_dsn):
     # Contract CHANGE (fix/fast-store-write): the write path swapped the
     # slow ruamel round-trip (which preserved hand-written comments) for a
     # fast safe dump. Comments are INTENTIONALLY dropped — the store is
@@ -203,7 +203,7 @@ def test_save_tasks_round_trips_data_across_rewrite(tmp_path):
     assert reloaded == [{"id": "a", "title": "First", "status": "done", "priority": 1}]
 
 
-def test_save_tasks_raises_on_bad_priority_type(tmp_path):
+def test_save_tasks_raises_on_bad_priority_type(tmp_path, postgres_dsn):
     # Arrange
     store = _write(tmp_path, "tasks:\n  - {id: a, title: First, status: done}\n")
     tasks = load_tasks(store)
@@ -215,7 +215,7 @@ def test_save_tasks_raises_on_bad_priority_type(tmp_path):
         save_tasks(tasks, store)
 
 
-def test_save_tasks_does_not_write_when_validation_fails(tmp_path):
+def test_save_tasks_does_not_write_when_validation_fails(tmp_path, postgres_dsn):
     # Arrange
     # STRUCTURAL fault (missing title) still fails loud and writes nothing.
     # (A bad status VALUE now warns-and-writes — operator ruling 2026-07-10.)
@@ -235,11 +235,11 @@ def test_save_tasks_does_not_write_when_validation_fails(tmp_path):
     assert reloaded == [{"id": "a", "title": "First", "status": "done"}]
 
 
-def test_save_tasks_writes_fresh_store_when_absent(tmp_path):
+def test_save_tasks_writes_fresh_store_when_absent(tmp_path, postgres_dsn):
     # Arrange — the canonical DB is bootstrapped empty; the first write
     # populates it (there is no file to pre-create).
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    tasks = [{"id": "a", "title": "First", "status": "pending", "priority": 1}]
+    tasks = [{"id": "a", "title": "First", "status": "deferred", "priority": 1}]
     # Act
     save_tasks(tasks, store)
     reloaded = load_tasks(store)
@@ -250,11 +250,11 @@ def test_save_tasks_writes_fresh_store_when_absent(tmp_path):
 _PARENT_STORE_TEXT = (
     "tasks:\n"
     "  - {id: hub, title: Hub, status: goal}\n"
-    "  - {id: child, title: Child, status: pending, parent: hub}\n"
+    "  - {id: child, title: Child, status: deferred, parent: hub}\n"
 )
 
 
-def test_load_tasks_reads_parent_id_on_child(tmp_path):
+def test_load_tasks_reads_parent_id_on_child(tmp_path, postgres_dsn):
     # Arrange — additive-optional `parent` is a task-id string identifying the
     # node this task nests under (drill-down view follows this relation).
     store = _write(tmp_path, _PARENT_STORE_TEXT)
@@ -264,7 +264,7 @@ def test_load_tasks_reads_parent_id_on_child(tmp_path):
     assert by_id["child"]["parent"] == "hub"
 
 
-def test_load_tasks_leaves_parentless_task_without_parent(tmp_path):
+def test_load_tasks_leaves_parentless_task_without_parent(tmp_path, postgres_dsn):
     # Arrange
     store = _write(tmp_path, _PARENT_STORE_TEXT)
     # Act
@@ -273,11 +273,11 @@ def test_load_tasks_leaves_parentless_task_without_parent(tmp_path):
     assert by_id["hub"].get("parent") is None
 
 
-def test_load_tasks_treats_missing_parent_as_optional(tmp_path):
+def test_load_tasks_treats_missing_parent_as_optional(tmp_path, postgres_dsn):
     # Arrange — pre-`parent` YAML must keep loading unchanged.
     store = _write(
         tmp_path,
-        "tasks:\n  - {id: solo, title: Solo, status: pending}\n",
+        "tasks:\n  - {id: solo, title: Solo, status: deferred}\n",
     )
     # Act
     tasks = load_tasks(store)
@@ -306,13 +306,13 @@ def test_load_tasks_raises_on_empty_string_parent():
         _validate_tasks(tasks, source="x", strict=False)
 
 
-def test_save_tasks_round_trip_preserves_parent(tmp_path):
+def test_save_tasks_round_trip_preserves_parent(tmp_path, postgres_dsn):
     # Arrange
     store = _write(
         tmp_path,
         "tasks:\n"
         "  - {id: hub, title: Hub, status: goal}\n"
-        "  - {id: child, title: Child, status: pending, parent: hub}\n",
+        "  - {id: child, title: Child, status: deferred, parent: hub}\n",
     )
     tasks = load_tasks(store)
     # Act — touch an unrelated field and rewrite; `parent` must survive.
@@ -326,7 +326,7 @@ def test_save_tasks_round_trip_preserves_parent(tmp_path):
     assert child["parent"] == "hub"
 
 
-def test_load_tasks_treats_missing_comments_as_optional(tmp_path):
+def test_load_tasks_treats_missing_comments_as_optional(tmp_path, postgres_dsn):
     # Arrange — pre-`comments` YAML must keep loading unchanged.
     store = _write(
         tmp_path,
@@ -338,7 +338,7 @@ def test_load_tasks_treats_missing_comments_as_optional(tmp_path):
     assert "comments" not in tasks[0]
 
 
-def test_load_tasks_accepts_valid_comments(tmp_path):
+def test_load_tasks_accepts_valid_comments(tmp_path, postgres_dsn):
     # Arrange — a comment with a non-empty text is valid.
     store = _write(
         tmp_path,
@@ -385,14 +385,14 @@ def test_load_tasks_raises_on_comment_missing_text():
 # --------------------------------------------------------------------------- #
 # Phase 1 additions — scope / assignee / _log_meta validation                 #
 # --------------------------------------------------------------------------- #
-def test_load_accepts_scope(tmp_path):
+def test_load_accepts_scope(tmp_path, postgres_dsn):
     # Arrange
     store = _write(
         tmp_path,
         "tasks:\n"
         "  - id: a\n"
         "    title: A\n"
-        "    status: pending\n"
+        "    status: deferred\n"
         "    scope: agent:proj-scitex-cards\n"
         "    assignee: agent:lead\n",
     )
@@ -402,14 +402,14 @@ def test_load_accepts_scope(tmp_path):
     assert tasks[0]["scope"] == "agent:proj-scitex-cards"
 
 
-def test_load_accepts_assignee(tmp_path):
+def test_load_accepts_assignee(tmp_path, postgres_dsn):
     # Arrange
     store = _write(
         tmp_path,
         "tasks:\n"
         "  - id: a\n"
         "    title: A\n"
-        "    status: pending\n"
+        "    status: deferred\n"
         "    scope: agent:proj-scitex-cards\n"
         "    assignee: agent:lead\n",
     )
@@ -421,7 +421,7 @@ def test_load_accepts_assignee(tmp_path):
 
 def test_load_rejects_non_string_scope():
     # Arrange
-    tasks = [{"id": "a", "title": "A", "status": "pending", "scope": 42}]
+    tasks = [{"id": "a", "title": "A", "status": "deferred", "scope": 42}]
     # Act
     ctx = pytest.raises(TaskValidationError, match="non-string scope")
     # Assert
@@ -431,7 +431,7 @@ def test_load_rejects_non_string_scope():
 
 def test_load_rejects_empty_string_assignee():
     # Arrange
-    tasks = [{"id": "a", "title": "A", "status": "pending", "assignee": ""}]
+    tasks = [{"id": "a", "title": "A", "status": "deferred", "assignee": ""}]
     # Act
     ctx = pytest.raises(TaskValidationError, match="assignee")
     # Assert
@@ -439,7 +439,7 @@ def test_load_rejects_empty_string_assignee():
         _validate_tasks(tasks, source="x", strict=False)
 
 
-def test_load_accepts_log_meta_mapping(tmp_path):
+def test_load_accepts_log_meta_mapping(tmp_path, postgres_dsn):
     # Arrange
     store = _write(
         tmp_path,
@@ -467,7 +467,7 @@ def test_load_rejects_non_mapping_log_meta():
         _validate_tasks(tasks, source="x", strict=False)
 
 
-def test_save_tasks_round_trip_preserves_log_meta_completed_by(tmp_path):
+def test_save_tasks_round_trip_preserves_log_meta_completed_by(tmp_path, postgres_dsn):
     """A done task's `_log_meta.completed_by` survives a save_tasks rewrite."""
     # Arrange
     store = _write(
@@ -489,7 +489,7 @@ def test_save_tasks_round_trip_preserves_log_meta_completed_by(tmp_path):
     assert reloaded["_log_meta"]["completed_by"] == "agent:original"
 
 
-def test_save_tasks_round_trip_preserves_log_meta_completed_at(tmp_path):
+def test_save_tasks_round_trip_preserves_log_meta_completed_at(tmp_path, postgres_dsn):
     """A done task's `_log_meta.completed_at` survives a save_tasks rewrite."""
     # Arrange
     store = _write(
@@ -518,12 +518,12 @@ def test_save_tasks_round_trip_preserves_log_meta_completed_at(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_load_tasks_kind_defaults_to_task_when_absent(tmp_path):
+def test_load_tasks_kind_defaults_to_task_when_absent(tmp_path, postgres_dsn):
     """Absence of `kind` is equivalent to `kind: task` (the default)."""
     # Arrange
     store = _write(
         tmp_path,
-        "tasks:\n  - {id: t1, title: Plain, status: pending}\n",
+        "tasks:\n  - {id: t1, title: Plain, status: deferred}\n",
     )
     # Act
     tasks = load_tasks(store)
@@ -532,11 +532,11 @@ def test_load_tasks_kind_defaults_to_task_when_absent(tmp_path):
     assert "kind" not in tasks[0]
 
 
-def test_load_tasks_accepts_kind_task(tmp_path):
+def test_load_tasks_accepts_kind_task(tmp_path, postgres_dsn):
     # Arrange
     store = _write(
         tmp_path,
-        "tasks:\n  - {id: t1, title: Plain, status: pending, kind: task}\n",
+        "tasks:\n  - {id: t1, title: Plain, status: deferred, kind: task}\n",
     )
     # Act
     tasks = load_tasks(store)
@@ -557,7 +557,7 @@ _KIND_COMPUTE_FULL_YAML = (
 )
 
 
-def test_load_tasks_kind_compute_persists_kind(tmp_path):
+def test_load_tasks_kind_compute_persists_kind(tmp_path, postgres_dsn):
     # Arrange
     store = _write(tmp_path, _KIND_COMPUTE_FULL_YAML)
     # Act
@@ -566,7 +566,7 @@ def test_load_tasks_kind_compute_persists_kind(tmp_path):
     assert tasks[0]["kind"] == "compute"
 
 
-def test_load_tasks_kind_compute_persists_job_id(tmp_path):
+def test_load_tasks_kind_compute_persists_job_id(tmp_path, postgres_dsn):
     # Arrange
     store = _write(tmp_path, _KIND_COMPUTE_FULL_YAML)
     # Act
@@ -575,7 +575,7 @@ def test_load_tasks_kind_compute_persists_job_id(tmp_path):
     assert tasks[0]["job_id"] == "25754194"
 
 
-def test_load_tasks_kind_compute_persists_host(tmp_path):
+def test_load_tasks_kind_compute_persists_host(tmp_path, postgres_dsn):
     # Arrange
     store = _write(tmp_path, _KIND_COMPUTE_FULL_YAML)
     # Act
@@ -584,7 +584,7 @@ def test_load_tasks_kind_compute_persists_host(tmp_path):
     assert tasks[0]["host"] == "spartan"
 
 
-def test_load_tasks_kind_compute_persists_started_at(tmp_path):
+def test_load_tasks_kind_compute_persists_started_at(tmp_path, postgres_dsn):
     # Arrange
     store = _write(tmp_path, _KIND_COMPUTE_FULL_YAML)
     # Act
@@ -596,7 +596,7 @@ def test_load_tasks_kind_compute_persists_started_at(tmp_path):
 def test_load_tasks_raises_on_unknown_kind():
     """`comput` typo (or any value not in VALID_KINDS) is fail-loud."""
     # Arrange
-    tasks = [{"id": "x", "title": "X", "status": "pending", "kind": "comput"}]
+    tasks = [{"id": "x", "title": "X", "status": "deferred", "kind": "comput"}]
     # Act — match folds the raise + message-content check into one assertion.
     ctx = pytest.raises(TaskValidationError, match=r"comput.*compute|compute.*comput")
     # Assert
@@ -612,7 +612,7 @@ def test_load_tasks_raises_on_compute_metadata_without_kind():
     would silently break that contract — fail-loud instead.
     """
     # Arrange
-    tasks = [{"id": "x", "title": "X", "status": "pending", "job_id": "12345"}]
+    tasks = [{"id": "x", "title": "X", "status": "deferred", "job_id": "12345"}]
     # Act
     ctx = pytest.raises(TaskValidationError, match=r"job_id.*kind: compute")
     # Assert
@@ -629,7 +629,7 @@ def test_load_tasks_raises_on_compute_metadata_with_kind_task():
     """
     # Arrange
     tasks = [
-        {"id": "x", "title": "X", "status": "pending", "kind": "task", "job_id": "42"}
+        {"id": "x", "title": "X", "status": "deferred", "kind": "task", "job_id": "42"}
     ]
     # Act
     ctx = pytest.raises(TaskValidationError, match="job_id")
@@ -638,12 +638,12 @@ def test_load_tasks_raises_on_compute_metadata_with_kind_task():
         _validate_tasks(tasks, source="x", strict=False)
 
 
-def test_load_tasks_allows_host_on_kind_task_row(tmp_path):
+def test_load_tasks_allows_host_on_kind_task_row(tmp_path, postgres_dsn):
     """`host` is GENERIC (operator TG 9667) — allowed on any row, not just compute."""
     # Arrange
     store = _write(
         tmp_path,
-        "tasks:\n  - {id: x, title: X, status: pending, host: ywata-note-win}\n",
+        "tasks:\n  - {id: x, title: X, status: deferred, host: ywata-note-win}\n",
     )
     # Act
     tasks = load_tasks(store)
@@ -657,7 +657,7 @@ def test_load_tasks_raises_on_non_string_compute_field():
         {
             "id": "bad",
             "title": "bad",
-            "status": "pending",
+            "status": "deferred",
             "kind": "compute",
             "job_id": 25754194,
         }
@@ -693,7 +693,7 @@ def _prepare_compute_store(tmp_path):
     return store, tasks
 
 
-def test_save_tasks_round_trip_preserves_kind_compute(tmp_path):
+def test_save_tasks_round_trip_preserves_kind_compute(tmp_path, postgres_dsn):
     # Arrange
     store, tasks = _prepare_compute_store(tmp_path)
     # Act
@@ -703,7 +703,7 @@ def test_save_tasks_round_trip_preserves_kind_compute(tmp_path):
     assert reloaded["kind"] == "compute"
 
 
-def test_save_tasks_round_trip_preserves_job_id(tmp_path):
+def test_save_tasks_round_trip_preserves_job_id(tmp_path, postgres_dsn):
     # Arrange
     store, tasks = _prepare_compute_store(tmp_path)
     # Act
@@ -713,7 +713,7 @@ def test_save_tasks_round_trip_preserves_job_id(tmp_path):
     assert reloaded["job_id"] == "99"
 
 
-def test_save_tasks_round_trip_writes_finished_at(tmp_path):
+def test_save_tasks_round_trip_writes_finished_at(tmp_path, postgres_dsn):
     # Arrange
     store, tasks = _prepare_compute_store(tmp_path)
     # Act
@@ -729,7 +729,7 @@ def test_save_tasks_round_trip_writes_finished_at(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_load_tasks_accepts_kind_decision(tmp_path):
+def test_load_tasks_accepts_kind_decision(tmp_path, postgres_dsn):
     """`kind: decision` is a valid kind alongside task / compute."""
     # Arrange
     store = _write(
@@ -737,7 +737,7 @@ def test_load_tasks_accepts_kind_decision(tmp_path):
         "tasks:\n"
         "  - id: decide-x\n"
         "    title: 'decide: X'\n"
-        "    status: pending\n"
+        "    status: deferred\n"
         "    kind: decision\n",
     )
     # Act
@@ -746,17 +746,17 @@ def test_load_tasks_accepts_kind_decision(tmp_path):
     assert tasks[0]["kind"] == "decision"
 
 
-def test_load_tasks_decision_kind_uses_existing_statuses(tmp_path):
-    """A decision-node's lifecycle uses VALID_STATUSES (pending → done)."""
-    # Arrange — pending decision awaiting resolution.
+def test_load_tasks_decision_kind_uses_existing_statuses(tmp_path, postgres_dsn):
+    """A decision-node's lifecycle uses VALID_STATUSES (deferred → done)."""
+    # Arrange — deferred decision awaiting resolution.
     store = _write(
         tmp_path,
-        "tasks:\n  - {id: d1, title: 'decide: a/b', status: pending, kind: decision}\n",
+        "tasks:\n  - {id: d1, title: 'decide: a/b', status: deferred, kind: decision}\n",
     )
     # Act
     tasks = load_tasks(store)
     # Assert
-    assert tasks[0]["status"] == "pending"
+    assert tasks[0]["status"] == "deferred"
 
 
 # ---------------------------------------------------------------------------
@@ -766,7 +766,7 @@ def test_load_tasks_decision_kind_uses_existing_statuses(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_load_tasks_accepts_blocker_operator_decision_on_blocked(tmp_path):
+def test_load_tasks_accepts_blocker_operator_decision_on_blocked(tmp_path, postgres_dsn):
     """`blocker: operator-decision` valid on a status=blocked task."""
     # Arrange
     store = _write(
@@ -779,7 +779,7 @@ def test_load_tasks_accepts_blocker_operator_decision_on_blocked(tmp_path):
     assert tasks[0]["blocker"] == "operator-decision"
 
 
-def test_load_tasks_accepts_all_four_blocker_variants(tmp_path):
+def test_load_tasks_accepts_all_four_blocker_variants(tmp_path, postgres_dsn):
     """The four operator-named blocker variants each load cleanly."""
     # Arrange
     store = _write(
@@ -835,7 +835,7 @@ def test_load_tasks_raises_on_blocker_with_non_blocked_status():
         _validate_tasks(tasks, source="x", strict=False)
 
 
-def test_load_tasks_blocker_absent_on_blocked_is_acceptable(tmp_path):
+def test_load_tasks_blocker_absent_on_blocked_is_acceptable(tmp_path, postgres_dsn):
     """A blocked task without a `blocker` field is still valid (soft-degrade)."""
     # Arrange
     store = _write(
@@ -858,7 +858,7 @@ _ORTHOGONAL_KIND_BLOCKER_YAML = (
 )
 
 
-def test_load_tasks_orthogonal_enums_persist_kind_decision(tmp_path):
+def test_load_tasks_orthogonal_enums_persist_kind_decision(tmp_path, postgres_dsn):
     """A kind=decision row can have ANY blocker (validator-orthogonal)."""
     # Arrange
     store = _write(tmp_path, _ORTHOGONAL_KIND_BLOCKER_YAML)
@@ -868,7 +868,7 @@ def test_load_tasks_orthogonal_enums_persist_kind_decision(tmp_path):
     assert t["kind"] == "decision"
 
 
-def test_load_tasks_orthogonal_enums_persist_blocker_compute(tmp_path):
+def test_load_tasks_orthogonal_enums_persist_blocker_compute(tmp_path, postgres_dsn):
     """Companion to the kind-decision test — confirms blocker independently."""
     # Arrange
     store = _write(tmp_path, _ORTHOGONAL_KIND_BLOCKER_YAML)
@@ -898,7 +898,7 @@ def _prepare_decision_store(tmp_path):
     return store, tasks
 
 
-def test_save_tasks_round_trip_decision_flips_status_to_done(tmp_path):
+def test_save_tasks_round_trip_decision_flips_status_to_done(tmp_path, postgres_dsn):
     # Arrange
     store, tasks = _prepare_decision_store(tmp_path)
     # Act
@@ -908,7 +908,7 @@ def test_save_tasks_round_trip_decision_flips_status_to_done(tmp_path):
     assert reloaded["status"] == "done"
 
 
-def test_save_tasks_round_trip_decision_drops_blocker(tmp_path):
+def test_save_tasks_round_trip_decision_drops_blocker(tmp_path, postgres_dsn):
     # Arrange
     store, tasks = _prepare_decision_store(tmp_path)
     # Act
@@ -918,7 +918,7 @@ def test_save_tasks_round_trip_decision_drops_blocker(tmp_path):
     assert "blocker" not in reloaded
 
 
-def test_save_tasks_round_trip_decision_preserves_kind(tmp_path):
+def test_save_tasks_round_trip_decision_preserves_kind(tmp_path, postgres_dsn):
     # Arrange
     store, tasks = _prepare_decision_store(tmp_path)
     # Act
@@ -1182,7 +1182,7 @@ def test_task_dataclass_round_trip_drops_unknown_tags_field():
 # ---------------------------------------------------------------------------
 
 
-def test_load_tasks_accepts_canonical_dependency_blocker(tmp_path):
+def test_load_tasks_accepts_canonical_dependency_blocker(tmp_path, postgres_dsn):
     """`blocker: "dependency"` (the canonical spelling) loads cleanly."""
     # Arrange
     store = _write(
@@ -1195,7 +1195,7 @@ def test_load_tasks_accepts_canonical_dependency_blocker(tmp_path):
     assert tasks[0]["blocker"] == "dependency"
 
 
-def test_load_tasks_still_accepts_legacy_dep_blocker(tmp_path):
+def test_load_tasks_still_accepts_legacy_dep_blocker(tmp_path, postgres_dsn):
     """Legacy `blocker: "dep"` is still accepted during the deprecation window.
 
     Validator passes; the dict still carries "dep". The Task dataclass
@@ -1213,7 +1213,7 @@ def test_load_tasks_still_accepts_legacy_dep_blocker(tmp_path):
     assert tasks[0]["blocker"] == "dep"
 
 
-def test_load_tasks_accepts_none_blocker(tmp_path):
+def test_load_tasks_accepts_none_blocker(tmp_path, postgres_dsn):
     """`blocker: "none"` explicitly says "we looked, no blocker named" — distinct from absent."""
     # Arrange
     store = _write(
@@ -1236,7 +1236,7 @@ def _all_operator_fields_yaml() -> str:
         "tasks:\n"
         "  - id: x\n"
         "    title: X\n"
-        "    status: pending\n"
+        "    status: deferred\n"
         "    task: 'PR #54 in CI'\n"
         "    project: scitex-cards\n"
         "    host: ywata-note-win\n"
@@ -1249,7 +1249,7 @@ def _all_operator_fields_yaml() -> str:
     )
 
 
-def test_load_tasks_accepts_new_operator_field_task(tmp_path):
+def test_load_tasks_accepts_new_operator_field_task(tmp_path, postgres_dsn):
     """`task` (BIG board-card text) loads cleanly when present."""
     # Arrange
     store = _write(tmp_path, _all_operator_fields_yaml())
@@ -1259,7 +1259,7 @@ def test_load_tasks_accepts_new_operator_field_task(tmp_path):
     assert t["task"] == "PR #54 in CI"
 
 
-def test_load_tasks_accepts_new_operator_field_host(tmp_path):
+def test_load_tasks_accepts_new_operator_field_host(tmp_path, postgres_dsn):
     """`host` (where the work happens) loads cleanly when present."""
     # Arrange
     store = _write(tmp_path, _all_operator_fields_yaml())
@@ -1272,7 +1272,7 @@ def test_load_tasks_accepts_new_operator_field_host(tmp_path):
 def test_load_tasks_raises_on_non_string_task_field():
     """`task: 123` (int) fails-loud with a message naming the bad field."""
     # Arrange
-    tasks = [{"id": "x", "title": "X", "status": "pending", "task": 123}]
+    tasks = [{"id": "x", "title": "X", "status": "deferred", "task": 123}]
     # Act
     ctx = pytest.raises(TaskValidationError, match=r"task.*non-string")
     # Assert
@@ -1283,7 +1283,7 @@ def test_load_tasks_raises_on_non_string_task_field():
 def test_load_tasks_raises_on_non_string_pr_url():
     """`pr_url: 12345` (int) fails-loud — URL must be a string."""
     # Arrange
-    tasks = [{"id": "x", "title": "X", "status": "pending", "pr_url": 12345}]
+    tasks = [{"id": "x", "title": "X", "status": "deferred", "pr_url": 12345}]
     # Act
     ctx = pytest.raises(TaskValidationError, match="pr_url")
     # Assert
@@ -1294,7 +1294,7 @@ def test_load_tasks_raises_on_non_string_pr_url():
 def test_load_tasks_raises_on_empty_goal_string():
     """`goal: ""` (empty string) fails-loud — non-empty rule."""
     # Arrange
-    tasks = [{"id": "x", "title": "X", "status": "pending", "goal": ""}]
+    tasks = [{"id": "x", "title": "X", "status": "deferred", "goal": ""}]
     # Act
     ctx = pytest.raises(TaskValidationError, match="goal")
     # Assert
@@ -1311,7 +1311,7 @@ def test_load_tasks_raises_on_empty_goal_string():
 # ---------------------------------------------------------------------------
 
 
-def test_load_tasks_accepts_kind_status(tmp_path):
+def test_load_tasks_accepts_kind_status(tmp_path, postgres_dsn):
     """`kind: status` is a valid kind alongside task / compute / decision."""
     # Arrange
     store = _write(
@@ -1319,7 +1319,7 @@ def test_load_tasks_accepts_kind_status(tmp_path):
         "tasks:\n"
         "  - id: q-gen\n"
         "    title: 'q-gen quality status'\n"
-        "    status: pending\n"
+        "    status: deferred\n"
         "    kind: status\n",
     )
     # Act
@@ -1328,12 +1328,12 @@ def test_load_tasks_accepts_kind_status(tmp_path):
     assert tasks[0]["kind"] == "status"
 
 
-def test_load_tasks_kind_status_requires_no_compute_fields(tmp_path):
+def test_load_tasks_kind_status_requires_no_compute_fields(tmp_path, postgres_dsn):
     """`kind: status` rows carry NO compute fields and load cleanly."""
     # Arrange — only the bare flag, no job_id / command / *_at.
     store = _write(
         tmp_path,
-        "tasks:\n  - {id: q-io, title: 'q-io status', status: pending, kind: status}\n",
+        "tasks:\n  - {id: q-io, title: 'q-io status', status: deferred, kind: status}\n",
     )
     # Act
     tasks = load_tasks(store)
@@ -1348,7 +1348,7 @@ def test_load_tasks_kind_status_rejects_compute_fields():
         {
             "id": "q-ml",
             "title": "q-ml status",
-            "status": "pending",
+            "status": "deferred",
             "kind": "status",
             "job_id": "42",
         }
@@ -1360,12 +1360,12 @@ def test_load_tasks_kind_status_rejects_compute_fields():
         _validate_tasks(tasks, source="x", strict=False)
 
 
-def test_save_tasks_round_trip_preserves_kind_status(tmp_path):
+def test_save_tasks_round_trip_preserves_kind_status(tmp_path, postgres_dsn):
     """`kind: status` survives a save → reload round-trip."""
     # Arrange
     store = _write(
         tmp_path,
-        "tasks:\n  - {id: q-plt, title: 'q-plt status', status: pending, kind: status}\n",
+        "tasks:\n  - {id: q-plt, title: 'q-plt status', status: deferred, kind: status}\n",
     )
     tasks = load_tasks(store)
     # Act

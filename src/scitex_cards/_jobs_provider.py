@@ -189,8 +189,9 @@ def provide_jobs() -> list[JobSpec]:
             timeout_sec=180,
         ),
         # reconcile-merged-prs (card-freshness automation) — deterministic
-        # auto-close. Every ~15 min, scan open cards (pending / in_progress /
-        # blocked) that carry a `pr_url`, check whether the linked PR has
+        # auto-close. Every ~15 min, scan in_progress cards (OPEN_STATUSES in
+        # _reconcile_prs; blocked/deferred excluded, pending abolished
+        # 2026-07-10) that carry a `pr_url`, check whether the linked PR has
         # MERGED (gh on the host, curl GitHub-REST fallback), and flip the
         # merged ones to `done` + an audit comment. `--apply` because the
         # cron IS the mutation path (the verb is DRY-RUN by default for

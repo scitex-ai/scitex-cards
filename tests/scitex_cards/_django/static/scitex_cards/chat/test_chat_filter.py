@@ -9,12 +9,12 @@ node — there is no hand-ported copy of the matching logic here, so the single
 source of truth stays the file the browser loads.
 
 WHAT THIS IS FOR. The operator's standing request, repeated: 「普通にあいまい検索で
-フィルタはいつも入れてください；scitex-ui にもなければいけない話です」. The board already
-consumes scitex-ui's Combobox over its six filter <select>s; the chat page's agent
+フィルタはいつも入れてください；[SDK: the old UI package at the time] にもなければいけない話です」.
+The board already consumes the SDK's Combobox over its six filter <select>s; the chat page's agent
 list had no filter at all, and it is the list that grows without bound.
 
 THE PROPERTY THAT MATTERS IS NOT "IT FILTERS". It is that it filters the SAME WAY
-the board does, because the matcher is scitex-ui's and not ours. So the tests
+the board does, because the matcher is the SDK's and not ours. So the tests
 below inject a fake `STX.Combobox.fuzzyMatch` scope and assert the module CALLS
 it — a module that reimplemented subsequence matching internally would pass a
 "finds dev-helper from dvhlp" test and fail these. (Injecting the scope is not a
@@ -76,7 +76,7 @@ def _run(js: str) -> str:
     return proc.stdout.strip()
 
 
-#: A stand-in for scitex-ui's real export, with the same subsequence semantics
+#: A stand-in for the SDK's real export, with the same subsequence semantics
 #: as `STX.Combobox.fuzzyMatch`. It also RECORDS its calls, which is how the
 #: tests below tell "delegated" apart from "reimplemented".
 _STX_SCOPE = """
@@ -107,10 +107,10 @@ def _filter(query: str, scope: str = _STX_SCOPE, names: list[str] | None = None)
     )
 
 
-# === delegation — the matcher is scitex-ui's, not a second copy ============
+# === delegation — the matcher is the SDK's, not a second copy ============
 
 
-def test_it_calls_the_scitex_ui_matcher() -> None:
+def test_it_calls_the_sdk_matcher() -> None:
     """A private reimplementation would never touch `STX.Combobox.fuzzyMatch`."""
     # Arrange
     # Act
@@ -212,8 +212,8 @@ def test_a_null_query_keeps_every_agent() -> None:
 # === the fallback — degraded, and visibly so ===============================
 
 
-def test_without_scitex_ui_it_still_filters() -> None:
-    """An old/absent scitex-ui must cost behaviour, not the page."""
+def test_without_sdk_it_still_filters() -> None:
+    """An old/absent SDK must cost behaviour, not the page."""
     # Arrange
     # Act
     kept = _filter("telegrammer", scope="const scope = {};\n")
@@ -229,7 +229,7 @@ def test_the_fallback_is_substring_only_not_a_second_fuzzy_matcher() -> None:
 
     This is the assertion that keeps the fallback honest: if someone "improves"
     it into a subsequence matcher, this goes red — and it should, because then
-    an old scitex-ui would look identical to a current one right up until the
+    an old SDK would look identical to a current one right up until the
     two implementations disagreed.
     """
     # Arrange
@@ -239,7 +239,7 @@ def test_the_fallback_is_substring_only_not_a_second_fuzzy_matcher() -> None:
     assert kept == []
 
 
-def test_a_partial_scitex_ui_without_fuzzy_match_falls_back() -> None:
+def test_a_partial_sdk_without_fuzzy_match_falls_back() -> None:
     """`STX.Combobox` present but no `fuzzyMatch` static — the 0.5.x shape."""
     # Arrange
     # Act

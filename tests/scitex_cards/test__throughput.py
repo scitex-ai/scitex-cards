@@ -12,6 +12,12 @@ Covers:
   * :func:`evaluate_wip` + :func:`count_open_for_agent` — write-side
     throttle thresholds
   * :func:`build_notify_body` — per-agent push body composition
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 2 ambient-store checks below target the ambient
+per-test store, which is refused without a writable cluster. The pure
+aggregate/classify/evaluate/notify tests stay unguarded by design (no
+store touch).
 """
 
 from __future__ import annotations
@@ -79,7 +85,7 @@ class TestAggregate:
         # Arrange
         tasks = [
             {"agent": "a", "status": "done"},
-            {"agent": "a", "status": "pending"},
+            {"agent": "a", "status": "deferred"},
             {"agent": "b", "status": "in_progress"},
         ]
         # Act
@@ -103,7 +109,7 @@ class TestAggregate:
         # Arrange
         tasks = [
             {"agent": "a", "status": "goal"},
-            {"agent": "a", "status": "pending"},
+            {"agent": "a", "status": "deferred"},
         ]
         # Act
         rows = aggregate(tasks, by="agent")
@@ -120,7 +126,7 @@ class TestAggregate:
 
     def test_unassigned_renders_explicitly(self):
         # Arrange
-        tasks = [{"agent": None, "status": "pending"}]
+        tasks = [{"agent": None, "status": "deferred"}]
         # Act
         rows = aggregate(tasks, by="agent")
         # Assert
@@ -136,11 +142,11 @@ class TestAggregate:
         # Assert
         assert rows[0].stale_count == 1
 
-    def test_stale_excludes_pending(self):
+    def test_stale_excludes_deferred(self):
         # Arrange
         now = _utc(2026, 6, 12, 12, 0, 0)
         tasks = [
-            {"agent": "a", "status": "pending", "last_activity": "2026-01-01T00:00:00Z"}
+            {"agent": "a", "status": "deferred", "last_activity": "2026-01-01T00:00:00Z"}
         ]
         # Act
         rows = aggregate(tasks, by="agent", now=now, stale_hours=24)
@@ -166,7 +172,7 @@ class TestClassify:
 
     def test_no_deps_runnable(self):
         # Arrange
-        t = {"id": "x", "status": "pending"}
+        t = {"id": "x", "status": "deferred"}
         # Act
         gi = classify(t, {"x": t})
         # Assert
@@ -175,7 +181,7 @@ class TestClassify:
     def test_deps_all_done_runnable(self):
         # Arrange
         by_id = {
-            "x": {"id": "x", "status": "pending", "depends_on": ["dep"]},
+            "x": {"id": "x", "status": "deferred", "depends_on": ["dep"]},
             "dep": {"id": "dep", "status": "done"},
         }
         # Act
@@ -186,7 +192,7 @@ class TestClassify:
     def test_open_dep_blocks_with_dep_id(self):
         # Arrange
         by_id = {
-            "x": {"id": "x", "status": "pending", "depends_on": ["dep"]},
+            "x": {"id": "x", "status": "deferred", "depends_on": ["dep"]},
             "dep": {"id": "dep", "status": "in_progress"},
         }
         # Act
@@ -196,7 +202,7 @@ class TestClassify:
 
     def test_unknown_dep_blocks_defensive(self):
         # Arrange
-        by_id = {"x": {"id": "x", "status": "pending", "depends_on": ["missing"]}}
+        by_id = {"x": {"id": "x", "status": "deferred", "depends_on": ["missing"]}}
         # Act
         gi = classify(by_id["x"], by_id)
         # Assert
@@ -367,7 +373,7 @@ class TestWipIsNotBacklog:
         # other's job, which is the whole two-predicates-one-name bug.
         assert rep.wip_count == 2
 
-    def test_recording_an_incident_is_never_refused(self, tmp_path, env):
+    def test_recording_an_incident_is_never_refused(self, tmp_path, env, postgres_dsn):
         # Arrange — agent is at 2x its WIP limit (the gate itself refuses
         # seeding past that, which is the sibling test's job to pin).
         import contextlib
@@ -404,7 +410,7 @@ class TestWipIsNotBacklog:
         # Assert
         assert rec["id"] == "incident-the-gate-is-jammed"
 
-    def test_starting_more_work_past_2x_is_still_refused(self, tmp_path, env):
+    def test_starting_more_work_past_2x_is_still_refused(self, tmp_path, env, postgres_dsn):
         # Arrange — the gate must not become a no-op.
         from scitex_cards._model import TaskValidationError
         from scitex_cards._store import add_task
@@ -443,7 +449,7 @@ class TestNotifyBody:
 
     def test_header_includes_agent_name(self):
         # Arrange
-        tasks = [{"id": "t1", "title": "T1", "status": "pending", "agent": "a"}]
+        tasks = [{"id": "t1", "title": "T1", "status": "deferred", "agent": "a"}]
         # Act
         body = build_notify_body("a", tasks)
         # Assert
@@ -452,7 +458,7 @@ class TestNotifyBody:
     def test_header_includes_open_count(self):
         # Arrange
         tasks = [
-            {"id": "t1", "title": "T1", "status": "pending", "agent": "a"},
+            {"id": "t1", "title": "T1", "status": "deferred", "agent": "a"},
             {"id": "t2", "title": "T2", "status": "in_progress", "agent": "a"},
         ]
         # Act
@@ -470,7 +476,7 @@ class TestNotifyBody:
                 "blocker": "compute",
                 "agent": "a",
             },
-            {"id": "run", "title": "Runnable one", "status": "pending", "agent": "a"},
+            {"id": "run", "title": "Runnable one", "status": "deferred", "agent": "a"},
         ]
         # Act
         body = build_notify_body("a", tasks)
@@ -483,7 +489,7 @@ class TestNotifyBody:
     def test_truncation_at_open_cap(self):
         # Arrange
         tasks = [
-            {"id": f"t{i}", "title": f"Task {i}", "status": "pending", "agent": "a"}
+            {"id": f"t{i}", "title": f"Task {i}", "status": "deferred", "agent": "a"}
             for i in range(NOTIFY_OPEN_CAP + 5)
         ]
         # Act

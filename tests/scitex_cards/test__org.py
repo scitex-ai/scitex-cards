@@ -29,13 +29,13 @@ class TestOrgPreamble:
 
 
 class TestSingleTaskHeading:
-    def test_renders_cards_heading(self):
+    def test_renders_someday_heading_for_deferred(self):
         # Arrange
-        tasks = [{"id": "a", "title": "Ship it", "status": "pending"}]
+        tasks = [{"id": "a", "title": "Ship it", "status": "deferred"}]
         # Act
         text = build_org(tasks)
         # Assert
-        assert "* CARD Ship it" in text
+        assert "* SOMEDAY Ship it" in text
 
     def test_maps_in_progress_to_inprogress(self):
         # Arrange
@@ -69,7 +69,7 @@ class TestDeadlineLine:
             {
                 "id": "a",
                 "title": "x",
-                "status": "pending",
+                "status": "deferred",
                 "deadline": "2026-06-15",
             }
         ]
@@ -84,7 +84,7 @@ class TestDeadlineLine:
             {
                 "id": "a",
                 "title": "x",
-                "status": "pending",
+                "status": "deferred",
                 "deadline": "2026-06-15T18:00:00+09:00",
             }
         ]
@@ -95,7 +95,7 @@ class TestDeadlineLine:
 
     def test_skips_when_absent(self):
         # Arrange
-        tasks = [{"id": "a", "title": "x", "status": "pending"}]
+        tasks = [{"id": "a", "title": "x", "status": "deferred"}]
         # Act
         text = build_org(tasks)
         # Assert
@@ -109,7 +109,7 @@ class TestScheduledLine:
             {
                 "id": "a",
                 "title": "x",
-                "status": "pending",
+                "status": "deferred",
                 "scheduled": "2026-06-10",
             }
         ]
@@ -124,7 +124,7 @@ class TestScheduledLine:
             {
                 "id": "a",
                 "title": "x",
-                "status": "pending",
+                "status": "deferred",
                 "deadline": "2026-06-15",
                 "scheduled": "2026-06-10",
             }
@@ -139,7 +139,7 @@ class TestScheduledLine:
 class TestPropertiesDrawer:
     def test_drawer_includes_id_property(self):
         # Arrange
-        tasks = [{"id": "task-42", "title": "x", "status": "pending"}]
+        tasks = [{"id": "task-42", "title": "x", "status": "deferred"}]
         # Act
         text = build_org(tasks)
         # Assert
@@ -151,7 +151,7 @@ class TestPropertiesDrawer:
             {
                 "id": "a",
                 "title": "x",
-                "status": "pending",
+                "status": "deferred",
                 "project": "scitex-cards",
             }
         ]
@@ -162,7 +162,7 @@ class TestPropertiesDrawer:
 
     def test_omits_unset_fields(self):
         # Arrange
-        tasks = [{"id": "a", "title": "x", "status": "pending"}]
+        tasks = [{"id": "a", "title": "x", "status": "deferred"}]
         # Act
         text = build_org(tasks)
         # Project absent → drawer should not have the line.
@@ -175,7 +175,7 @@ class TestPropertiesDrawer:
             {
                 "id": "child",
                 "title": "c",
-                "status": "pending",
+                "status": "deferred",
                 "parent": "umbrella",
             }
         ]
@@ -192,7 +192,7 @@ class TestNoteBody:
             {
                 "id": "a",
                 "title": "x",
-                "status": "pending",
+                "status": "deferred",
                 "note": "line1\nline2",
             }
         ]
@@ -207,7 +207,7 @@ class TestNoteBody:
             {
                 "id": "a",
                 "title": "x",
-                "status": "pending",
+                "status": "deferred",
                 "note": "line1\nline2",
             }
         ]
@@ -233,6 +233,40 @@ class TestEmptyTaskList:
         # Assert
         # No headings emitted.
         assert "* " not in text
+
+
+class TestOrgStatusMirror:
+    def test_status_map_keys_equal_valid_statuses(self):
+        # Arrange
+        from scitex_cards._org import STATUS_TO_ORG
+        from scitex_cards._task import VALID_STATUSES
+
+        # Act + Assert: the export covers exactly the live statuses.
+        assert set(STATUS_TO_ORG) == set(VALID_STATUSES)
+
+    def test_abolished_statuses_absent_from_map(self):
+        # Arrange
+        from scitex_cards._org import STATUS_TO_ORG
+        from scitex_cards._task import ABOLISHED_STATUSES
+
+        # Act + Assert: no dead key survives the abolition.
+        assert not (set(STATUS_TO_ORG) & set(ABOLISHED_STATUSES))
+
+    def test_legacy_pending_row_falls_back_to_card(self):
+        # Arrange: a pre-abolition row must not crash the export.
+        tasks = [{"id": "a", "title": "Old", "status": "pending"}]
+        # Act
+        text = build_org(tasks)
+        # Assert: identical bytes to the removed explicit entry.
+        assert "* CARD Old" in text
+
+    def test_cancelled_maps_to_cancelled(self):
+        # Arrange
+        tasks = [{"id": "a", "title": "Dropped", "status": "cancelled"}]
+        # Act
+        text = build_org(tasks)
+        # Assert
+        assert "* CANCELLED Dropped" in text
 
 
 # EOF

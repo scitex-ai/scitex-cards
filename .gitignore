@@ -100,17 +100,14 @@ src/scitex_cards/_sphinx_html/
 # from `.scitex/dev/cli-audit-dict.yaml`. The file must be tracked so
 # CI sees the same whitelist as local — gitignore exception added.
 !.scitex/dev/cli-audit-dict.yaml
-# Track the cards runtime dir's seed files; ignore its actual contents.
-# These paths named the PRE-RENAME directory until 2026-08-16, while the
-# runtime itself moved to `.scitex/cards/` — so `.scitex/*` swallowed the
-# whole live directory and the seed files below were tracked only because
-# they predated the move. Anything added there since was silently ignored.
+# The cards runtime dir holds transient local state, never source: ignore
+# its contents entirely (PS-234 §4b under scitex-dev >= 0.62: the ignore
+# policy file itself must also stay out of the index — it lives on disk
+# containing `*`, untracked).
 !.scitex/cards/
 .scitex/cards/*
 !.scitex/cards/runtime/
 .scitex/cards/runtime/*
-!.scitex/cards/runtime/.gitkeep
-!.scitex/cards/runtime/README.md
 .peer-repos/
 
 # scitex session run directories: `@stx.session` writes `<script>_out/` next to

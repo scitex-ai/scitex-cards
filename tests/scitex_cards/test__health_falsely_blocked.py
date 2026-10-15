@@ -13,6 +13,11 @@ still lied.
 `blocked` is a CLAIM — "something outside my control is stopping me". When the gate
 is gone, the claim is false, and a false `blocked` converts "I have not done this"
 into "I am PREVENTED from doing this". That is what makes a backlog untouchable.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every test below seeds the ambient per-test store via
+``seed_db_from_doc`` (through the ``_store``/``_falsely_blocked_health_report``
+helpers), which is refused without a writable cluster.
 """
 
 import os
@@ -46,7 +51,7 @@ _FALSELY_BLOCKED_TASKS = [
 ]
 
 
-def test_blocked_on_a_done_card_is_caught(tmp_path):
+def test_blocked_on_a_done_card_is_caught(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path, _FALSELY_BLOCKED_TASKS)
 
@@ -57,7 +62,7 @@ def test_blocked_on_a_done_card_is_caught(tmp_path):
     assert result["ok"] is False
 
 
-def test_the_falsely_blocked_report_names_the_offending_card(tmp_path):
+def test_the_falsely_blocked_report_names_the_offending_card(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path, _FALSELY_BLOCKED_TASKS)
 
@@ -68,7 +73,7 @@ def test_the_falsely_blocked_report_names_the_offending_card(tmp_path):
     assert "waiter" in result["detail"]
 
 
-def test_the_falsely_blocked_report_carries_a_hint(tmp_path):
+def test_the_falsely_blocked_report_carries_a_hint(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path, _FALSELY_BLOCKED_TASKS)
 
@@ -79,7 +84,7 @@ def test_the_falsely_blocked_report_carries_a_hint(tmp_path):
     assert result["hint"]
 
 
-def test_a_still_open_gate_is_not_flagged(tmp_path):
+def test_a_still_open_gate_is_not_flagged(tmp_path, postgres_dsn):
     """No false positives: a real gate means a real block."""
     # Arrange
     store = _store(
@@ -103,7 +108,7 @@ def test_a_still_open_gate_is_not_flagged(tmp_path):
     assert result["ok"] is True
 
 
-def test_one_open_gate_among_several_still_blocks(tmp_path):
+def test_one_open_gate_among_several_still_blocks(tmp_path, postgres_dsn):
     """ALL deps must be terminal. One live gate is enough to justify `blocked`."""
     # Arrange
     store = _store(
@@ -128,7 +133,7 @@ def test_one_open_gate_among_several_still_blocks(tmp_path):
     assert result["ok"] is True
 
 
-def test_cancelled_and_failed_gates_also_count_as_finished(tmp_path):
+def test_cancelled_and_failed_gates_also_count_as_finished(tmp_path, postgres_dsn):
     """A gate that was cancelled or failed can no longer gate anything.
 
     Only `done` would be too narrow: a cancelled dependency is NEVER COMING, so a
@@ -157,7 +162,7 @@ def test_cancelled_and_failed_gates_also_count_as_finished(tmp_path):
     assert result["ok"] is False
 
 
-def test_blocked_with_no_depends_on_is_left_alone(tmp_path):
+def test_blocked_with_no_depends_on_is_left_alone(tmp_path, postgres_dsn):
     """A card blocked on a NAMED blocker (operator-decision) names no card.
 
     This check has no evidence about whether that gate is still real, so it must
@@ -183,7 +188,7 @@ def test_blocked_with_no_depends_on_is_left_alone(tmp_path):
     assert result["ok"] is True
 
 
-def test_a_dangling_dependency_is_not_conflated(tmp_path):
+def test_a_dangling_dependency_is_not_conflated(tmp_path, postgres_dsn):
     """A dep id that resolves to no card is a DIFFERENT defect.
 
     Treating "the gate does not exist" as "the gate is finished" would silently
@@ -210,7 +215,7 @@ def test_a_dangling_dependency_is_not_conflated(tmp_path):
     assert result["ok"] is True
 
 
-def test_a_non_blocked_card_with_finished_deps_is_fine(tmp_path):
+def test_a_non_blocked_card_with_finished_deps_is_fine(tmp_path, postgres_dsn):
     """Only `blocked` cards make the claim. A deferred one claims nothing."""
     # Arrange
     store = _store(
@@ -243,7 +248,7 @@ def _falsely_blocked_health_report(tmp_path):
     return health(store=str(store))
 
 
-def test_the_check_is_wired_into_the_aggregator(tmp_path):
+def test_the_check_is_wired_into_the_aggregator(tmp_path, postgres_dsn):
     # Arrange
     # Act
     report = _falsely_blocked_health_report(tmp_path)
@@ -253,7 +258,7 @@ def test_the_check_is_wired_into_the_aggregator(tmp_path):
     assert "no_falsely_blocked" in names, "the check exists but nothing runs it"
 
 
-def test_the_aggregated_check_reports_the_falsely_blocked_card(tmp_path):
+def test_the_aggregated_check_reports_the_falsely_blocked_card(tmp_path, postgres_dsn):
     # Arrange
     report = _falsely_blocked_health_report(tmp_path)
 
@@ -264,7 +269,7 @@ def test_the_aggregated_check_reports_the_falsely_blocked_card(tmp_path):
     assert check["ok"] is False
 
 
-def test_the_aggregated_failing_check_carries_a_hint(tmp_path):
+def test_the_aggregated_failing_check_carries_a_hint(tmp_path, postgres_dsn):
     # Arrange
     report = _falsely_blocked_health_report(tmp_path)
 

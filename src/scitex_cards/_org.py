@@ -20,12 +20,12 @@ The mapping below pins the wire-shape so an emacs / org-agenda reader
 can ingest the file directly:
 
   * scitex-cards status -> org CARD STATE
-      pending     -> CARD
       in_progress -> INPROGRESS
       blocked     -> WAITING
       done        -> DONE
       deferred    -> SOMEDAY
       failed      -> CANCELLED
+      cancelled   -> CANCELLED
       goal        -> GOAL
 
   * scitex-cards deadline   -> org DEADLINE: line
@@ -54,9 +54,10 @@ from typing import Iterable
 
 # Status -> org CARD state mapping. Keep this aligned with VALID_STATUSES
 # in _model.py; an unknown status falls back to bare CARD so a forward-
-# compat YAML status doesn't crash the export.
+# compat YAML status doesn't crash the export. A legacy ``pending`` row
+# (abolished 2026-07-10) renders through that same fallback — identical
+# bytes to the removed explicit entry, so no migration-time crash.
 STATUS_TO_ORG: dict[str, str] = {
-    "pending": "CARD",
     "in_progress": "INPROGRESS",
     "blocked": "WAITING",
     "done": "DONE",

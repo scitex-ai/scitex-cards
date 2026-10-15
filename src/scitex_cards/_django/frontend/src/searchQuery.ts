@@ -38,7 +38,6 @@ export interface Task {
 
 export const VALID_STATUSES = [
   "goal",
-  "pending",
   "in_progress",
   "blocked",
   "done",
@@ -49,7 +48,7 @@ export const VALID_STATUSES = [
   "cancelled",
 ] as const;
 
-export const VALID_KINDS = ["task", "compute", "decision"] as const;
+export const VALID_KINDS = ["task", "compute", "decision", "status"] as const;
 
 type Strategy = "substring" | "exact" | "enum" | "priority" | "unknown";
 

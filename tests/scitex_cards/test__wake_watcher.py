@@ -7,6 +7,17 @@ predicate + the per-agent debounce. No real HTTP server stood up —
 ``post=False`` returns the wake records without firing requests; the
 ``post_wake`` helper is exercised separately with a tiny stdlib
 ``http.server`` thread.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 3 ``TestNoChangeTick`` checks below seed the
+ambient per-test store via ``seed_db_from_doc(doc, $SCITEX_STORE_DSN)``
+(the live-WRITE path), which is refused without a writable cluster. The
+38 pure diff/debounce/interval/lock/HTTP/recipient tests stay unguarded
+by design (no store touch).
+
+All fixtures seed the live successor default: the watcher is status-blind
+(plain ``prev != current`` string compare), so the fixture status value is
+arbitrary. ``pending`` was abolished 2026-07-10: a card must carry a decision.
 """
 
 from __future__ import annotations
@@ -40,7 +51,7 @@ class TestSeed:
     def test_first_pass_fires_no_wakes_out(self):
         # Arrange
         state = WatcherState()
-        tasks = [{"id": "a", "title": "A", "status": "pending", "agent": "proj-x"}]
+        tasks = [{"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"}]
         # Act
         out = detect_changes(state, tasks, now=0.0)
         # Assert
@@ -49,7 +60,7 @@ class TestSeed:
     def test_first_pass_fires_no_wakes_seeded(self):
         # Arrange
         state = WatcherState()
-        tasks = [{"id": "a", "title": "A", "status": "pending", "agent": "proj-x"}]
+        tasks = [{"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"}]
         # Act
         detect_changes(state, tasks, now=0.0)
         # Assert
@@ -61,7 +72,7 @@ class TestTaskAdded:
         # Arrange
         state = WatcherState()
         _seed(state, [])  # empty seed
-        tasks = [{"id": "a", "title": "A", "status": "pending", "agent": "proj-x"}]
+        tasks = [{"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"}]
         # Act
         out = detect_changes(state, tasks, now=100.0)
         # Assert
@@ -71,7 +82,7 @@ class TestTaskAdded:
         # Arrange
         state = WatcherState()
         _seed(state, [])  # empty seed
-        tasks = [{"id": "a", "title": "A", "status": "pending", "agent": "proj-x"}]
+        tasks = [{"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"}]
         # Act
         out = detect_changes(state, tasks, now=100.0)
         # Assert
@@ -81,7 +92,7 @@ class TestTaskAdded:
         # Arrange
         state = WatcherState()
         _seed(state, [])  # empty seed
-        tasks = [{"id": "a", "title": "A", "status": "pending", "agent": "proj-x"}]
+        tasks = [{"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"}]
         # Act
         out = detect_changes(state, tasks, now=100.0)
         # Assert
@@ -91,7 +102,7 @@ class TestTaskAdded:
         # Arrange
         state = WatcherState()
         _seed(state, [])  # empty seed
-        tasks = [{"id": "a", "title": "A", "status": "pending", "agent": "proj-x"}]
+        tasks = [{"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"}]
         # Act
         out = detect_changes(state, tasks, now=100.0)
         # Assert
@@ -101,7 +112,7 @@ class TestTaskAdded:
         # Arrange
         state = WatcherState()
         _seed(state, [])
-        tasks = [{"id": "a", "title": "A", "status": "pending"}]
+        tasks = [{"id": "a", "title": "A", "status": "deferred"}]
         # Act
         out = detect_changes(state, tasks, now=100.0)
         # Assert — nobody owns it, so there is nobody to wake.
@@ -116,7 +127,7 @@ class TestCommentAdded:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "agent": "proj-x",
                 "comments": [],
             }
@@ -126,7 +137,7 @@ class TestCommentAdded:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "agent": "proj-x",
                 "comments": [
                     {
@@ -149,7 +160,7 @@ class TestCommentAdded:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "agent": "proj-x",
                 "comments": [],
             }
@@ -159,7 +170,7 @@ class TestCommentAdded:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "agent": "proj-x",
                 "comments": [
                     {
@@ -182,7 +193,7 @@ class TestCommentAdded:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "agent": "proj-x",
                 "comments": [],
             }
@@ -192,7 +203,7 @@ class TestCommentAdded:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "agent": "proj-x",
                 "comments": [
                     {
@@ -213,7 +224,7 @@ class TestStatusChanged:
     def test_status_flip_fires_wake_len(self):
         # Arrange
         state = WatcherState()
-        prev = [{"id": "a", "title": "A", "status": "pending", "agent": "proj-x"}]
+        prev = [{"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"}]
         _seed(state, prev)
         cur = [{"id": "a", "title": "A", "status": "in_progress", "agent": "proj-x"}]
         # Act
@@ -224,7 +235,7 @@ class TestStatusChanged:
     def test_status_flip_fires_wake_trigger_kind(self):
         # Arrange
         state = WatcherState()
-        prev = [{"id": "a", "title": "A", "status": "pending", "agent": "proj-x"}]
+        prev = [{"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"}]
         _seed(state, prev)
         cur = [{"id": "a", "title": "A", "status": "in_progress", "agent": "proj-x"}]
         # Act
@@ -235,18 +246,18 @@ class TestStatusChanged:
     def test_status_flip_fires_wake_summary_contains(self):
         # Arrange
         state = WatcherState()
-        prev = [{"id": "a", "title": "A", "status": "pending", "agent": "proj-x"}]
+        prev = [{"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"}]
         _seed(state, prev)
         cur = [{"id": "a", "title": "A", "status": "in_progress", "agent": "proj-x"}]
         # Act
         out = detect_changes(state, cur, now=100.0)
         # Assert
-        assert "pending" in out[0].summary
+        assert "deferred" in out[0].summary
 
     def test_status_flip_fires_wake_summary_contains_2(self):
         # Arrange
         state = WatcherState()
-        prev = [{"id": "a", "title": "A", "status": "pending", "agent": "proj-x"}]
+        prev = [{"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"}]
         _seed(state, prev)
         cur = [{"id": "a", "title": "A", "status": "in_progress", "agent": "proj-x"}]
         # Act
@@ -263,7 +274,7 @@ class TestDebounce:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "agent": "proj-x",
                 "comments": [],
             }
@@ -273,7 +284,7 @@ class TestDebounce:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "agent": "proj-x",
                 "comments": [{"author": "lead", "text": "1"}],
             }
@@ -291,7 +302,7 @@ class TestDebounce:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "agent": "proj-x",
                 "comments": [],
             }
@@ -302,7 +313,7 @@ class TestDebounce:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "agent": "proj-x",
                 "comments": [{"author": "lead", "text": "1"}],
             }
@@ -311,7 +322,7 @@ class TestDebounce:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "agent": "proj-x",
                 "comments": [
                     {"author": "lead", "text": "1"},
@@ -332,7 +343,7 @@ class TestDebounce:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "agent": "proj-x",
                 "comments": [],
             }
@@ -342,7 +353,7 @@ class TestDebounce:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "agent": "proj-x",
                 "comments": [{"author": "lead", "text": "1"}],
             }
@@ -351,7 +362,7 @@ class TestDebounce:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "agent": "proj-x",
                 "comments": [
                     {"author": "lead", "text": "1"},
@@ -493,7 +504,7 @@ class TestSubscriberFanOut:
         base = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "agent": "owner-a",
             "subscribers": ["sub-b", "sub-c"],
         }
@@ -507,7 +518,7 @@ class TestSubscriberFanOut:
     def test_no_subscribers_wakes_owner_only(self):
         # Arrange
         state = WatcherState()
-        base = {"id": "a", "title": "A", "status": "pending", "agent": "owner-a"}
+        base = {"id": "a", "title": "A", "status": "deferred", "agent": "owner-a"}
         _seed(state, [dict(base, comments=[])])
         cur = [dict(base, comments=[{"author": "lead", "text": "look"}])]
         # Act
@@ -521,7 +532,7 @@ class TestSubscriberFanOut:
         base = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "agent": "owner-a",
             "subscribers": ["owner-a", "sub-b"],
         }
@@ -541,7 +552,7 @@ class TestSubscriberFanOut:
             "agent": "owner-a",
             "subscribers": ["sub-b"],
         }
-        _seed(state, [dict(base, status="pending")])
+        _seed(state, [dict(base, status="deferred")])
         cur = [dict(base, status="done")]
         # Act
         out = detect_changes(state, cur, now=100.0, min_wake_interval_s=0.0)
@@ -656,12 +667,12 @@ class TestSingleInstanceLock:
 class TestNoChangeTick:
     """Anti-spiral fix #3/#4 — a quiet tick does no work / emits no push."""
 
-    def test_unchanged_store_second_tick_returns_no_wakes(self, tmp_path):
+    def test_unchanged_store_second_tick_returns_no_wakes(self, tmp_path, postgres_dsn):
         # Arrange — seed once, then re-tick with the file untouched.
         store = tmp_path / "tasks.yaml"
         _write_store(
             store,
-            [{"id": "a", "title": "A", "status": "pending", "agent": "proj-x"}],
+            [{"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"}],
         )
         state = WatcherState()
         run_watcher_once(store, state, post=False)  # seed
@@ -670,7 +681,7 @@ class TestNoChangeTick:
         # Assert — no real change → no push.
         assert out == []
 
-    def test_unchanged_mtime_short_circuits_before_parse(self, tmp_path):
+    def test_unchanged_mtime_short_circuits_before_parse(self, tmp_path, postgres_dsn):
         # The mtime short-circuit must fire so a quiet board costs one
         # stat(), not a full DB re-read. Re-seed the DB with task b (via
         # _write_store) but reset the file mtime back to the seeded value:
@@ -682,7 +693,7 @@ class TestNoChangeTick:
         store = tmp_path / "tasks.yaml"
         _write_store(
             store,
-            [{"id": "a", "title": "A", "status": "pending", "agent": "proj-x"}],
+            [{"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"}],
         )
         state = WatcherState()
         run_watcher_once(store, state, post=False)  # seed; records mtime
@@ -690,8 +701,8 @@ class TestNoChangeTick:
         _write_store(
             store,
             [
-                {"id": "a", "title": "A", "status": "pending", "agent": "proj-x"},
-                {"id": "b", "title": "B", "status": "pending", "agent": "proj-x"},
+                {"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"},
+                {"id": "b", "title": "B", "status": "deferred", "agent": "proj-x"},
             ],
         )
         _os.utime(store, (seeded_mtime, seeded_mtime))  # pin mtime back
@@ -700,14 +711,14 @@ class TestNoChangeTick:
         # Assert — mtime unchanged → short-circuit → no re-parse, no wake.
         assert out == []
 
-    def test_real_change_after_tick_fires_wake(self, tmp_path):
+    def test_real_change_after_tick_fires_wake(self, tmp_path, postgres_dsn):
         # Arrange — seed, then genuinely mutate the store (new task).
         import os as _os
 
         store = tmp_path / "tasks.yaml"
         _write_store(
             store,
-            [{"id": "a", "title": "A", "status": "pending", "agent": "proj-x"}],
+            [{"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"}],
         )
         state = WatcherState()
         run_watcher_once(store, state, post=False)  # seed
@@ -716,8 +727,8 @@ class TestNoChangeTick:
         _write_store(
             store,
             [
-                {"id": "a", "title": "A", "status": "pending", "agent": "proj-x"},
-                {"id": "b", "title": "B", "status": "pending", "agent": "proj-x"},
+                {"id": "a", "title": "A", "status": "deferred", "agent": "proj-x"},
+                {"id": "b", "title": "B", "status": "deferred", "agent": "proj-x"},
             ],
         )
         _os.utime(store, (future, future))

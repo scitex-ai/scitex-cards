@@ -21,6 +21,11 @@ typed table — each entry carries an ``id`` (and ``kind``) — and it round-tri
 back as a LIST of records, in insertion order.
 
 Real fixtures, no mocks (STX-NM / PA-306).
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every test below seeds/reads the ambient per-test
+store via ``seed_db_from_doc``, which is refused without a writable
+cluster.
 """
 
 from __future__ import annotations
@@ -48,10 +53,14 @@ def _seed_store_with_users(tasks, users):
     the way the real shared store looks. Fixture-only DB seed.
 
     ``users`` is the typed-table LIST shape: each entry is a ``{"id": ...,
-    "kind": ...}`` record. It comes back from ``load_doc`` as the same list,
+    ``kind``: ...}`` record. It comes back from ``load_doc`` as the same list,
     verbatim, in insertion order.
+
+    Seeded task statuses are ``deferred`` (the successor default —
+    ``pending`` was abolished 2026-07-10): the assertions pin section
+    preservation and the mutation itself, never a tolerated-legacy row.
     """
-    norm = [{"status": "pending", **t} for t in tasks]  # status is required
+    norm = [{"status": "deferred", **t} for t in tasks]  # status is required
     seed_db_from_doc({"tasks": norm, "users": users}, os.environ["SCITEX_STORE_DSN"])
 
 
@@ -79,7 +88,8 @@ def _doc_after_add():
 def _doc_after_update():
     store = _store_path()
     _seed_store_with_users(
-        tasks=[{"id": "a", "title": "A", "status": "pending"}],
+        # `pending` was abolished 2026-07-10 — `deferred` is the successor default.
+        tasks=[{"id": "a", "title": "A", "status": "deferred"}],
         users=_UPDATE_USERS,
     )
     _store.update_task(store, task_id="a", status="in_progress")
@@ -106,7 +116,7 @@ def _doc_after_comment():
 class TestSectionPreservationAcrossCRUD:
     """The ``users:`` section survives each write verb."""
 
-    def test_users_survives_add_task(self):
+    def test_users_survives_add_task(self, postgres_dsn):
         # Arrange
         expected = _ADD_USERS
         # Act
@@ -114,7 +124,7 @@ class TestSectionPreservationAcrossCRUD:
         # Assert
         assert doc["users"] == expected
 
-    def test_add_task_still_appends_the_new_row(self):
+    def test_add_task_still_appends_the_new_row(self, postgres_dsn):
         # Arrange
         expected_ids = {"a", "b"}
         # Act
@@ -122,7 +132,7 @@ class TestSectionPreservationAcrossCRUD:
         # Assert — preservation must not come at the cost of the write.
         assert {t["id"] for t in doc["tasks"]} == expected_ids
 
-    def test_users_survives_update_task(self):
+    def test_users_survives_update_task(self, postgres_dsn):
         # Arrange
         expected = _UPDATE_USERS
         # Act
@@ -130,7 +140,7 @@ class TestSectionPreservationAcrossCRUD:
         # Assert
         assert doc["users"] == expected
 
-    def test_update_task_still_applies_the_status_flip(self):
+    def test_update_task_still_applies_the_status_flip(self, postgres_dsn):
         # Arrange
         expected_status = "in_progress"
         # Act
@@ -139,7 +149,7 @@ class TestSectionPreservationAcrossCRUD:
         task = next(t for t in doc["tasks"] if t["id"] == "a")
         assert task["status"] == expected_status
 
-    def test_users_survives_delete_task(self):
+    def test_users_survives_delete_task(self, postgres_dsn):
         # Arrange
         expected = _DELETE_USERS
         # Act
@@ -147,7 +157,7 @@ class TestSectionPreservationAcrossCRUD:
         # Assert
         assert doc["users"] == expected
 
-    def test_delete_task_tombstones_the_row_in_place(self):
+    def test_delete_task_tombstones_the_row_in_place(self, postgres_dsn):
         # Arrange — 2026-07-21 P0 tombstone conversion: delete_task no
         # longer physically removes the row (一度書いたものは消えない, "a
         # written card never disappears"); it marks it in place instead. So
@@ -159,7 +169,7 @@ class TestSectionPreservationAcrossCRUD:
         # Assert
         assert {t["id"] for t in doc["tasks"]} == expected_ids
 
-    def test_delete_task_marks_the_row_cancelled(self):
+    def test_delete_task_marks_the_row_cancelled(self, postgres_dsn):
         # Arrange
         # Act
         doc = _doc_after_delete()
@@ -167,7 +177,7 @@ class TestSectionPreservationAcrossCRUD:
         deleted = next(t for t in doc["tasks"] if t["id"] == "a")
         assert deleted["status"] == "cancelled"
 
-    def test_delete_task_stamps_deleted_at(self):
+    def test_delete_task_stamps_deleted_at(self, postgres_dsn):
         # Arrange
         # Act
         doc = _doc_after_delete()
@@ -175,7 +185,7 @@ class TestSectionPreservationAcrossCRUD:
         deleted = next(t for t in doc["tasks"] if t["id"] == "a")
         assert deleted.get("_log_meta", {}).get("deleted_at")
 
-    def test_users_survives_comment_task(self):
+    def test_users_survives_comment_task(self, postgres_dsn):
         # Arrange
         expected = _COMMENT_USERS
         # Act
@@ -183,7 +193,7 @@ class TestSectionPreservationAcrossCRUD:
         # Assert
         assert doc["users"] == expected
 
-    def test_comment_task_still_appends_the_comment(self):
+    def test_comment_task_still_appends_the_comment(self, postgres_dsn):
         # Arrange
         expected_text = "hello"
         # Act
@@ -196,7 +206,7 @@ class TestSectionPreservationAcrossCRUD:
 class TestRoundTrip:
     """The mutated payload is present after reload (write actually lands)."""
 
-    def test_added_task_present_after_reload(self):
+    def test_added_task_present_after_reload(self, postgres_dsn):
         # Arrange
         store = _store_path()
         _store.add_task(store, id="x", title="X", assignee="agent:test")
@@ -221,7 +231,8 @@ def _doc_after_save_doc_unlocked():
     with _model._store_lock(store):
         doc = _model.load_doc(store)
         new_tasks = list(doc["tasks"]) + [
-            {"id": "b", "title": "B", "status": "pending"}
+            # `pending` was abolished 2026-07-10 — `deferred` is the successor default.
+            {"id": "b", "title": "B", "status": "deferred"}
         ]
         _model._save_doc_unlocked(doc, store, tasks=new_tasks)
     return _model.load_doc(store)
@@ -232,8 +243,9 @@ def _doc_after_save_tasks_unlocked():
     with _model._store_lock(store):
         _model._save_tasks_unlocked(
             [
-                {"id": "a", "title": "A", "status": "pending"},
-                {"id": "c", "title": "C", "status": "pending"},
+                # `pending` was abolished 2026-07-10 — `deferred` is the successor default.
+                {"id": "a", "title": "A", "status": "deferred"},
+                {"id": "c", "title": "C", "status": "deferred"},
             ],
             store,
         )
@@ -243,7 +255,7 @@ def _doc_after_save_tasks_unlocked():
 class TestDocPrimitives:
     """Direct unit coverage of the ``load_doc`` / ``_save_doc_unlocked`` pair."""
 
-    def test_load_doc_returns_the_users_section(self):
+    def test_load_doc_returns_the_users_section(self, postgres_dsn):
         # Arrange
         _seed_primitive_store([{"id": "u1", "kind": "agent"}])
         # Act
@@ -251,7 +263,7 @@ class TestDocPrimitives:
         # Assert
         assert doc.get("users") == [{"id": "u1", "kind": "agent"}]
 
-    def test_load_doc_returns_the_tasks_list(self):
+    def test_load_doc_returns_the_tasks_list(self, postgres_dsn):
         # Arrange
         _seed_primitive_store([{"id": "u1", "kind": "agent"}])
         # Act
@@ -259,7 +271,7 @@ class TestDocPrimitives:
         # Assert
         assert [t["id"] for t in doc["tasks"]] == ["a"]
 
-    def test_save_doc_unlocked_preserves_the_users_section(self):
+    def test_save_doc_unlocked_preserves_the_users_section(self, postgres_dsn):
         # Arrange
         expected = [{"id": "u1", "kind": "agent"}]
         # Act
@@ -267,7 +279,7 @@ class TestDocPrimitives:
         # Assert
         assert reloaded["users"] == expected
 
-    def test_save_doc_unlocked_writes_the_mutated_tasks(self):
+    def test_save_doc_unlocked_writes_the_mutated_tasks(self, postgres_dsn):
         # Arrange
         expected_ids = {"a", "b"}
         # Act
@@ -275,7 +287,7 @@ class TestDocPrimitives:
         # Assert
         assert {t["id"] for t in reloaded["tasks"]} == expected_ids
 
-    def test_save_tasks_unlocked_wrapper_preserves_users(self):
+    def test_save_tasks_unlocked_wrapper_preserves_users(self, postgres_dsn):
         """The thin back-compat wrapper holds only `tasks`, not the doc — it
         must STILL recover the on-disk `users:` via its single re-read."""
         # Arrange
@@ -285,7 +297,7 @@ class TestDocPrimitives:
         # Assert
         assert reloaded["users"] == expected
 
-    def test_save_tasks_unlocked_wrapper_writes_the_new_tasks(self):
+    def test_save_tasks_unlocked_wrapper_writes_the_new_tasks(self, postgres_dsn):
         # Arrange
         expected_ids = {"a", "c"}
         # Act
@@ -295,7 +307,7 @@ class TestDocPrimitives:
 
 
 class TestReadUnderLock:
-    def test_on_disk_users_at_calltime_survives_locked_crud(self):
+    def test_on_disk_users_at_calltime_survives_locked_crud(self, postgres_dsn):
         """Read-under-lock semantics: the `users:` present in the store WHEN the
         locked CRUD call begins is the version that survives — the write verb
         reads the full doc under the lock and rewrites it whole, so a users

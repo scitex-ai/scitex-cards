@@ -62,8 +62,13 @@ AGENT = "split-store-consumer"
 
 
 @pytest.fixture()
-def inbox(env):
-    """A real store holding one UNSEEN notification for one raw-name agent."""
+def inbox(env, postgres_dsn):
+    """A real store holding one UNSEEN notification for one raw-name agent.
+
+    ``postgres_dsn`` is requested but is not the seed target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     env.set("SCITEX_CARDS_AGENT_ID", "split-store-tester")
     env.delete("SCITEX_CARDS_HUB_URL")
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]

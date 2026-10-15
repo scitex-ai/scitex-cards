@@ -22,6 +22,10 @@ reported "my slice" with confidence.
 These pin the distinction in both directions — a lens must NOT start behaving
 like an owner, or the fix trades a silent omission for a silent inclusion,
 which is harder to notice because the number goes UP.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every read/write below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -37,8 +41,14 @@ THEIRS = "scitex-hpc"
 
 
 @pytest.fixture
-def board():
-    """Cards owned by MINE under four different lenses, plus one owned by THEIRS."""
+def board(postgres_dsn):
+    """Cards owned by MINE under four different lenses, plus one owned by THEIRS.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy.
+    """
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(
         store,
@@ -74,7 +84,7 @@ def board():
     return store
 
 
-def test_a_card_filed_under_my_own_scope_is_in_my_slice(board):
+def test_a_card_filed_under_my_own_scope_is_in_my_slice(board, postgres_dsn):
     """The pre-existing behaviour, unchanged — this is the regression anchor."""
     # Arrange
     my_slice = f"agent:{MINE}"
@@ -86,7 +96,7 @@ def test_a_card_filed_under_my_own_scope_is_in_my_slice(board):
     assert "own-scope" in {r["id"] for r in rows}
 
 
-def test_a_card_with_no_scope_at_all_is_in_its_owners_slice(board):
+def test_a_card_with_no_scope_at_all_is_in_its_owners_slice(board, postgres_dsn):
     """398 of the 441 hidden cards were exactly this: nobody set a scope.
 
     Absent is not "not mine". Collapsing the two produced the whole hidden set.
@@ -101,7 +111,7 @@ def test_a_card_with_no_scope_at_all_is_in_its_owners_slice(board):
     assert "no-scope" in {r["id"] for r in rows}
 
 
-def test_a_card_a_peer_filed_under_fleet_reaches_its_owner(board):
+def test_a_card_a_peer_filed_under_fleet_reaches_its_owner(board, postgres_dsn):
     """``fleet`` is what a peer reasonably picks when filing cross-cutting work.
 
     Which made the cards most likely to be hidden the ones filed BY OTHERS —
@@ -118,7 +128,7 @@ def test_a_card_a_peer_filed_under_fleet_reaches_its_owner(board):
     assert "fleet-scope" in {r["id"] for r in rows}
 
 
-def test_ownership_via_the_agent_field_counts_too(board):
+def test_ownership_via_the_agent_field_counts_too(board, postgres_dsn):
     """``agent`` and ``assignee`` both name an owner; neither alone is enough."""
     # Arrange
     my_slice = f"agent:{MINE}"
@@ -130,7 +140,7 @@ def test_ownership_via_the_agent_field_counts_too(board):
     assert "agent-field" in {r["id"] for r in rows}
 
 
-def test_another_agents_card_stays_out_of_my_slice(board):
+def test_another_agents_card_stays_out_of_my_slice(board, postgres_dsn):
     """The fix must not turn a slice into the whole board.
 
     The rejected alternative — surface every unscoped card in EVERYONE's view —
@@ -147,7 +157,7 @@ def test_another_agents_card_stays_out_of_my_slice(board):
     assert "not-mine" not in {r["id"] for r in rows}
 
 
-def test_a_lens_scope_still_matches_exactly(board):
+def test_a_lens_scope_still_matches_exactly(board, postgres_dsn):
     """``fleet`` is a VIEW: only cards filed under it are in it."""
     # Arrange
     lens = "fleet"
@@ -159,7 +169,7 @@ def test_a_lens_scope_still_matches_exactly(board):
     assert {r["id"] for r in rows} == {"fleet-scope"}
 
 
-def test_a_lens_scope_does_not_absorb_cards_by_ownership(board):
+def test_a_lens_scope_does_not_absorb_cards_by_ownership(board, postgres_dsn):
     """Querying a lens must not pull in an owner's other cards."""
     # Arrange
     lens = "ecosystem"
@@ -171,7 +181,7 @@ def test_a_lens_scope_does_not_absorb_cards_by_ownership(board):
     assert {r["id"] for r in rows} == {"agent-field"}
 
 
-def test_the_summary_counts_the_same_set_as_the_listing(board):
+def test_the_summary_counts_the_same_set_as_the_listing(board, postgres_dsn):
     """``summarize_tasks`` shares ``_match``, so the two must never disagree.
 
     A summary counting a different population than the listing is how an agent
@@ -187,7 +197,7 @@ def test_the_summary_counts_the_same_set_as_the_listing(board):
     assert summary["total"] == len(listed)
 
 
-def test_an_empty_owner_after_the_prefix_matches_nothing_by_ownership(board):
+def test_an_empty_owner_after_the_prefix_matches_nothing_by_ownership(board, postgres_dsn):
     """``scope="agent:"`` names no one, so it must not match every card.
 
     A bare prefix is malformed input, and the dangerous reading is "everyone" —

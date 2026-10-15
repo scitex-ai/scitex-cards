@@ -22,7 +22,8 @@ from scitex_cards._store import add_task, list_tasks
 
 
 @pytest.fixture()
-def store_with_blocked_task() -> None:
+def store_with_blocked_task(postgres_dsn) -> None:
+    """Seed the ambient per-test store; ``postgres_dsn`` is the fail-LOUD guard (refuses without a writable cluster)."""
     add_task(
         id="t-blocker-clear",
         title="card to test clear-blocker",
@@ -96,14 +97,17 @@ def test_none_sentinel_case_insensitive(store_with_blocked_task):
 # === closed-enum values still pass through unchanged =======================
 
 
-def test_setting_blocker_to_valid_enum_value_still_works():
+def test_setting_blocker_to_valid_enum_value_still_works(postgres_dsn):
     # Arrange — round-trip a SET (not a clear) to make sure the new
     # ParamType doesn't break the existing closed-enum behavior.
     # Uses `compute` (a real VALID_BLOCKERS member, see _model.py).
+    # Seeded `deferred` since the pending abolition (2026-07-10): the
+    # test's intent is a SET-blocker round-trip, status-agnostic, so the
+    # fixture carries the successor default, never the abolished value.
     add_task(
         id="t-set",
         title="set blocker",
-        status="pending",
+        status="deferred",
         assignee="agent:test-suite",
     )
     runner = CliRunner()

@@ -5,6 +5,12 @@
 Verbs covered:
     add / update / done / list / summary / where / init / sync (stub)
     mcp doctor / mcp install / mcp list-tools (fallback fastmcp-missing path)
+
+CliRunner against the ambient per-test store. No mocks.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every write below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -24,15 +30,18 @@ from scitex_cards._paths import PKG_SHORT
 from scitex_cards._store_target import resolve_store_target
 
 
-def _store_path(tmp_path) -> str:
-    """Path string to a fresh empty store under tmp_path/.scitex/cards/."""
-    return str(tmp_path / "tasks.yaml")
+def _store_path() -> str:
+    # The store is the database; load/save read+write it and IGNORE any
+    # path except as the provenance stamp. Return the PINNED STORE identity
+    # (== resolve_tasks_path(None)) so a read-after-write round-trips instead
+    # of tripping the stamp-mismatch guard.
+    return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 
 # --------------------------------------------------------------------------- #
 # add                                                                         #
 # --------------------------------------------------------------------------- #
-def test_add_exits_zero(tmp_path):
+def test_add_exits_zero(postgres_dsn):
     # Arrange
     runner = CliRunner()
     # Act
@@ -54,7 +63,7 @@ def test_add_exits_zero(tmp_path):
     assert result.exit_code == 0, result.output
 
 
-def test_add_output_mentions_id(tmp_path):
+def test_add_output_mentions_id(postgres_dsn):
     # Arrange
     runner = CliRunner()
     # Act
@@ -76,10 +85,10 @@ def test_add_output_mentions_id(tmp_path):
     assert "added design" in result.output
 
 
-def test_add_persists_id(tmp_path):
+def test_add_persists_id(postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     runner.invoke(
         main,
         [
@@ -100,10 +109,10 @@ def test_add_persists_id(tmp_path):
     assert tasks[0]["id"] == "design"
 
 
-def test_add_persists_scope(tmp_path):
+def test_add_persists_scope(postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     runner.invoke(
         main,
         [
@@ -124,10 +133,10 @@ def test_add_persists_scope(tmp_path):
     assert tasks[0]["scope"] == "agent:test"
 
 
-def test_add_persists_priority(tmp_path):
+def test_add_persists_priority(postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     runner.invoke(
         main,
         [
@@ -148,7 +157,7 @@ def test_add_persists_priority(tmp_path):
     assert tasks[0]["priority"] == 1
 
 
-def test_add_json_exits_zero(tmp_path):
+def test_add_json_exits_zero(postgres_dsn):
     # Arrange
     runner = CliRunner()
     # Act
@@ -160,7 +169,7 @@ def test_add_json_exits_zero(tmp_path):
     assert result.exit_code == 0, result.output
 
 
-def test_add_json_emits_id(tmp_path):
+def test_add_json_emits_id(postgres_dsn):
     # Arrange
     runner = CliRunner()
     result = runner.invoke(
@@ -173,7 +182,7 @@ def test_add_json_emits_id(tmp_path):
     assert payload["id"] == "a"
 
 
-def test_add_json_emits_status(tmp_path):
+def test_add_json_emits_status(postgres_dsn):
     # Arrange
     runner = CliRunner()
     result = runner.invoke(
@@ -186,7 +195,7 @@ def test_add_json_emits_status(tmp_path):
     assert payload["status"] == "deferred"
 
 
-def test_add_duplicate_id_exits_nonzero(tmp_path):
+def test_add_duplicate_id_exits_nonzero(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
@@ -199,7 +208,7 @@ def test_add_duplicate_id_exits_nonzero(tmp_path):
     assert result.exit_code != 0
 
 
-def test_add_duplicate_id_mentions_duplicate(tmp_path):
+def test_add_duplicate_id_mentions_duplicate(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
@@ -215,7 +224,7 @@ def test_add_duplicate_id_mentions_duplicate(tmp_path):
 # --------------------------------------------------------------------------- #
 # update                                                                      #
 # --------------------------------------------------------------------------- #
-def test_update_exits_zero(tmp_path):
+def test_update_exits_zero(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(
@@ -239,10 +248,10 @@ def test_update_exits_zero(tmp_path):
     assert result.exit_code == 0, result.output
 
 
-def test_update_persists_status(tmp_path):
+def test_update_persists_status(postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     runner.invoke(
         main,
         [
@@ -265,10 +274,10 @@ def test_update_persists_status(tmp_path):
     assert on_disk["status"] == "in_progress"
 
 
-def test_update_persists_priority(tmp_path):
+def test_update_persists_priority(postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     runner.invoke(
         main,
         [
@@ -291,7 +300,7 @@ def test_update_persists_priority(tmp_path):
     assert on_disk["priority"] == 1
 
 
-def test_update_empty_scope_clears_field_exits_zero(tmp_path):
+def test_update_empty_scope_clears_field_exits_zero(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(
@@ -312,10 +321,10 @@ def test_update_empty_scope_clears_field_exits_zero(tmp_path):
     assert result.exit_code == 0, result.output
 
 
-def test_update_empty_scope_clears_field_on_disk(tmp_path):
+def test_update_empty_scope_clears_field_on_disk(postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     runner.invoke(
         main,
         [
@@ -335,7 +344,7 @@ def test_update_empty_scope_clears_field_on_disk(tmp_path):
     assert "scope" not in on_disk
 
 
-def test_update_no_fields_exits_nonzero(tmp_path):
+def test_update_no_fields_exits_nonzero(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
@@ -345,7 +354,7 @@ def test_update_no_fields_exits_nonzero(tmp_path):
     assert result.exit_code != 0
 
 
-def test_update_no_fields_mentions_no_fields(tmp_path):
+def test_update_no_fields_mentions_no_fields(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
@@ -355,7 +364,7 @@ def test_update_no_fields_mentions_no_fields(tmp_path):
     assert "no fields" in result.output.lower()
 
 
-def test_update_missing_id_exits_nonzero(tmp_path):
+def test_update_missing_id_exits_nonzero(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
@@ -365,7 +374,7 @@ def test_update_missing_id_exits_nonzero(tmp_path):
     assert result.exit_code != 0
 
 
-def test_update_missing_id_mentions_not_found(tmp_path):
+def test_update_missing_id_mentions_not_found(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
@@ -378,10 +387,10 @@ def test_update_missing_id_mentions_not_found(tmp_path):
 # --------------------------------------------------------------------------- #
 # add — operator-co-designed flags + closed-enum validation (PR #65)          #
 # --------------------------------------------------------------------------- #
-def test_add_agent_flag_persists(tmp_path):
+def test_add_agent_flag_persists(postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     # Act
     runner.invoke(main, ["add", "a", "A", "--agent", "proj-scitex-cards"])
     on_disk = _model.load_tasks(store)[0]
@@ -389,10 +398,10 @@ def test_add_agent_flag_persists(tmp_path):
     assert on_disk["agent"] == "proj-scitex-cards"
 
 
-def test_add_project_flag_persists(tmp_path):
+def test_add_project_flag_persists(postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     # Act
     runner.invoke(
         main,
@@ -411,10 +420,10 @@ def test_add_project_flag_persists(tmp_path):
     assert on_disk["project"] == "scitex-cards"
 
 
-def test_add_pr_url_flag_persists(tmp_path):
+def test_add_pr_url_flag_persists(postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     url = "https://github.com/ywatanabe1989/scitex-cards/pull/65"
     # Act
     runner.invoke(
@@ -434,10 +443,10 @@ def test_add_pr_url_flag_persists(tmp_path):
     assert on_disk["pr_url"] == url
 
 
-def test_add_kind_compute_persists(tmp_path):
+def test_add_kind_compute_persists(postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     # Act
     runner.invoke(
         main,
@@ -525,10 +534,10 @@ def test_add_invalid_blocker_rejected_by_click(tmp_path):
 # --------------------------------------------------------------------------- #
 # update — new field flags + depends_on/blocks REPLACE semantics (PR #65)     #
 # --------------------------------------------------------------------------- #
-def test_update_agent_persists(tmp_path):
+def test_update_agent_persists(postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     # Act
     runner.invoke(main, ["update", "a", "--agent", "proj-scitex-cards"])
@@ -537,10 +546,10 @@ def test_update_agent_persists(tmp_path):
     assert on_disk["agent"] == "proj-scitex-cards"
 
 
-def test_update_depends_on_replaces_list(tmp_path):
+def test_update_depends_on_replaces_list(postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     runner.invoke(
         main,
         [
@@ -563,10 +572,10 @@ def test_update_depends_on_replaces_list(tmp_path):
     assert on_disk["depends_on"] == ["y", "z"]
 
 
-def test_update_depends_on_empty_clears_list(tmp_path):
+def test_update_depends_on_empty_clears_list(postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     runner.invoke(
         main,
         [
@@ -586,7 +595,7 @@ def test_update_depends_on_empty_clears_list(tmp_path):
     assert "depends_on" not in on_disk
 
 
-def test_update_invalid_blocker_rejected_by_click(tmp_path):
+def test_update_invalid_blocker_rejected_by_click(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
@@ -599,7 +608,7 @@ def test_update_invalid_blocker_rejected_by_click(tmp_path):
 # --------------------------------------------------------------------------- #
 # done                                                                        #
 # --------------------------------------------------------------------------- #
-def test_done_exits_zero(tmp_path, env):
+def test_done_exits_zero(env, postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
@@ -610,7 +619,7 @@ def test_done_exits_zero(tmp_path, env):
     assert result.exit_code == 0, result.output
 
 
-def test_done_output_mentions_id(tmp_path, env):
+def test_done_output_mentions_id(env, postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
@@ -621,10 +630,10 @@ def test_done_output_mentions_id(tmp_path, env):
     assert "done a" in result.output
 
 
-def test_done_persists_status(tmp_path, env):
+def test_done_persists_status(env, postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     env.set("SCITEX_CARDS_AGENT_ID", "agent:cli-test")
     runner.invoke(main, ["done", "a"])
@@ -634,10 +643,10 @@ def test_done_persists_status(tmp_path, env):
     assert on_disk["status"] == "done"
 
 
-def test_done_persists_completed_by(tmp_path, env):
+def test_done_persists_completed_by(env, postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     env.set("SCITEX_CARDS_AGENT_ID", "agent:cli-test")
     runner.invoke(main, ["done", "a"])
@@ -647,10 +656,10 @@ def test_done_persists_completed_by(tmp_path, env):
     assert on_disk["_log_meta"]["completed_by"] == "agent:cli-test"
 
 
-def test_done_persists_completed_at_z_suffix(tmp_path, env):
+def test_done_persists_completed_at_z_suffix(env, postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     env.set("SCITEX_CARDS_AGENT_ID", "agent:cli-test")
     runner.invoke(main, ["done", "a"])
@@ -660,7 +669,7 @@ def test_done_persists_completed_at_z_suffix(tmp_path, env):
     assert on_disk["_log_meta"]["completed_at"].endswith("Z")
 
 
-def test_done_by_overrides_env_exits_zero(tmp_path, env):
+def test_done_by_overrides_env_exits_zero(env, postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
@@ -671,10 +680,10 @@ def test_done_by_overrides_env_exits_zero(tmp_path, env):
     assert result.exit_code == 0, result.output
 
 
-def test_done_by_overrides_env_on_disk(tmp_path, env):
+def test_done_by_overrides_env_on_disk(env, postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     env.set("SCITEX_CARDS_AGENT_ID", "agent:env")
     runner.invoke(main, ["done", "a", "--by", "agent:explicit"])
@@ -687,7 +696,7 @@ def test_done_by_overrides_env_on_disk(tmp_path, env):
 # --------------------------------------------------------------------------- #
 # list (extended w/ filters)                                                  #
 # --------------------------------------------------------------------------- #
-def test_list_filters_by_scope_exits_zero(tmp_path):
+def test_list_filters_by_scope_exits_zero(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(
@@ -723,7 +732,7 @@ def test_list_filters_by_scope_exits_zero(tmp_path):
     assert result.exit_code == 0, result.output
 
 
-def test_list_filters_by_scope_returns_matching(tmp_path):
+def test_list_filters_by_scope_returns_matching(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(
@@ -760,7 +769,7 @@ def test_list_filters_by_scope_returns_matching(tmp_path):
     assert {r["id"] for r in rows} == {"b"}
 
 
-def test_list_env_scope_default(tmp_path, env):
+def test_list_env_scope_default(env, postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(
@@ -818,7 +827,7 @@ def _seed_for_pr66(runner):
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "py2", "Y2"])
 
 
-def test_list_filter_by_id_prefix(tmp_path):
+def test_list_filter_by_id_prefix(postgres_dsn):
     # Arrange
     runner = CliRunner()
     _seed_for_pr66(runner)
@@ -832,7 +841,7 @@ def test_list_filter_by_id_prefix(tmp_path):
     assert {r["id"] for r in rows} == {"py1", "py2"}
 
 
-def test_list_filter_by_blocker_none_token(tmp_path):
+def test_list_filter_by_blocker_none_token(postgres_dsn):
     # Arrange
     runner = CliRunner()
     _seed_for_pr66(runner)
@@ -843,7 +852,7 @@ def test_list_filter_by_blocker_none_token(tmp_path):
     assert {r["id"] for r in rows} == {"px1", "px2", "py1", "py2"}
 
 
-def test_list_filter_multi_status_unions(tmp_path):
+def test_list_filter_multi_status_unions(postgres_dsn):
     # Arrange
     runner = CliRunner()
     _seed_for_pr66(runner)
@@ -864,7 +873,7 @@ def test_list_filter_multi_status_unions(tmp_path):
     assert {r["id"] for r in rows} == {"px1", "px2", "py1", "py2"}
 
 
-def test_list_filter_blocking_me_flag(tmp_path):
+def test_list_filter_blocking_me_flag(postgres_dsn):
     # Arrange — seed via CLI for shape + Python API for the blocker
     # field (the CLI --blocker flag lands in a sibling PR; this PR's
     # filter logic doesn't need the CLI surface to test the predicate).
@@ -909,7 +918,7 @@ def test_list_filter_blocking_me_flag(tmp_path):
 # --------------------------------------------------------------------------- #
 # summary                                                                     #
 # --------------------------------------------------------------------------- #
-def test_summary_exits_zero(tmp_path):
+def test_summary_exits_zero(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
@@ -931,7 +940,7 @@ def test_summary_exits_zero(tmp_path):
     assert result.exit_code == 0, result.output
 
 
-def test_summary_emits_total(tmp_path):
+def test_summary_emits_total(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
@@ -954,7 +963,7 @@ def test_summary_emits_total(tmp_path):
     assert info["total"] == 2
 
 
-def test_summary_emits_done_count(tmp_path):
+def test_summary_emits_done_count(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
@@ -977,7 +986,7 @@ def test_summary_emits_done_count(tmp_path):
     assert info["by_status"]["done"] == 1
 
 
-def test_summary_emits_deferred_count(tmp_path):
+def test_summary_emits_deferred_count(postgres_dsn):
     # Arrange — add's default status is `deferred` since pending was abolished.
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
@@ -1003,10 +1012,10 @@ def test_summary_emits_deferred_count(tmp_path):
 # --------------------------------------------------------------------------- #
 # where                                                                       #
 # --------------------------------------------------------------------------- #
-def test_where_exits_zero(tmp_path, env):
+def test_where_exits_zero(env, postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     Path(store).write_text("tasks: []\n", encoding="utf-8")
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", store)
     # Act
@@ -1044,7 +1053,7 @@ def test_resolve_store_does_not_probe_a_filesystem_dsn(tmp_path, env):
 # --------------------------------------------------------------------------- #
 # init                                                                        #
 # --------------------------------------------------------------------------- #
-def test_init_shared_exits_zero(tmp_path, env):
+def test_init_shared_exits_zero(tmp_path, env, postgres_dsn):
     # Arrange
     runner = CliRunner()
     env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
@@ -1346,7 +1355,7 @@ def test_mcp_doctor_tool_count_when_fastmcp_installed():
 # list-tasks --kind filter selects it. Default list behavior UNCHANGED — the #
 # board's default-hide is a separate frontend PR.                             #
 # --------------------------------------------------------------------------- #
-def test_update_kind_status_exits_zero(tmp_path):
+def test_update_kind_status_exits_zero(postgres_dsn):
     # Arrange
     runner = CliRunner()
     runner.invoke(
@@ -1365,10 +1374,10 @@ def test_update_kind_status_exits_zero(tmp_path):
     assert result.exit_code == 0, result.output
 
 
-def test_update_kind_status_persists(tmp_path):
+def test_update_kind_status_persists(postgres_dsn):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     runner.invoke(
         main,
         [
@@ -1386,7 +1395,7 @@ def test_update_kind_status_persists(tmp_path):
     assert on_disk["kind"] == "status"
 
 
-def test_list_filter_by_kind_status_returns_only_status_rows(tmp_path):
+def test_list_filter_by_kind_status_returns_only_status_rows(postgres_dsn):
     # Arrange — two rows, only one tagged kind=status.
     runner = CliRunner()
     runner.invoke(

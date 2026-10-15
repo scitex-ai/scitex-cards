@@ -27,15 +27,15 @@ when they flip theirs to `done`, the operator + you see your row's
 blocker drop within 5s.
 
 ```bash
-# (Once --depends-on lands as a CLI flag on update; today via Python.)
-scitex-cards update my-task --status blocked   # --blocker dependency pending CLI parity
-# Python:
+# (--depends-on / --blocks REPLACE the list: repeat per id, '' clears.)
+scitex-cards update my-task --status blocked --blocker dependency --depends-on "neurovista/their-task-id"
+# Python (same fields, one call):
 import scitex_cards, datetime as _dt
 scitex_cards.update_task(
     None, "my-task",
     status="blocked",
-    # blocker="dependency",         # pending --blocker on CLI; Python honors it
-    # depends_on=["neurovista/their-task-id"],  # pending --depends-on on update
+    blocker="dependency",
+    depends_on=["neurovista/their-task-id"],
 )
 ```
 

@@ -78,7 +78,7 @@ scitex-cards add <you>-smoke-$(date +%s) \
     '[P2] smoke: confirm I can write to the store' \
     --scope agent:<you> \
     --assignee <you> \
-    --status pending
+    --status deferred
 
 # 3. List your slice + confirm the row is there.
 scitex-cards list-tasks --scope agent:<you> --json | jq '.[].id'

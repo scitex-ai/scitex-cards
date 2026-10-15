@@ -144,8 +144,9 @@ def runnable_cmd(
     **spec_command_kwargs(
         summary="List ALL not-runnable tasks + WHY (the inverse of `runnable`).",
         description=(
-            "For each task in {pending, in_progress, blocked} that the "
-            "dispatcher can NOT pick up, names the reason "
+            "For each task in {deferred, in_progress, blocked} that the "
+            "dispatcher can NOT pick up (``pending`` was abolished "
+            "2026-07-10), names the reason "
             "(explicit-blocker / manual-block / depends-on / "
             "reverse-blocks) and the chain of upstream ids keeping it "
             "parked. Use this to surface 'you can unblock K tasks by "

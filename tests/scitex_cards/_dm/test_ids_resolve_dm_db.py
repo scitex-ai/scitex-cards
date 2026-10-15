@@ -43,7 +43,7 @@ def primitive_default(env, tmp_path):
 
 
 class TestResolveDmDbStoreTier:
-    def test_a_path_label_resolves_to_the_ambient_store(self, tmp_path):
+    def test_a_path_label_resolves_to_the_ambient_store(self, tmp_path, postgres_dsn):
         """DM threads are fleet-wide, so a per-project label names no DM store.
 
         Until 2026-09-05 this tier derived ``cards.db`` beside the label. That
@@ -60,7 +60,7 @@ class TestResolveDmDbStoreTier:
         # Assert
         assert got == os.environ[ENV_STORE_DSN]
 
-    def test_a_path_label_never_yields_a_cards_file(self, tmp_path):
+    def test_a_path_label_never_yields_a_cards_file(self, tmp_path, postgres_dsn):
         """The old derivation, pinned closed: no filename comes out of a label."""
         # Arrange
         store = tmp_path / "tasks.yaml"

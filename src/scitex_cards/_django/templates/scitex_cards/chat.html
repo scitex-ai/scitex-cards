@@ -1,11 +1,11 @@
 {% extends "scitex_sdk/ui/standalone_shell.html" %}
 {% load static %}
-{% comment %}data-theme="dark" ACTIVATES scitex-ui's dark token set — it is not
+{% comment %}data-theme="dark" ACTIVATES the SDK's dark token set — it is not
 decoration. theme.css defines --text-primary / --bg-page / --border-default /
 … twice, once under [data-theme="light"] and once under [data-theme="dark"],
 and DEFAULTS TO LIGHT when the attribute is absent. Without this every base
 component on the page silently resolves light values onto a dark surface, which
-is exactly how scitex-ui 0.12.0's context menu rendered near-invisible on
+is exactly how the context menu rendered near-invisible on
 2026-07-28. Dark is also the standing default (the operator's eyes are
 sensitive), so this is deliberate, not a preference to be "cleaned up".
 {% endcomment %}
@@ -25,9 +25,9 @@ so the base title lives here, in one place, and that module spells neither the
 version nor the word DM.
 {% endcomment %}
 {% comment %}
-No favicon link here: scitex-ui's shell supplies the shared SciTeX brand mark
-as its default (>=0.7.1). One source, not two copies that drift. Do NOT re-add
-a local <link rel="icon"> — if the mark is wrong, fix it in scitex-ui, which
+No favicon link here: the SDK's shell supplies the shared SciTeX brand mark
+as its default. One source, not two copies that drift. Do NOT re-add
+a local <link rel="icon"> — if the mark is wrong, fix it in scitex-sdk, which
 owns the asset.
 
 NB: this MUST be a {% templatetag openblock %} comment {% templatetag closeblock %}
@@ -44,21 +44,21 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
 <512; this file is layout + CSS.
 {% endcomment %}
 <style>
-  /* EVERY COLOUR ON THIS PAGE COMES FROM scitex-ui. NOT ONE IS PICKED HERE.
+  /* EVERY COLOUR ON THIS PAGE COMES FROM THE SDK. NOT ONE IS PICKED HERE.
      Operator directive 2026-07-28, verbatim: "最適 ui を常に使ってください
      勝手に変な色を使ったりするのでおかしなことになる … scitex の世界観も壊れる
      ので s-ui を使ってほしい". They are right, and the bug below is the proof.
 
      THIS PAGE USED TO HARD-CODE ITS OWN FIXED-DARK PALETTE (#1e1e2e, #7c5cbf,
-     …). That is what broke the right-click menu on 2026-07-28: scitex-ui
-     0.12.0's context-menu CSS reads --text-primary / --text-secondary, this
+     …). That is what broke the right-click menu on 2026-07-28: the base
+     context-menu CSS reads --text-primary / --text-secondary, this
      page defined neither, so the menu text fell back to the LIGHT-theme value
      and rendered near-invisible on a dark menu. The items were live but looked
      disabled. A private palette does not merely diverge in style — it silently
      starves every base component the page later adopts, and the failure shows
      up in the COMPONENT, not here, which is why it was hard to see.
 
-     The names below are ALIASES, not colours: each is a var() onto a scitex-ui
+     The names below are ALIASES, not colours: each is a var() onto an SDK
      token, so the ~100 existing usages in this file keep working while the
      values are entirely base's. Re-pointing an alias is how this page changes
      palette from now on. DO NOT reintroduce a literal colour here. */
@@ -141,7 +141,7 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
      REPLACED the old "← board" link: the operator could reach the board from
      here, but not the reverse, which is what made /chat/ a hidden URL. The
      component reads six --sw-* variables; this page has its own fixed-dark
-     palette (the :root above shadows the scitex-ui theme tokens), so feed
+     palette (the :root above shadows the SDK theme tokens), so feed
      that palette in here. This block sits BEFORE the page-switcher.css link
      further down <head>, which is fine: `header .stx-cards-switcher` outranks
      the component's own `.stx-cards-switcher` defaults on specificity, so
@@ -174,7 +174,7 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   #agent-list { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
   /* Fuzzy filter over the agent list (operator standing request 2026-07-29:
      「普通にあいまい検索でフィルタはいつも入れてください」). Every colour here is a
-     token — the matcher comes from scitex-ui and so does the palette. */
+     token — the matcher comes from the SDK and so does the palette. */
   #agent-filter-row {
     flex: 0 0 auto; padding: 8px; border-bottom: 1px solid var(--line);
   }
@@ -431,7 +431,7 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   /* The emoji picker is a shared primitive (static/scitex_cards/ui/). The
      page maps ITS palette onto the component's tokens instead of overriding
      the component's rules — that is the whole contract, and it is what lets
-     the widget be lifted into scitex-ui without dragging this page's colors
+     the widget be lifted into the SDK without dragging this page's colors
      along with it. PLACEMENT is the host's job by the component's own design
      ("the host page decides WHERE the affordance sits"), so positioning it
      inside the field is not an override; the bare-toggle look and the
@@ -550,22 +550,23 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
      live in chat/chat_panes.css. */
 </style>
 {% comment %}
-Right-click menu comes from scitex-ui — we do NOT ship our own. The operator's
+Right-click menu comes from the SDK — we do NOT ship our own. The operator's
 standing rule: anything shareable lives in base and is consumed from there
-(「共通化できるものは scitex-ui に入れて消費してください」). We were about to
-write a private one; scitex-ui pointed out base has shipped it since 0.11.0.
+(「共通化できるものは [SDK: the old UI package at the time] に入れて消費してください」).
+We were about to write a private one; base pointed out it has shipped it for
+a long time.
 
-Two files, in this order, and NO shell adoption is required (scitex-ui
-confirmed from the source): theme.css is the TOKEN layer only — context-menu.css
+Two files, in this order, and NO shell adoption is required (confirmed from
+the SDK source): theme.css is the TOKEN layer only — context-menu.css
 consumes --bg-secondary / --border-default / --text-primary / --text-secondary.
 It has hardcoded dark fallbacks, so it renders without theme.css, but then it is
 permanently dark regardless of the viewer. Linking the tokens is what makes it
 follow the theme.
 
-MINIMUM scitex-ui 0.11.1, not 0.11.0: 0.11.1 adds `font-family: inherit` on
+MINIMUM SDK UI with the 0.11.1-equivalent menu rules, not older: the SDK adds `font-family: inherit` on
 __item. Items are <button>, buttons do not inherit the page font, and base ships
 no global button reset — without it the menu renders in the UA button font.
-The host was on 0.7.1 when this was written (the FILE existed there, but not the
+The host predated the menu rules when this was written (the FILE existed there, but not the
 __label/__shortcut/:disabled rules — presence is not currency), so the upgrade
 ships alongside this.
 {% endcomment %}
@@ -575,7 +576,7 @@ ships alongside this.
 Emoji picker — OUR file for now, but written as a harvestable primitive: it
 knows nothing about DMs, messages or `.msg`, and its palette rides
 `--stx-emoji-picker-*` tokens the host page maps (see the #compose block
-above). When scitex-ui adopts it, this link and the script tag at the bottom
+above). When the SDK adopts it, this link and the script tag at the bottom
 swap for the base ones and nothing else on this page moves.
 
 Board | DM switcher — the SAME stylesheet board_v3.html links, so the two
@@ -605,7 +606,7 @@ and the page needs both — this was a textual collision, not a real one.)
      the row can never drift away from the menu it belongs to. */
   #msg-menu-wrap.open { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
   /* THE RESET THAT MAKES THE STACK WORK — do not delete it as redundant.
-     scitex-ui's context-menu.css puts `position: fixed` on the CLASS itself,
+     The SDK's context-menu.css puts `position: fixed` on the CLASS itself,
      not on a positioned variant. Both panels inside the wrap carry that class,
      so without this they leave the flex column entirely and render on top of
      each other: the reaction row would sit over the action list rather than
@@ -760,14 +761,14 @@ every `#agents .agent` rule still matches through the new wrapper.
   </nav>
   <div id="scrim"></div>
 {% comment %}
-Markup is scitex-ui's contract, verbatim — do not "tidy" it:
+Markup is the SDK's contract, verbatim — do not "tidy" it:
   * items MUST be <button>. The base CSS resets background/border and sets
     font-family/text-align on the button, and a <div> also loses :disabled.
   * __shortcut uses `margin-left: auto`, so it must be the LAST CHILD INSIDE
     the item. Outside the item it will not right-align.
   * use the real `disabled` attribute, not a class — base handles the hover
     suppression off :disabled.
-Positioning/dismiss is wired below by hand; scitex-ui is shipping a
+Positioning/dismiss is wired below by hand; the SDK is shipping a
 `ts/app/context-menu` module (open-at-cursor, viewport clamping, outside-click
 /Escape/scroll dismissal, items-array API) and this markup is exactly what it
 emits, so swapping to it will not change this block.
@@ -894,7 +895,7 @@ Forward uses.
 Load order matters and is one-directional: each file reads the ones before it
 off `window` and never the reverse.
 
-  combobox.js      scitex-ui's fuzzy matcher (STX.Combobox.fuzzyMatch)
+  combobox.js      the SDK's fuzzy matcher (STX.Combobox.fuzzyMatch)
   chat_diff.js     pure render planning (no deps)
   chat_title.js    the unread count in the browser tab (no deps)
   chat_actions.js  pure message-action decisions (no deps)
@@ -915,11 +916,11 @@ holds every seam selection needs (the message list, the peer, the forward
 picker), so routing them through chat.js would only add a pass-through — and
 chat.js is at its 512-line budget.
 
-combobox.js is scitex-ui's, and it is here for its MATCHER, not its widget: the
+combobox.js is the SDK's, and it is here for its MATCHER, not its widget: the
 bundle attaches `window.STX.Combobox` and exports `fuzzyMatch` as a static, which
 is what makes "matches" mean the same thing on this page as on the board. It is
 the same file board_v3.html loads. chat_filter.js degrades to a substring match
-if the symbol is missing, so an old scitex-ui costs behaviour, not the page.
+if the symbol is missing, so an old SDK costs behaviour, not the page.
 
 `defer` scripts execute in document order, so this list IS the order.
 {% endcomment %}

@@ -272,7 +272,7 @@ class TestNoFileIsManufactured:
         # Assert
         assert sorted(p.name for p in tmp_path.iterdir()) == before
 
-    def test_a_well_formed_dsn_is_still_opened(self):
+    def test_a_well_formed_dsn_is_still_opened(self, postgres_dsn):
         """POSITIVE CONTROL for the door: refusing everything would pass all
         three tests above.
 
@@ -287,6 +287,12 @@ class TestNoFileIsManufactured:
         The control still has to exist, because a door that refuses everything
         passes every refusal test above. So the accepted case is now the only
         target that IS a store: the throwaway schema the harness pinned.
+
+        Store-touching test, so it requests the ``postgres_dsn`` fail-LOUD
+        fixture (bare-param pattern): the target below is the ambient
+        per-test store, which is the refused placeholder without a writable
+        cluster. Requested, not used -- a no-op where a cluster exists, a
+        setup-ERROR with reason+remedy where none does.
         """
         # Arrange
         import os

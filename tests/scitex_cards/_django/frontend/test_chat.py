@@ -7,7 +7,7 @@ Lead a2a ``74db4f2d`` + ``10afa799`` greenlight (TRACK-2 Phase 6,
 
   - Load-bearing CSS selectors present in ``styles/chat.css``.
   - No hardcoded color literals (the dark/light flip rides on the
-    scitex-ui token variables).
+    SDK token variables).
   - ``board.css`` `@import`s ``chat.css`` so the bundle picks it up.
   - ``NodeDetailPanel.tsx`` imports + mounts ``ChatPanel``.
 
@@ -107,7 +107,7 @@ def test_chat_css_declares_selector(selector: str) -> None:
 
 def test_chat_css_no_hardcoded_colors_hex_hits() -> None:
     """No hex / rgb / named-color literals — everything rides the
-    scitex-ui token variables so the dark/light flip stays clean."""
+    SDK token variables so the dark/light flip stays clean."""
     # Arrange
     css = _read(_CHAT_CSS)
     # Strip comments before scanning so doc colour tokens don't trip
@@ -131,7 +131,7 @@ def test_chat_css_no_hardcoded_colors_hex_hits() -> None:
 
 def test_chat_css_no_hardcoded_colors_func_hits() -> None:
     """No hex / rgb / named-color literals — everything rides the
-    scitex-ui token variables so the dark/light flip stays clean."""
+    SDK token variables so the dark/light flip stays clean."""
     # Arrange
     css = _read(_CHAT_CSS)
     # Strip comments before scanning so doc colour tokens don't trip
@@ -155,7 +155,7 @@ def test_chat_css_no_hardcoded_colors_func_hits() -> None:
 
 def test_chat_css_no_hardcoded_colors_named() -> None:
     """No hex / rgb / named-color literals — everything rides the
-    scitex-ui token variables so the dark/light flip stays clean."""
+    SDK token variables so the dark/light flip stays clean."""
     # Arrange
     css = _read(_CHAT_CSS)
     # Strip comments before scanning so doc colour tokens don't trip
@@ -187,7 +187,7 @@ def test_chat_css_imported_by_board_css() -> None:
 
 
 def test_chat_css_uses_token_variables() -> None:
-    """The stylesheet must rely on the scitex-ui token namespace
+    """The stylesheet must rely on the SDK token namespace
     (``--stx-…``) — that's how the dark/light flip propagates."""
     # Arrange
     # Act

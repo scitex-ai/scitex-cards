@@ -13,6 +13,13 @@ contradictory facts, depending on who read it.
 Five such cards were found on the live board. The health check that exists to
 catch exactly this (`_check_terminal_state_honest`) reported ok on all five,
 because it knew about `closed_at` and had never been told about `completed_at`.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every test below that seeds/reads the ambient
+per-test store (via ``seed_db_from_doc``/``complete_task``/``reopen_task``/
+``_check_terminal_state_honest``) is refused without a writable cluster.
+The 7 ``clear_completion_stamp`` dict-only tests stay unguarded by design:
+they never open the store.
 """
 
 import os
@@ -52,7 +59,7 @@ def _one_blocked_card(tmp_path):
     return _store(tmp_path, [{"id": "a", "title": "A", "status": "blocked"}])
 
 
-def test_complete_task_flips_the_card_to_done(tmp_path):
+def test_complete_task_flips_the_card_to_done(tmp_path, postgres_dsn):
     # Arrange
     store = _one_blocked_card(tmp_path)
     # Act
@@ -62,7 +69,7 @@ def test_complete_task_flips_the_card_to_done(tmp_path):
     assert task["status"] == "done"
 
 
-def test_complete_task_stamps_completed_at(tmp_path):
+def test_complete_task_stamps_completed_at(tmp_path, postgres_dsn):
     # Arrange
     store = _one_blocked_card(tmp_path)
     # Act
@@ -72,7 +79,7 @@ def test_complete_task_stamps_completed_at(tmp_path):
     assert meta.get("completed_at"), "complete_task must stamp completed_at"
 
 
-def test_reopen_task_restores_the_previous_status(tmp_path):
+def test_reopen_task_restores_the_previous_status(tmp_path, postgres_dsn):
     # Arrange
     store = _one_blocked_card(tmp_path)
     complete_task(store, "a", by="tester")
@@ -83,7 +90,7 @@ def test_reopen_task_restores_the_previous_status(tmp_path):
     assert task["status"] == "blocked"
 
 
-def test_complete_then_reopen_leaves_no_completion_stamp(tmp_path):
+def test_complete_then_reopen_leaves_no_completion_stamp(tmp_path, postgres_dsn):
     """The regression itself: reopen must un-complete, not just un-status."""
     # Arrange
     store = _one_blocked_card(tmp_path)
@@ -100,7 +107,7 @@ def test_complete_then_reopen_leaves_no_completion_stamp(tmp_path):
         )
 
 
-def test_reopened_card_is_not_a_zombie_to_the_health_check(tmp_path):
+def test_reopened_card_is_not_a_zombie_to_the_health_check(tmp_path, postgres_dsn):
     """End-to-end: the guard must agree the reopened card is honest."""
     # Arrange
     store = _one_blocked_card(tmp_path)
@@ -126,7 +133,7 @@ def _completed_at_zombie_store(tmp_path):
     )
 
 
-def test_health_check_catches_a_completed_at_zombie(tmp_path):
+def test_health_check_catches_a_completed_at_zombie(tmp_path, postgres_dsn):
     """The blind spot, pinned: open status + completed_at MUST be caught.
 
     Before 2026-07-14 this returned ok — which is how five of them survived.
@@ -139,7 +146,7 @@ def test_health_check_catches_a_completed_at_zombie(tmp_path):
     assert result["ok"] is False
 
 
-def test_completed_at_zombie_detail_names_the_card(tmp_path):
+def test_completed_at_zombie_detail_names_the_card(tmp_path, postgres_dsn):
     """A verdict nobody can act on is not a verdict — name the offender."""
     # Arrange
     store = _completed_at_zombie_store(tmp_path)
@@ -149,7 +156,7 @@ def test_completed_at_zombie_detail_names_the_card(tmp_path):
     assert "zombie" in result["detail"]
 
 
-def test_health_check_still_catches_a_closed_at_zombie(tmp_path):
+def test_health_check_still_catches_a_closed_at_zombie(tmp_path, postgres_dsn):
     """Widening the check must not have dropped the marker it already had."""
     # Arrange
     store = _store(
@@ -169,7 +176,7 @@ def test_health_check_still_catches_a_closed_at_zombie(tmp_path):
     assert result["ok"] is False
 
 
-def test_every_closure_marker_is_actually_checked(tmp_path):
+def test_every_closure_marker_is_actually_checked(tmp_path, postgres_dsn):
     """Add a closure marker without teaching the guard, and this FAILS.
 
     The original bug was an ENUMERATION that silently claimed to be complete.
@@ -232,7 +239,7 @@ def _cancelled_but_stamped_store(tmp_path):
     )
 
 
-def test_cancelled_card_carrying_completed_at_is_caught(tmp_path):
+def test_cancelled_card_carrying_completed_at_is_caught(tmp_path, postgres_dsn):
     # Arrange
     store = _cancelled_but_stamped_store(tmp_path)
     # Act
@@ -241,7 +248,7 @@ def test_cancelled_card_carrying_completed_at_is_caught(tmp_path):
     assert result["ok"] is False
 
 
-def test_cancelled_zombie_detail_names_the_card(tmp_path):
+def test_cancelled_zombie_detail_names_the_card(tmp_path, postgres_dsn):
     # Arrange
     store = _cancelled_but_stamped_store(tmp_path)
     # Act
@@ -250,7 +257,7 @@ def test_cancelled_zombie_detail_names_the_card(tmp_path):
     assert "killed-but-counted" in result["detail"]
 
 
-def test_cancelled_zombie_detail_explains_the_throughput_lie(tmp_path):
+def test_cancelled_zombie_detail_explains_the_throughput_lie(tmp_path, postgres_dsn):
     # Arrange
     store = _cancelled_but_stamped_store(tmp_path)
     # Act
@@ -259,7 +266,7 @@ def test_cancelled_zombie_detail_explains_the_throughput_lie(tmp_path):
     assert "DELIVERED WORK" in result["detail"]
 
 
-def test_a_genuinely_done_card_is_not_flagged(tmp_path):
+def test_a_genuinely_done_card_is_not_flagged(tmp_path, postgres_dsn):
     """The stamp is CORRECT on a done card — no false positives."""
     # Arrange
     store = _store(

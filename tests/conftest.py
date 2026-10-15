@@ -376,11 +376,15 @@ def _point_env_at(scratch: Path, store_dsn: "str | None") -> None:
     # duration of that test; this only supplies the default.
     os.environ["SCITEX_DIR"] = str(scratch / "scitex-dir-fallback")
     # The storage primitive's own variable. SET to the throwaway schema when
-    # one could be opened; otherwise REMOVED — never left inherited. Removing
-    # it is strictly safer than the value it replaces, because the value it
-    # replaces is the live fleet board.
+    # one could be opened; otherwise SET TO THE REFUSED PLACEHOLDER -- never
+    # removed, never left inherited. Removing it is NOT safer than the value
+    # it replaces: the resolver supplies the fleet default when the variable
+    # is absent, so "unset" resolves to the live board (measured 2026-09-27:
+    # a popped env resolves to postgresql://scitex-primary:55432/scitex),
+    # while a filename is refused by every store door before anything is
+    # touched (resolve_store_target raises, connect refuses).
     if store_dsn is None:
-        os.environ.pop(_STORE_DSN_ENV, None)
+        os.environ[_STORE_DSN_ENV] = _refused_placeholder(scratch)
     else:
         os.environ[_STORE_DSN_ENV] = store_dsn
 

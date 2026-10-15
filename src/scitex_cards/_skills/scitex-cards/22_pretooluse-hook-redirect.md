@@ -57,7 +57,7 @@ The stderr message names the scitex-cards CLI verbs:
 ```
 scitex-cards add <id> --title "..." --assignee <you>
 scitex-cards update <id> --status in_progress
-scitex-cards list-tasks --assignee <you> --status pending
+scitex-cards list-tasks --assignee <you> --status deferred
 ```
 
 …plus a pointer to the MCP wire (`add_task` / `update_task` /

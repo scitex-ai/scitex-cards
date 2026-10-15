@@ -10,8 +10,8 @@
  * bar, the thread refresh, the current peer, the current reactions, the
  * composer field, the agent list. Nothing here reaches back into chat.js.
  *
- * Look and markup come from scitex-ui (.stx-app-context-menu, >=0.11.1). Only
- * the MECHANICS are here, and only until scitex-ui's ts/app/context-menu
+ * Look and markup come from the SDK (.stx-app-context-menu). Only
+ * the MECHANICS are here, and only until the SDK's ui ts/app/context-menu
  * module lands — they confirmed base ships the stylesheet and zero lines of
  * behaviour, which is exactly the private-implementation gap this is meant to
  * avoid. When their module ships, delete the open/clamp/dismiss half; the
@@ -121,7 +121,7 @@
       $reply.addEventListener("click", function () {
         // Quote-prefill rather than a threaded reply: the store has no parent
         // pointer yet (that arrives with the DM move into cards.db), so a
-        // visible quote is honest about what it is. scitex-ui is designing the
+        // visible quote is honest about what it is. Base is designing the
         // reply-quote BLOCK in base; this is the composer half.
         var text = messageTextOf(target).trim();
         if (text) {

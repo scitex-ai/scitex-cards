@@ -15,6 +15,10 @@ not exist on the transport most agents actually use.
 
 ``"__none"`` is the same token ``list_tasks`` already spends on "no blocker",
 so this adds a second VERB to one convention rather than a second spelling.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every add/update below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -35,7 +39,7 @@ def _update(task_id, **kw):
     return json.loads(asyncio.run(update_task(task_id=task_id, **kw)))
 
 
-def test_it_clears_a_blocker():
+def test_it_clears_a_blocker(postgres_dsn):
     """The exact case that failed: un-blocking a card over MCP."""
     # Arrange
     add_task(
@@ -53,7 +57,7 @@ def test_it_clears_a_blocker():
     assert "blocker" not in merged or merged.get("blocker") in (None, "")
 
 
-def test_it_clears_a_free_text_field():
+def test_it_clears_a_free_text_field(postgres_dsn):
     # Arrange
     add_task(id="t2", title="t2", agent="worker-x", note="some note")
 
@@ -64,7 +68,7 @@ def test_it_clears_a_free_text_field():
     assert not merged.get("note")
 
 
-def test_it_un_parks_a_card():
+def test_it_un_parks_a_card(postgres_dsn):
     """`parked` is the field whose clear path had no reachable spelling."""
     # Arrange
     add_task(
@@ -81,7 +85,7 @@ def test_it_un_parks_a_card():
     assert not merged.get("parked")
 
 
-def test_a_normal_value_is_untouched():
+def test_a_normal_value_is_untouched(postgres_dsn):
     """The sentinel must not eat legitimate content."""
     # Arrange
     add_task(id="t4", title="t4", agent="worker-x")
@@ -93,7 +97,7 @@ def test_a_normal_value_is_untouched():
     assert merged["note"] == "a real note"
 
 
-def test_status_still_refuses_to_be_cleared():
+def test_status_still_refuses_to_be_cleared(postgres_dsn):
     """A card must carry a decision — the sentinel is not a way around that."""
     # Arrange
     add_task(id="t5", title="t5", agent="worker-x", status="in_progress")
@@ -115,7 +119,7 @@ def test_status_still_refuses_to_be_cleared():
 #: the second.
 
 
-def test_an_omitted_field_is_still_left_alone():
+def test_an_omitted_field_is_still_left_alone(postgres_dsn):
     # Arrange
     add_task(id="t6", title="t6", agent="worker-x", note="keep me")
 
@@ -126,7 +130,7 @@ def test_an_omitted_field_is_still_left_alone():
     assert merged["note"] == "keep me"
 
 
-def test_a_field_passed_alongside_an_omitted_one_still_updates():
+def test_a_field_passed_alongside_an_omitted_one_still_updates(postgres_dsn):
     # Arrange
     add_task(id="t6", title="t6", agent="worker-x", note="keep me")
 

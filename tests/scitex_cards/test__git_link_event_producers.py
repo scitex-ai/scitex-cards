@@ -15,6 +15,10 @@ EMIT-ONLY: there is intentionally NO consumer yet (C4 dispatcher is a
 separate card). Tests capture the emitted card-event via the documented
 in-process ``entry_points=`` injection seam (a real fake handler) — no
 mocks, no monkeypatch (STX-NM / PA-306). AAA pattern.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every seed below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -69,7 +73,7 @@ def _store_with(tmp_path: Path) -> str:
 # === push handler — commit trigger emits `committed` =======================
 
 
-def test_new_commit_link_emits_one_committed_event(tmp_path: Path, env):
+def test_new_commit_link_emits_one_committed_event(tmp_path: Path, env, postgres_dsn):
     # Arrange
     store = _store_with(tmp_path)
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
@@ -91,7 +95,7 @@ def test_new_commit_link_emits_one_committed_event(tmp_path: Path, env):
     assert len(committed) == 1
 
 
-def test_committed_event_carries_card_id_repo_sha(tmp_path: Path, env):
+def test_committed_event_carries_card_id_repo_sha(tmp_path: Path, env, postgres_dsn):
     # Arrange
     store = _store_with(tmp_path)
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
@@ -117,7 +121,7 @@ def test_committed_event_carries_card_id_repo_sha(tmp_path: Path, env):
     )
 
 
-def test_relink_of_recorded_commit_emits_no_event(tmp_path: Path, env):
+def test_relink_of_recorded_commit_emits_no_event(tmp_path: Path, env, postgres_dsn):
     # Arrange — first link records the sha; the second is idempotent.
     store = _store_with(tmp_path)
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
@@ -142,7 +146,7 @@ def test_relink_of_recorded_commit_emits_no_event(tmp_path: Path, env):
 # === push handler — push trigger emits `pushed` ============================
 
 
-def test_push_trigger_emits_pushed_event(tmp_path: Path, env):
+def test_push_trigger_emits_pushed_event(tmp_path: Path, env, postgres_dsn):
     # Arrange
     store = _store_with(tmp_path)
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
@@ -164,7 +168,7 @@ def test_push_trigger_emits_pushed_event(tmp_path: Path, env):
     assert len(pushed) == 1
 
 
-def test_absent_trigger_defaults_to_pushed(tmp_path: Path, env):
+def test_absent_trigger_defaults_to_pushed(tmp_path: Path, env, postgres_dsn):
     # Arrange — an older producer omits `trigger`; default is `pushed`.
     store = _store_with(tmp_path)
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
@@ -184,7 +188,7 @@ def test_absent_trigger_defaults_to_pushed(tmp_path: Path, env):
     assert [e["type"] for e in _card_events(sink)] == ["pushed"]
 
 
-def test_pushed_event_carries_branch(tmp_path: Path, env):
+def test_pushed_event_carries_branch(tmp_path: Path, env, postgres_dsn):
     # Arrange
     store = _store_with(tmp_path)
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
@@ -206,7 +210,7 @@ def test_pushed_event_carries_branch(tmp_path: Path, env):
     assert got["branch"] == "feat/some-card"
 
 
-def test_unknown_card_id_emits_no_event(tmp_path: Path, env):
+def test_unknown_card_id_emits_no_event(tmp_path: Path, env, postgres_dsn):
     # Arrange — producer hinted at a card that doesn't exist → no link.
     store = _store_with(tmp_path)
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
@@ -261,7 +265,7 @@ def _fake_seam(mapping):
     return _fn
 
 
-def test_newly_merged_pr_emits_merged_event(tmp_path: Path):
+def test_newly_merged_pr_emits_merged_event(tmp_path: Path, postgres_dsn):
     # Arrange
     path = _reconcile_store(tmp_path)
     seam = _fake_seam({"https://github.com/o/r/pull/1": MERGED})
@@ -275,7 +279,7 @@ def test_newly_merged_pr_emits_merged_event(tmp_path: Path):
     assert len(merged) == 1
 
 
-def test_merged_event_carries_card_id_and_pr_url(tmp_path: Path):
+def test_merged_event_carries_card_id_and_pr_url(tmp_path: Path, postgres_dsn):
     # Arrange
     path = _reconcile_store(tmp_path)
     seam = _fake_seam({"https://github.com/o/r/pull/1": MERGED})
@@ -292,7 +296,7 @@ def test_merged_event_carries_card_id_and_pr_url(tmp_path: Path):
     )
 
 
-def test_merged_event_repo_derived_from_pr_url(tmp_path: Path):
+def test_merged_event_repo_derived_from_pr_url(tmp_path: Path, postgres_dsn):
     # Arrange
     path = _reconcile_store(tmp_path)
     seam = _fake_seam({"https://github.com/o/r/pull/1": MERGED})
@@ -306,7 +310,7 @@ def test_merged_event_repo_derived_from_pr_url(tmp_path: Path):
     assert got["repo"] == "o/r"
 
 
-def test_dry_run_emits_no_merged_event(tmp_path: Path):
+def test_dry_run_emits_no_merged_event(tmp_path: Path, postgres_dsn):
     # Arrange — DRY-RUN mutates nothing, so it emits nothing.
     path = _reconcile_store(tmp_path)
     seam = _fake_seam({"https://github.com/o/r/pull/1": MERGED})
@@ -319,7 +323,7 @@ def test_dry_run_emits_no_merged_event(tmp_path: Path):
     assert _card_events(sink) == []
 
 
-def test_already_done_card_does_not_reemit_on_second_run(tmp_path: Path):
+def test_already_done_card_does_not_reemit_on_second_run(tmp_path: Path, postgres_dsn):
     # Arrange — first apply closes the card + emits; a second run finds it
     # already done and emits NOTHING (idempotent).
     path = _reconcile_store(tmp_path)
@@ -334,7 +338,7 @@ def test_already_done_card_does_not_reemit_on_second_run(tmp_path: Path):
     assert _card_events(sink) == []
 
 
-def test_open_pr_card_emits_no_merged_event(tmp_path: Path):
+def test_open_pr_card_emits_no_merged_event(tmp_path: Path, postgres_dsn):
     # Arrange — an open PR is never closed, so never emits.
     path = _reconcile_store(tmp_path)
     seam = _fake_seam({"https://github.com/o/r/pull/2": "open"})

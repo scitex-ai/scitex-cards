@@ -110,6 +110,14 @@ def close_cmd(task_id, reason, by, as_json, dry_run, yes) -> None:
             None,
             task_id,
             status="cancelled",
+            # Leaving `blocked` MUST clear the gate: `close` takes ANY id,
+            # so it can close a `blocked` card, and the schema validator
+            # REJECTS a real blocker variant on a non-`blocked` row
+            # (`_validate.py` rule (b)) — without this the close of a gated
+            # card fails on its own gate. `""` is the documented
+            # clear-sentinel (`_store_enums.resolve_enum_clears`): it pops
+            # the key, never writes `""`.
+            blocker="",
             _log_meta=log_meta,
         )
     except _store.TaskNotFoundError as exc:

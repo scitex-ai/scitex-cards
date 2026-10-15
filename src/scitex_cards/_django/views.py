@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Views for the scitex-cards board Django app.
 
-``board_page`` renders the React SPA inside the scitex-ui workspace shell
+``board_page`` renders the React SPA inside the SDK workspace shell
 (falling back to a server-rendered static graph when the built frontend assets
 are absent). ``api_dispatch`` routes ``/<endpoint>`` to the ``HANDLERS`` dict.
 """
@@ -161,9 +161,10 @@ def _project_picker_library_registered() -> bool:
     why the load lives in ``_project_picker.html`` and every caller reaches that
     partial through an ``{% include %}`` guarded by this answer.
 
-    scitex-ui ships the library from 0.22.0 onwards. Measured 2026-09-27 against
-    the wheel: 0.20.2 has no ``templatetags/scitex_project_picker.py`` and no
-    ``scitex_ui.project_scope`` at all, while 0.22.0 and 0.23.1 ship both.
+    scitex-sdk ships the library from its UI component onwards. Measured 2026-10-15
+    against the installed SDK: ``scitex_sdk.ui.templatetags/scitex_project_picker.py``
+    and ``scitex_sdk.ui.project_scope`` ship together, while an SDK predating
+    the project-scope API has neither.
     """
     from django.template import engines
 
@@ -173,7 +174,7 @@ def _project_picker_library_registered() -> bool:
 def _host_project_provider_registered() -> bool:
     """True when a HOST registered a project provider with the SDK.
 
-    Imported defensively and answered False on every failure: an scitex-ui that
+    Imported defensively and answered False on every failure: an SDK that
     predates the project-scope API, and a host that configured no provider, are
     both deployments this board must still serve (the same graceful-degradation
     rule ``settings.py`` applies to the element inspector). ``host_project_provider_url``
@@ -196,8 +197,8 @@ def _host_project_provider_registered() -> bool:
 def _current_project_id(request) -> str:
     """The Hub project this request resolves to, or "" so the header hides it.
 
-    The PRECEDENCE is scitex-ui's own, called rather than re-derived
-    (:func:`scitex_ui.project_scope.resolve_project`): an explicit ``?project=``
+    The PRECEDENCE is the SDK's own, called rather than re-derived
+    (:func:`scitex_sdk.ui.project_scope.resolve_project`): an explicit ``?project=``
     wins, an inaccessible explicit project resolves to ``None`` and NEVER
     silently falls back to the stored one, otherwise the last visited project if
     it is still accessible, otherwise ``None``. Re-implementing that here would
@@ -315,7 +316,7 @@ def _cards_version() -> str:
 
 
 def board_page(request):
-    """Serve the React SPA inside the scitex-ui shell, or a static fallback."""
+    """Serve the React SPA inside the SDK shell, or a static fallback."""
     from django.template.loader import render_to_string
 
     internal_chrome = _cards_internal_chrome_enabled(request)

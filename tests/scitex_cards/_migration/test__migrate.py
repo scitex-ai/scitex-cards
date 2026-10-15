@@ -4,6 +4,14 @@
 
 Real `tmp_path` lanes; no mocks (STX-NM / PA-306). The scanner is
 pure-data — easy to fixture, no FS writes beyond the fixture itself.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the scan/render/CLI tests below seed/read the
+ambient per-test store via ``seed_db_from_doc``/CLI, which is refused
+without a writable cluster. The ``classify_row``/``note_excerpt`` tests
+and the unloadable-lane swallow-and-warn test stay unguarded by design:
+they never open the store (the swallow test deliberately points the DB
+env at a missing path to pin the failsoft path).
 """
 
 from __future__ import annotations
@@ -37,17 +45,21 @@ def _mk_dir_card(lane: Path, card_id: str, readme: str = "body\n") -> None:
 
 
 class TestClassify:
-    """Per-row classification covers the five migration kinds."""
+    """Per-row classification covers the five migration kinds.
+
+    Fixtures seed ``status: deferred``: ``pending`` was abolished
+    2026-07-10 and ``classify_row`` never reads the status.
+    """
 
     def test_canonical_row_has_no_classifications(self, tmp_path):
         # Arrange — minimal-metadata row + tasks/<id>/ sibling.
         lane = tmp_path / "tasks.yaml"
         _write_lane(
             lane,
-            "tasks:\n  - {id: a, title: A, status: pending}\n",
+            "tasks:\n  - {id: a, title: A, status: deferred}\n",
         )
         _mk_dir_card(lane, "a")
-        row = {"id": "a", "title": "A", "status": "pending"}
+        row = {"id": "a", "title": "A", "status": "deferred"}
         # Act
         plan = _mig.classify_row(row, lane)
         # Assert
@@ -61,7 +73,7 @@ class TestClassify:
         row = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "note": "This is a long body that lives in yaml today.",
         }
         # Act
@@ -75,7 +87,7 @@ class TestClassify:
         _write_lane(lane, "tasks: []\n")
         _mk_dir_card(lane, "a")
         title = "X" * (_mig.MAX_TITLE_CHARS + 1)
-        row = {"id": "a", "title": title, "status": "pending"}
+        row = {"id": "a", "title": title, "status": "deferred"}
         # Act
         plan = _mig.classify_row(row, lane)
         # Assert
@@ -90,7 +102,7 @@ class TestClassify:
         row = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "comments": [{"ts": "x", "author": "z", "text": long_text}],
         }
         # Act
@@ -102,7 +114,7 @@ class TestClassify:
         # Arrange — no tasks/<id>/ sibling.
         lane = tmp_path / "tasks.yaml"
         _write_lane(lane, "tasks: []\n")
-        row = {"id": "a", "title": "A", "status": "pending"}
+        row = {"id": "a", "title": "A", "status": "deferred"}
         # Act
         plan = _mig.classify_row(row, lane)
         # Assert
@@ -111,7 +123,7 @@ class TestClassify:
     def test_row_with_empty_id_flagged(self, tmp_path):
         # Arrange
         lane = tmp_path / "tasks.yaml"
-        row = {"title": "no id", "status": "pending"}
+        row = {"title": "no id", "status": "deferred"}
         # Act
         plan = _mig.classify_row(row, lane)
         # Assert
@@ -125,7 +137,7 @@ class TestClassify:
         row = {
             "id": "multi",
             "title": long_title,
-            "status": "pending",
+            "status": "deferred",
             "note": "body content",
         }
         # Act
@@ -142,7 +154,7 @@ class TestClassify:
 class TestScanLane:
     """`scan_lane` aggregates per-row plans + per-kind counts."""
 
-    def test_scan_lane_counts_total_and_canonical(self, tmp_path):
+    def test_scan_lane_counts_total_and_canonical(self, tmp_path, postgres_dsn):
         # Arrange — one canonical, one needs-migrate. scan_lane loads via
         # load_tasks, which now reads the canonical DB (the lane path no
         # longer selects the store), so SEED the rows into the DB; the lane
@@ -194,7 +206,7 @@ class TestScanLane:
 class TestScanAllLanes:
     """`scan_all_lanes` rolls up across multiple lanes."""
 
-    def test_scan_all_aggregates_lane_plans(self, tmp_path):
+    def test_scan_all_aggregates_lane_plans(self, tmp_path, postgres_dsn):
         # Arrange — two tmp lanes over ONE canonical DB. scan_lane reads the
         # DB (not per-lane YAML), so every lane reports the full seeded set;
         # the roll-up therefore sums 2 lanes x 2 rows = 4. len == 2 still
@@ -226,7 +238,7 @@ class TestRenderMarkdown:
     """The Markdown report is operator-readable + names the sample
     classifications so they can be eyeballed."""
 
-    def test_markdown_includes_lane_count_and_totals(self, tmp_path):
+    def test_markdown_includes_lane_count_and_totals(self, tmp_path, postgres_dsn):
         # Arrange — scan_all_lanes reads the canonical DB; seed one row.
         lane = tmp_path / "tasks.yaml"
         seed_db_from_doc(
@@ -247,7 +259,7 @@ class TestRenderMarkdown:
 class TestCliPlan:
     """`scitex-cards migration plan --json` emits parseable JSON."""
 
-    def test_cli_plan_json_decodes(self, env, tmp_path):
+    def test_cli_plan_json_decodes(self, env, tmp_path, postgres_dsn):
         # Arrange — empty global + empty lane glob.
         global_store = tmp_path / "global.yaml"
         global_store.write_text("tasks: []\n", encoding="utf-8")
@@ -264,7 +276,7 @@ class TestCliPlan:
             "lanes",
         } <= set(payload.keys())
 
-    def test_cli_plan_markdown_includes_summary(self, env, tmp_path):
+    def test_cli_plan_markdown_includes_summary(self, env, tmp_path, postgres_dsn):
         # Arrange
         global_store = tmp_path / "global.yaml"
         global_store.write_text("tasks: []\n", encoding="utf-8")
@@ -289,7 +301,7 @@ class TestNoteVerbatim:
         lane = tmp_path / "tasks.yaml"
         _write_lane(lane, "tasks: []\n")
         body = "short body, never truncated"
-        row = {"id": "a", "title": "A", "status": "pending", "note": body}
+        row = {"id": "a", "title": "A", "status": "deferred", "note": body}
         # Act
         plan = _mig.classify_row(row, lane)
         # Assert
@@ -300,7 +312,7 @@ class TestNoteVerbatim:
         lane = tmp_path / "tasks.yaml"
         _write_lane(lane, "tasks: []\n")
         body = "z" * 200
-        row = {"id": "a", "title": "A", "status": "pending", "note": body}
+        row = {"id": "a", "title": "A", "status": "deferred", "note": body}
         # Act
         plan = _mig.classify_row(row, lane)
         # Assert — the literal first 80 + "…".

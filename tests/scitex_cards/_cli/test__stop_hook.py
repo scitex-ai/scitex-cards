@@ -19,6 +19,14 @@ Pinned here, with real store files and no mocks:
 * another agent's work does not block this agent;
 * the reason stays bounded when the board is large — an instruction listing
   forty cards is not an instruction.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 11 ambient checks below target the per-test
+store — directly via ``add_task``/``poll_inbox`` or transitively via the
+hook, which reads it — and the store is refused without a writable
+cluster. The 2 detector-failure tests stay unguarded: they pin their own
+unreadable store through the invoke ``env`` and never open the ambient
+one.
 """
 
 from __future__ import annotations
@@ -82,7 +90,7 @@ def _run_against_unreadable_store():
     )
 
 
-def test_an_empty_board_allows_the_stop():
+def test_an_empty_board_allows_the_stop(postgres_dsn):
     # Arrange — the per-test store holds no cards.
     # Act
     _result, payload = _run()
@@ -90,7 +98,7 @@ def test_an_empty_board_allows_the_stop():
     assert payload == {}
 
 
-def test_an_empty_board_exits_zero():
+def test_an_empty_board_exits_zero(postgres_dsn):
     # Arrange — the per-test store holds no cards.
     # Act
     result, _payload = _run()
@@ -98,7 +106,7 @@ def test_an_empty_board_exits_zero():
     assert result.exit_code == 0
 
 
-def test_runnable_work_blocks_the_stop():
+def test_runnable_work_blocks_the_stop(postgres_dsn):
     # Arrange
     _seed_runnable_card()
     # Act
@@ -107,7 +115,7 @@ def test_runnable_work_blocks_the_stop():
     assert payload["decision"] == "block"
 
 
-def test_a_refused_stop_still_exits_zero():
+def test_a_refused_stop_still_exits_zero(postgres_dsn):
     # Arrange
     _seed_runnable_card()
     # Act
@@ -116,7 +124,7 @@ def test_a_refused_stop_still_exits_zero():
     assert result.exit_code == 0
 
 
-def test_the_reason_names_the_blocking_card():
+def test_the_reason_names_the_blocking_card(postgres_dsn):
     """A refusal that does not name the card leaves the agent guessing."""
     # Arrange
     _seed_runnable_card()
@@ -127,7 +135,7 @@ def test_the_reason_names_the_blocking_card():
     assert "w1" in reason
 
 
-def test_the_reason_says_what_to_do_next():
+def test_the_reason_says_what_to_do_next(postgres_dsn):
     """A refusal that does not say what to do next leaves the agent idle."""
     # Arrange
     _seed_runnable_card()
@@ -138,7 +146,7 @@ def test_the_reason_says_what_to_do_next():
     assert "work it, update it, or close it" in reason
 
 
-def test_the_reason_instructs_a_single_item():
+def test_the_reason_instructs_a_single_item(postgres_dsn):
     """The instruction is explicitly single-item, not a whole backlog."""
     # Arrange
     _seed_runnable_card()
@@ -167,7 +175,7 @@ def test_a_detector_failure_still_exits_zero():
     assert result.exit_code == 0
 
 
-def test_another_agents_work_does_not_block_this_agent():
+def test_another_agents_work_does_not_block_this_agent(postgres_dsn):
     # Arrange
     _seed_runnable_card(card_id="w2", agent="worker-y")
     # Act
@@ -176,7 +184,7 @@ def test_another_agents_work_does_not_block_this_agent():
     assert payload == {}
 
 
-def test_the_reason_caps_the_listed_cards():
+def test_the_reason_caps_the_listed_cards(postgres_dsn):
     """An instruction listing forty cards is not an instruction."""
     # Arrange
     _seed_many_runnable_cards(count=12)
@@ -190,7 +198,7 @@ def test_the_reason_caps_the_listed_cards():
     assert len(numbered) <= 6
 
 
-def test_the_reason_flags_the_capped_remainder():
+def test_the_reason_flags_the_capped_remainder(postgres_dsn):
     """The remainder is COUNTED rather than dropped silently."""
     # Arrange
     _seed_many_runnable_cards(count=12)
@@ -201,7 +209,7 @@ def test_the_reason_flags_the_capped_remainder():
     assert "more runnable item(s)" in reason
 
 
-def test_the_reason_reports_the_full_runnable_total():
+def test_the_reason_reports_the_full_runnable_total(postgres_dsn):
     """An omission the agent cannot see is a lie about the board."""
     # Arrange
     _seed_many_runnable_cards(count=12)

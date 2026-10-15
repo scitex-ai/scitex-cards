@@ -47,7 +47,8 @@ _STORE_TEXT = (
     "    project: paper-scitex-clew\n"
     "  - id: t2\n"
     "    title: Other\n"
-    "    status: pending\n"
+    # Fixture seeds deferred (``pending`` was abolished 2026-07-10).
+    "    status: deferred\n"
     "    agent: proj-paper-scitex-clew\n"
 )
 

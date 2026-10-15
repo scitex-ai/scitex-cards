@@ -13,7 +13,11 @@ Covers two cards surfaced from the 2026-06-29 neurovista dogfood:
     normalized away. A REAL blocker variant on a non-blocked status still
     errors.
 
-CliRunner + a real store under tmp_path. No mocks.
+CliRunner against the ambient per-test store. No mocks.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every write below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -28,11 +32,11 @@ from scitex_cards import _model
 from scitex_cards._cli import main
 
 
-def _store_path(tmp_path) -> str:
-    # The store is the database; load/save read+write it and IGNORE the
+def _store_path() -> str:
+    # The store is the database; load/save read+write it and IGNORE any
     # path except as the provenance stamp. Return the PINNED STORE identity
     # (== resolve_tasks_path(None)) so a read-after-write round-trips instead
-    # of tripping the stamp-mismatch guard. NOT the tmp_path file.
+    # of tripping the stamp-mismatch guard.
     return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 
@@ -53,7 +57,7 @@ def _add(runner, ident, title, *extra):
 # --------------------------------------------------------------------------- #
 # Bug 1: add prints a non-empty success line that leads with the id           #
 # --------------------------------------------------------------------------- #
-def test_add_success_exits_zero(tmp_path):
+def test_add_success_exits_zero(postgres_dsn):
     # Arrange
     runner = CliRunner()
     # Act
@@ -62,7 +66,7 @@ def test_add_success_exits_zero(tmp_path):
     assert result.exit_code == 0, result.output
 
 
-def test_add_success_stdout_is_non_empty(tmp_path):
+def test_add_success_stdout_is_non_empty(postgres_dsn):
     # Arrange
     runner = CliRunner()
     # Act
@@ -71,7 +75,7 @@ def test_add_success_stdout_is_non_empty(tmp_path):
     assert result.output.strip() != ""
 
 
-def test_add_success_stdout_mentions_created_id(tmp_path):
+def test_add_success_stdout_mentions_created_id(postgres_dsn):
     # Arrange
     runner = CliRunner()
     # Act
@@ -80,7 +84,7 @@ def test_add_success_stdout_mentions_created_id(tmp_path):
     assert "design" in result.output
 
 
-def test_add_json_stdout_is_pure_json(tmp_path):
+def test_add_json_stdout_is_pure_json(postgres_dsn):
     """The --json path emits ONLY machine-readable JSON (no human line)."""
     # Arrange
     runner = CliRunner()
@@ -94,7 +98,7 @@ def test_add_json_stdout_is_pure_json(tmp_path):
 # --------------------------------------------------------------------------- #
 # Bug 2: blocker=none is lenient on a non-blocked status                       #
 # --------------------------------------------------------------------------- #
-def test_add_deferred_blocker_none_succeeds(tmp_path):
+def test_add_deferred_blocker_none_succeeds(postgres_dsn):
     # Arrange
     runner = CliRunner()
     # Act
@@ -103,39 +107,39 @@ def test_add_deferred_blocker_none_succeeds(tmp_path):
     assert result.exit_code == 0, result.output
 
 
-def _add_deferred_blocker_none(tmp_path):
+def _add_deferred_blocker_none(postgres_dsn):
     """Add a deferred card carrying the `none` blocker sentinel; reload it."""
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     _add(runner, "x", "X", "--status", "deferred", "--blocker", "none")
     return _model.load_tasks(store)
 
 
-def test_add_deferred_blocker_none_keeps_deferred_status(tmp_path):
+def test_add_deferred_blocker_none_keeps_deferred_status(postgres_dsn):
     # Arrange
     # Act
-    tasks = _add_deferred_blocker_none(tmp_path)
+    tasks = _add_deferred_blocker_none(postgres_dsn)
     # Assert
     assert tasks[0]["status"] == "deferred"
 
 
-def test_add_deferred_blocker_none_reads_back_as_absent(tmp_path):
+def test_add_deferred_blocker_none_reads_back_as_absent(postgres_dsn):
     # Arrange
     # Act
-    tasks = _add_deferred_blocker_none(tmp_path)
+    tasks = _add_deferred_blocker_none(postgres_dsn)
     # Assert — the "none" sentinel is normalized away on a non-blocked row.
     assert tasks[0].get("blocker") in (None,)
 
 
-def test_add_deferred_blocker_none_stores_no_active_blocker(tmp_path):
+def test_add_deferred_blocker_none_stores_no_active_blocker(postgres_dsn):
     # Arrange
     # Act
-    tasks = _add_deferred_blocker_none(tmp_path)
+    tasks = _add_deferred_blocker_none(postgres_dsn)
     # Assert — the key itself is dropped, not written as an empty value.
     assert "blocker" not in tasks[0]
 
 
-def test_add_deferred_real_blocker_exits_nonzero(tmp_path):
+def test_add_deferred_real_blocker_exits_nonzero(postgres_dsn):
     """A REAL blocker variant on a non-blocked status STILL fails loud."""
     # Arrange
     runner = CliRunner()
@@ -145,7 +149,7 @@ def test_add_deferred_real_blocker_exits_nonzero(tmp_path):
     assert result.exit_code != 0
 
 
-def test_add_deferred_real_blocker_names_the_field(tmp_path):
+def test_add_deferred_real_blocker_names_the_field(postgres_dsn):
     """The refusal says WHICH field is wrong."""
     # Arrange
     runner = CliRunner()
@@ -155,7 +159,7 @@ def test_add_deferred_real_blocker_names_the_field(tmp_path):
     assert "blocker" in result.output.lower()
 
 
-def test_add_rejects_abolished_pending_at_the_cli_boundary(tmp_path):
+def test_add_rejects_abolished_pending_at_the_cli_boundary(postgres_dsn):
     """`pending` must be unreachable from the CLI.
 
     Save-side validation only WARNS on an unknown status (operator ruling
@@ -170,7 +174,7 @@ def test_add_rejects_abolished_pending_at_the_cli_boundary(tmp_path):
     assert result.exit_code != 0
 
 
-def test_add_rejecting_pending_names_the_bad_status(tmp_path):
+def test_add_rejecting_pending_names_the_bad_status(postgres_dsn):
     """The refusal echoes the offending value so the fix is obvious."""
     # Arrange
     runner = CliRunner()
@@ -180,7 +184,7 @@ def test_add_rejecting_pending_names_the_bad_status(tmp_path):
     assert "pending" in result.output
 
 
-def test_add_defaults_to_deferred(tmp_path):
+def test_add_defaults_to_deferred(postgres_dsn):
     """A new card carries a real decision; the default is the backlog.
 
     The old default was `pending`, and it kept minting abolished cards from
@@ -189,7 +193,7 @@ def test_add_defaults_to_deferred(tmp_path):
     """
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
+    store = _store_path()
     # Act
     _add(runner, "d", "D")
     tasks = _model.load_tasks(store)
@@ -200,10 +204,12 @@ def test_add_defaults_to_deferred(tmp_path):
 # --------------------------------------------------------------------------- #
 # Bug 2 at the model layer (save_tasks / load_tasks validation gate)          #
 # --------------------------------------------------------------------------- #
-def test_save_tasks_drops_none_blocker_from_the_reloaded_row(tmp_path):
+def test_save_tasks_drops_none_blocker_from_the_reloaded_row(postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    tasks = [{"id": "x", "title": "X", "status": "pending", "blocker": "none"}]
+    # `deferred` is the successor default: `pending` was abolished 2026-07-10
+    # and this test's intent (blocker-`none` normalization) is status-agnostic.
+    tasks = [{"id": "x", "title": "X", "status": "deferred", "blocker": "none"}]
     # Act — must NOT raise; the field is dropped in place.
     _model.save_tasks(tasks, store)
     reloaded = _model.load_tasks(store)
@@ -211,27 +217,31 @@ def test_save_tasks_drops_none_blocker_from_the_reloaded_row(tmp_path):
     assert "blocker" not in reloaded[0]
 
 
-def test_save_tasks_normalizes_none_blocker_in_place(tmp_path):
+def test_save_tasks_normalizes_none_blocker_in_place(postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    tasks = [{"id": "x", "title": "X", "status": "pending", "blocker": "none"}]
+    # `deferred` is the successor default: `pending` was abolished 2026-07-10
+    # and this test's intent (blocker-`none` normalization) is status-agnostic.
+    tasks = [{"id": "x", "title": "X", "status": "deferred", "blocker": "none"}]
     # Act — the caller's own dict is normalized, not just the persisted copy.
     _model.save_tasks(tasks, store)
     # Assert
     assert "blocker" not in tasks[0]
 
 
-def test_save_tasks_real_blocker_on_pending_still_raises(tmp_path):
+def test_save_tasks_real_blocker_on_deferred_still_raises(postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    tasks = [{"id": "x", "title": "X", "status": "pending", "blocker": "compute"}]
+    # `deferred` is the successor default: `pending` was abolished 2026-07-10.
+    # A real blocker on any non-blocked row raises (rule b, _validate.py).
+    tasks = [{"id": "x", "title": "X", "status": "deferred", "blocker": "compute"}]
     # Act
     # Assert
     with pytest.raises(_model.TaskValidationError, match=r"blocker"):
         _model.save_tasks(tasks, store)
 
 
-def test_save_tasks_none_blocker_on_blocked_is_preserved(tmp_path):
+def test_save_tasks_none_blocker_on_blocked_is_preserved(postgres_dsn):
     """On a BLOCKED row, `none` is a legitimate sentinel and is kept."""
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]

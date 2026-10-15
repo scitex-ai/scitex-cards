@@ -15,6 +15,10 @@ nobody ever finds out. Four real cards sat blocked on gates that had already
 cleared, including a mutual deadlock made of two stale sentences.
 
 THE RULE: the owner of the WAITING card is subscribed to the card they WAIT ON.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every seed/write below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -28,7 +32,14 @@ from scitex_cards import _store
 
 
 @pytest.fixture()
-def store(tmp_path: Path) -> Path:
+def store(tmp_path: Path, postgres_dsn) -> Path:
+    """Seed the ambient per-test store with a gate and its waiter.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(
         path, id="gate", title="the blocker", status="in_progress", agent="agent-b"
@@ -179,7 +190,13 @@ def test_removing_an_edge_reports_that_it_subscribed_nobody(store):
     assert result["subscribed"] is None
 
 
-def test_an_ownerless_waiter_subscribes_nobody_and_says_so(tmp_path: Path):
+def test_an_ownerless_waiter_subscribes_nobody_and_says_so(tmp_path: Path, postgres_dsn):
+    """No owner means nobody to subscribe — and the verb must say so.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard: the seeds below write the ambient store, which is
+    refused without a cluster.
+    """
     # Arrange — there is nobody to tell. We do NOT invent a recipient:
     # `subscribed: None` says so plainly instead of letting the caller believe
     # delivery is wired.

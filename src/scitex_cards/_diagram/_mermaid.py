@@ -11,7 +11,7 @@ Status -> fill color:
     done        green    (#c8e6c9)
     in_progress yellow   (#fff9c4)
     blocked     orange   (#fff3e0)
-    pending     grey     (#eceff1)
+    cancelled   grey     (#eceff1)
     deferred    grey     (#f5f5f5, dashed border)
     failed      red      (#ffcdd2)
 """
@@ -36,7 +36,12 @@ STATUS_STYLE: dict[str, tuple[str, str, str]] = {
     "done": ("#c8e6c9", "#2e7d32", ""),
     "in_progress": ("#fff9c4", "#f9a825", ""),
     "blocked": ("#ff8a65", "#bf360c", ""),
-    "pending": ("#eceff1", "#90a4ae", ""),
+    # ``cancelled`` (closed as not planned, terminal) reuses the muted grey
+    # the abolished ``pending`` (2026-07-10) formerly occupied: a closed node
+    # reads inactive, distinct from ``done`` green (completed) and the
+    # goal/deferred ambers. Matches the sticky-wall neutral precedent
+    # (board_v3 11-sticky-wall.css ``.sw-note--cancelled``).
+    "cancelled": ("#eceff1", "#90a4ae", ""),
     "deferred": ("#ffca28", "#ff8f00", "5 3"),
     "failed": ("#ffcdd2", "#c62828", ""),
 }
