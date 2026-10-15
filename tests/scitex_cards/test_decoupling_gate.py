@@ -34,6 +34,7 @@ import importlib
 import importlib.abc
 import importlib.metadata
 import importlib.util
+import inspect
 import logging
 import sys
 from pathlib import Path
@@ -311,12 +312,42 @@ def test_crud_surface_survives_absence_of_forbidden_modules(env, postgres_dsn):
     with _roots_uninstallable(FORBIDDEN_ROOTS):
         _store.add_task(id="t", title="t", status="deferred", agent="a")
         _store.list_tasks()
-        _store.comment_task("t", "standalone", by="a")
-        _store.complete_task("t", by="a")
+        # Store-first verb convention: (store, task_id, text, ...) — the
+        # ambient per-test store is selected with store=None, NOT by shifting
+        # the task id into the store slot (which bound text=None and raised
+        # "comment_task: 'text' is required" on every CI leg, 2026-10-15).
+        _store.comment_task(None, "t", "standalone", by="a")
+        _store.complete_task(None, "t", by="a")
         leaked = {m.split(".")[0] for m in sys.modules} & FORBIDDEN_ROOTS
 
     # Assert — nothing slipped back in through a cached reference
     assert not leaked, f"forbidden module(s) loaded despite blocker: {leaked}"
+
+
+def test_crud_cycle_comment_call_binds_text_positionally():
+    """Pin the store-first call convention the cycle above relies on.
+
+    PG-free regression pin for the 2026-10-15 CI failure: the cycle called
+    ``comment_task("t", "standalone", by="a")``, which bound ``store="t"``
+    and left ``text=None``. Binding — not executing — is the assertion
+    target, so no store is needed.
+    """
+    # Arrange
+    from scitex_cards import _store
+    # Act
+    params = list(inspect.signature(_store.comment_task).parameters)
+    # Assert
+    assert params[:4] == ["store", "task_id", "text", "by"]
+
+
+def test_crud_cycle_complete_call_binds_task_id_positionally():
+    """Pin the store-first call convention for the cycle's close step."""
+    # Arrange
+    from scitex_cards import _store
+    # Act
+    params = list(inspect.signature(_store.complete_task).parameters)
+    # Assert
+    assert params[:2] == ["store", "task_id"]
 
 
 @pytest.fixture()
