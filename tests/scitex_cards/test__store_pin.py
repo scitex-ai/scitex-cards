@@ -34,6 +34,17 @@ NO ``monkeypatch`` ANYWHERE (STX-NM002). The defect under test WAS an
 environment disagreement, so a test that patched the environment would be
 testing the patch. The :func:`environment` fixture writes real values into the
 real ``os.environ`` the resolver reads and restores them on teardown.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 5 wrong-pin / require-pinned checks below resolve
+the harness-pinned per-test store through ``pg_dsn`` — refused without a
+writable cluster, so without the guard they fail bare with a raw
+``StoreTargetError`` carrying no reason+remedy. The pure pin / dead-port /
+not-a-store tests stay unguarded by design (they open no store); the
+``two_stores`` family already fails LOUD through ``new_store``, and the
+``live_*`` family through ``live_instance_id`` (fail) / ``live_store_uuid``
+(documented skip — its positive control lives in
+``test__identity_decision_both_halves.py``).
 """
 
 from __future__ import annotations
@@ -482,7 +493,7 @@ def test_a_correct_pin_permits_the_resolution(
     assert check.may_proceed is True
 
 
-def test_a_wrong_pin_differs_from_a_live_server(environment, pg_dsn):
+def test_a_wrong_pin_differs_from_a_live_server(environment, pg_dsn, postgres_dsn):
     """The refusal the 2026-08-12 split needed and did not have.
 
     A live connection to a live server, judged against an expectation it
@@ -497,7 +508,7 @@ def test_a_wrong_pin_differs_from_a_live_server(environment, pg_dsn):
     assert check.verdict is IdentityVerdict.DIFFERS
 
 
-def test_a_wrong_pin_forbids_the_resolution(environment, pg_dsn):
+def test_a_wrong_pin_forbids_the_resolution(environment, pg_dsn, postgres_dsn):
     """DIFFERS refuses — the verdict is not merely informational."""
     # Arrange
     environment(**{ENV_STORE_DSN: pg_dsn})
@@ -507,7 +518,7 @@ def test_a_wrong_pin_forbids_the_resolution(environment, pg_dsn):
     assert check.may_proceed is False
 
 
-def test_a_wrong_pin_names_both_sides(environment, pg_dsn):
+def test_a_wrong_pin_names_both_sides(environment, pg_dsn, postgres_dsn):
     """Print both values rather than assert a mismatch the reader cannot check."""
     # Arrange
     environment(**{ENV_STORE_DSN: pg_dsn})
@@ -517,7 +528,7 @@ def test_a_wrong_pin_names_both_sides(environment, pg_dsn):
     assert _FOREIGN_INSTANCE in check.reason
 
 
-def test_require_pinned_store_raises_on_a_wrong_pin(environment, pg_dsn):
+def test_require_pinned_store_raises_on_a_wrong_pin(environment, pg_dsn, postgres_dsn):
     """The refusal DOOR actually refuses — the report alone changes nothing."""
     # Arrange
     environment(**{ENV_STORE_DSN: pg_dsn, ENV_PINNED_INSTANCE: _FOREIGN_INSTANCE})
@@ -528,7 +539,7 @@ def test_require_pinned_store_raises_on_a_wrong_pin(environment, pg_dsn):
         act()
 
 
-def test_require_pinned_store_raises_when_nothing_is_pinned(environment, pg_dsn):
+def test_require_pinned_store_raises_when_nothing_is_pinned(environment, pg_dsn, postgres_dsn):
     """CANNOT_TELL refuses alongside DIFFERS, via ``may_proceed``.
 
     A call site written as ``verdict is not DIFFERS`` would let this through,

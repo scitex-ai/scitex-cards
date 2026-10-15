@@ -202,9 +202,13 @@ def test_phase_1_tools_registered():
 
 
 # --------------------------------------------------------------------------- #
-# Tool round-trips against a real tmp_path store                              #
+# Tool round-trips against the AMBIENT store (no tmp_path isolation)          #
+# NOTE: the handlers below take no store argument — `tmp_path` in the       #
+# signatures is vestigial. Every write lands on the ambient per-test        #
+# store, so these tests request the postgres_dsn fail-LOUD fixture and      #
+# are refused without a writable cluster.                                   #
 # --------------------------------------------------------------------------- #
-def test_add_returns_id(tmp_path):
+def test_add_returns_id(tmp_path, postgres_dsn):
     # Arrange
     from scitex_cards._mcp_server import add_task
 
@@ -222,7 +226,7 @@ def test_add_returns_id(tmp_path):
     assert json.loads(add)["id"] == "a"
 
 
-def test_add_task_stores_created_by(tmp_path):
+def test_add_task_stores_created_by(tmp_path, postgres_dsn):
     # Arrange — MCP add_task accepts an explicit creating USER and persists
     # it as created_by (board ROLES section reads this off the /graph node).
     from scitex_cards._mcp_server import add_task
@@ -241,7 +245,7 @@ def test_add_task_stores_created_by(tmp_path):
     assert json.loads(add)["created_by"] == "agent:explicit"
 
 
-def test_add_task_defaults_created_by_from_env(tmp_path, env):
+def test_add_task_defaults_created_by_from_env(tmp_path, env, postgres_dsn):
     # Arrange — no explicit author; resolves from $SCITEX_CARDS_AGENT_ID.
     from scitex_cards._mcp_server import add_task
 
@@ -252,7 +256,7 @@ def test_add_task_defaults_created_by_from_env(tmp_path, env):
     assert json.loads(add)["created_by"] == "agent:fromenv"
 
 
-def test_add_then_list_round_trip(tmp_path):
+def test_add_then_list_round_trip(tmp_path, postgres_dsn):
     # Arrange
     from scitex_cards._mcp_server import add_task, list_tasks
 
@@ -272,7 +276,7 @@ def test_add_then_list_round_trip(tmp_path):
     assert {r["id"] for r in rows} == {"a"}
 
 
-def test_scope_filter_excludes_other_scope(tmp_path):
+def test_scope_filter_excludes_other_scope(tmp_path, postgres_dsn):
     # Arrange
     from scitex_cards._mcp_server import add_task, list_tasks
 
@@ -291,7 +295,7 @@ def test_scope_filter_excludes_other_scope(tmp_path):
     assert {r["id"] for r in json.loads(listed)["items"]} == {"b"}
 
 
-def test_list_tasks_filter_by_agent(tmp_path):
+def test_list_tasks_filter_by_agent(tmp_path, postgres_dsn):
     # Arrange
     from scitex_cards._mcp_server import add_task, list_tasks
 
@@ -303,7 +307,7 @@ def test_list_tasks_filter_by_agent(tmp_path):
     assert {r["id"] for r in json.loads(listed)["items"]} == {"a"}
 
 
-def test_list_tasks_filter_blocking_me(tmp_path):
+def test_list_tasks_filter_blocking_me(tmp_path, postgres_dsn):
     # Arrange
     from scitex_cards._mcp_server import add_task, list_tasks
 
@@ -323,7 +327,7 @@ def test_list_tasks_filter_blocking_me(tmp_path):
     assert {r["id"] for r in json.loads(listed)["items"]} == {"b"}
 
 
-def test_list_tasks_filter_overdue(tmp_path):
+def test_list_tasks_filter_overdue(tmp_path, postgres_dsn):
     # The MCP `list_tasks(overdue=True)` mirrors the CLI's `--overdue`
     # (PR #126) and the fleet payload's `overdue_count` (PR #125). A
     # task is overdue when its next deadline is strictly before today
@@ -374,7 +378,7 @@ def test_list_tasks_filter_overdue(tmp_path):
     assert {r["id"] for r in json.loads(listed)["items"]} == {"late"}
 
 
-def test_add_task_with_deadline_sets_deadline_field(tmp_path):
+def test_add_task_with_deadline_sets_deadline_field(tmp_path, postgres_dsn):
     # PR-followup gap closer (from PR #127): MCP `add_task` now accepts
     # `deadline=`. The writer's validator parses the P4 schema (bare
     # ISO date / repeater suffix).
@@ -397,7 +401,7 @@ def test_add_task_with_deadline_sets_deadline_field(tmp_path):
     assert rows[0]["deadline"] == "2030-01-01"
 
 
-def test_update_task_with_deadline_sets_deadline_field(tmp_path):
+def test_update_task_with_deadline_sets_deadline_field(tmp_path, postgres_dsn):
     # Companion to add_task's deadline kwarg — update_task can also set
     # the deadline post-hoc.
     # Arrange
@@ -418,7 +422,7 @@ def test_update_task_with_deadline_sets_deadline_field(tmp_path):
     assert rows[0]["deadline"] == "2030-06-15"
 
 
-def test_add_task_with_deadlines_list_sets_multi_deadlines(tmp_path):
+def test_add_task_with_deadlines_list_sets_multi_deadlines(tmp_path, postgres_dsn):
     # The multi-deadline form (P4 PR3 recurring extension).
     # Arrange
     from scitex_cards._mcp_server import add_task, list_tasks
@@ -439,7 +443,7 @@ def test_add_task_with_deadlines_list_sets_multi_deadlines(tmp_path):
     assert rows[0]["deadlines"] == ["2030-01-01", "2030-07-01"]
 
 
-def test_complete_sets_status_done(tmp_path, env):
+def test_complete_sets_status_done(tmp_path, env, postgres_dsn):
     # Arrange
     env.set("SCITEX_CARDS_AGENT_ID", "agent:mcp-test")
     from scitex_cards._mcp_server import (
@@ -454,7 +458,7 @@ def test_complete_sets_status_done(tmp_path, env):
     assert out["status"] == "done"
 
 
-def test_complete_stamps_completed_by(tmp_path, env):
+def test_complete_stamps_completed_by(tmp_path, env, postgres_dsn):
     # Arrange
     env.set("SCITEX_CARDS_AGENT_ID", "agent:mcp-test")
     from scitex_cards._mcp_server import (
@@ -469,7 +473,7 @@ def test_complete_stamps_completed_by(tmp_path, env):
     assert out["_log_meta"]["completed_by"] == "agent:mcp-test"
 
 
-def test_complete_stamps_completed_at_z_suffix(tmp_path, env):
+def test_complete_stamps_completed_at_z_suffix(tmp_path, env, postgres_dsn):
     # Arrange
     env.set("SCITEX_CARDS_AGENT_ID", "agent:mcp-test")
     from scitex_cards._mcp_server import (
@@ -484,7 +488,7 @@ def test_complete_stamps_completed_at_z_suffix(tmp_path, env):
     assert out["_log_meta"]["completed_at"].endswith("Z")
 
 
-def test_add_task_accepts_agent_field(tmp_path):
+def test_add_task_accepts_agent_field(tmp_path, postgres_dsn):
     # Arrange
     from scitex_cards._mcp_server import add_task
 
@@ -503,7 +507,7 @@ def test_add_task_accepts_agent_field(tmp_path):
     assert out["agent"] == "proj-scitex-cards"
 
 
-def test_add_task_accepts_kind_compute(tmp_path):
+def test_add_task_accepts_kind_compute(tmp_path, postgres_dsn):
     # Arrange
     from scitex_cards._mcp_server import add_task
 
@@ -523,7 +527,7 @@ def test_add_task_accepts_kind_compute(tmp_path):
     assert out["kind"] == "compute"
 
 
-def test_update_task_sets_agent(tmp_path):
+def test_update_task_sets_agent(tmp_path, postgres_dsn):
     # Arrange
     from scitex_cards._mcp_server import add_task, update_task
 
@@ -542,7 +546,7 @@ def test_update_task_sets_agent(tmp_path):
     assert out["agent"] == "proj-scitex-cards"
 
 
-def test_update_sets_status(tmp_path):
+def test_update_sets_status(tmp_path, postgres_dsn):
     # Arrange
     from scitex_cards._mcp_server import add_task, update_task
 
@@ -562,7 +566,7 @@ def test_update_sets_status(tmp_path):
     assert out["status"] == "in_progress"
 
 
-def test_update_sets_scope(tmp_path):
+def test_update_sets_scope(tmp_path, postgres_dsn):
     # Arrange
     from scitex_cards._mcp_server import add_task, update_task
 
@@ -582,7 +586,7 @@ def test_update_sets_scope(tmp_path):
     assert out["scope"] == "agent:lead"
 
 
-def test_summary_returns_total(tmp_path):
+def test_summary_returns_total(tmp_path, postgres_dsn):
     # Arrange
     from scitex_cards._mcp_server import add_task, summarize_tasks
 
@@ -594,7 +598,7 @@ def test_summary_returns_total(tmp_path):
     assert info["total"] == 2
 
 
-def test_summary_returns_done_count(tmp_path):
+def test_summary_returns_done_count(tmp_path, postgres_dsn):
     # Arrange
     from scitex_cards._mcp_server import add_task, summarize_tasks
 
@@ -606,7 +610,7 @@ def test_summary_returns_done_count(tmp_path):
     assert info["by_status"]["done"] == 1
 
 
-def test_summary_returns_deferred_count(tmp_path):
+def test_summary_returns_deferred_count(tmp_path, postgres_dsn):
     # Arrange — add_task's default status is `deferred` since the abolition.
     from scitex_cards._mcp_server import add_task, summarize_tasks
 
@@ -618,7 +622,7 @@ def test_summary_returns_deferred_count(tmp_path):
     assert info["by_status"]["deferred"] == 1
 
 
-def test_where_returns_resolved_path(tmp_path):
+def test_where_returns_resolved_path(tmp_path, postgres_dsn):
     # Arrange — the store identity is the database path ($SCITEX_STORE_DSN).
     from scitex_cards._mcp_server import resolve_store
 
@@ -706,7 +710,7 @@ async def _call_tool(tool_callable, **kwargs):
 # `_mcp_channel.drain_once`. These tests pin (a) correctness still holds       #
 # through the to_thread hop and (b) the loop is NOT blocked during the call.   #
 # --------------------------------------------------------------------------- #
-def test_get_task_roundtrip_through_to_thread(tmp_path):
+def test_get_task_roundtrip_through_to_thread(tmp_path, postgres_dsn):
     # Arrange
     from scitex_cards._mcp_server import add_task, get_task
 
@@ -726,7 +730,7 @@ def test_get_task_roundtrip_through_to_thread(tmp_path):
 #: WROTE. A stale-but-plausible report with an unmutated card is exactly the
 #: failure mode a single first-assert would hide.
 @pytest.fixture()
-def reassigned_through_to_thread(tmp_path):
+def reassigned_through_to_thread(tmp_path, postgres_dsn):
     """Run the offloaded `reassign_task` once; the three tests below read it."""
     from scitex_cards._mcp_server import add_task
     from scitex_cards._mcp_skills import reassign_task
@@ -847,7 +851,7 @@ def test_no_async_handler_runs_a_store_call_on_the_event_loop():
     assert offenders == []
 
 
-def test_the_get_task_handler_returns_the_card_it_was_asked_for(tmp_path):
+def test_the_get_task_handler_returns_the_card_it_was_asked_for(tmp_path, postgres_dsn):
     """The other half of Fix A: offloading must not change the answer.
 
     An offload that keeps the loop live but returns the wrong card is not a

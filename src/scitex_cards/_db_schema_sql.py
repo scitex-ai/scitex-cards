@@ -41,6 +41,14 @@ from ._db_dm_schema import DM_TABLES as _DM_TABLES
 # ``_log_meta`` ride JSON TEXT columns; comments / edges / roles are child
 # tables. Enum validity stays in ``_model._validate_tasks`` — no SQL CHECKs.
 #
+# ``tasks.status`` DEFAULT is ``'deferred'`` — the backlog state since
+# ``pending`` was abolished 2026-07-10 (operator directive; ABOLISHED_STATUSES
+# in _task.py). It mirrors ``add_task(status="deferred")`` in _store_add.py
+# and the ``Task`` dataclass default: a fresh row must carry a decision.
+# Existing stores keep the old catalogue text until a migration rung rewrites
+# it; the Python write paths always supply status explicitly, so the default
+# only fires on raw SQL INSERTs omitting the column.
+#
 # DO NOT PUT `--` COMMENTS INSIDE THE SQL BELOW. Two paths have built this
 # schema: a driver-level script runner, which records the statement text
 # VERBATIM in the engine's own catalogue, comments and all, and
@@ -73,7 +81,7 @@ SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS tasks (
     id             TEXT PRIMARY KEY,
     title          TEXT NOT NULL,
-    status         TEXT NOT NULL DEFAULT 'pending',
+    status         TEXT NOT NULL DEFAULT 'deferred',
     kind           TEXT,
     blocker        TEXT,
     task           TEXT,

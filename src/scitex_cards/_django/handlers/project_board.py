@@ -16,9 +16,9 @@ WHAT IS CONSUMED RATHER THAN REBUILT (Hub PR #923 ownership matrix — the SDK
 owns the canonical project selector, ``scitex-cards`` owns "project board domain
 and tenancy"):
 
-  * the PICKER is ``{% scitex_project_picker %}`` from scitex-ui, and the
-    precedence that decides which project opens is scitex-ui's
-    :func:`scitex_ui.project_scope.resolve_project` — explicit project wins,
+  * the PICKER is ``{% scitex_project_picker %}`` from the SDK, and the
+    precedence that decides which project opens is the SDK's
+    :func:`scitex_sdk.ui.project_scope.resolve_project` — explicit project wins,
     an inaccessible explicit project resolves to None and NEVER silently falls
     back to the stored one, otherwise the last visited project if still
     accessible, otherwise None. Re-implementing that here would be the second
@@ -70,7 +70,7 @@ READY = "ready"
 SESSION_KEY = "scitex_cards_last_project"
 
 #: Query parameters this page honours. ``project`` is the SDK's own name for the
-#: explicit selection (:data:`scitex_ui.project_scope.PROJECT_QUERY_PARAM`); the
+#: explicit selection (:data:`scitex_sdk.ui.project_scope.PROJECT_QUERY_PARAM`); the
 #: other three are the filters Hub PR #923 asks for.
 PARAM_PROJECT = "project"
 PARAM_Q = "q"
@@ -207,7 +207,7 @@ class SessionProjectProvider:
         self._entries = tuple(entries)
 
     def list_projects(self, request: Any = None):  # noqa: D102 - protocol method
-        from scitex_ui.project_scope import ProjectEntry
+        from scitex_sdk.ui.project_scope import ProjectEntry
 
         return [ProjectEntry(id=pid, name=pid) for pid in self._entries]
 
@@ -228,14 +228,14 @@ class SessionProjectProvider:
 def _resolve_current(
     request: Any, provider: SessionProjectProvider, explicit: str
 ) -> Optional[str]:
-    """scitex-ui's precedence, called rather than re-derived.
+    """The SDK's precedence, called rather than re-derived.
 
     Imported lazily: this module is imported by ``urls.py`` at Django startup,
-    and the fleet board must keep working on a deployment whose scitex-ui
+    and the fleet board must keep working on a deployment whose SDK
     predates the project-scope API (the same graceful-degradation rule
     ``settings.py`` applies to the element inspector).
     """
-    from scitex_ui.project_scope import resolve_project
+    from scitex_sdk.ui.project_scope import resolve_project
 
     return resolve_project(request, provider, explicit=explicit or None)
 
@@ -429,7 +429,7 @@ def board_state(
     )
     current = _resolve_current(request, active_provider, explicit)
 
-    # The project was named but is not one this viewer may see. scitex-ui's
+    # The project was named but is not one this viewer may see. The SDK's
     # precedence deliberately resolves that to None; the page must NOT then fall
     # back to the last visited project, because the reader asked for something
     # else and showing them a different project is how a tenancy bug looks from
@@ -1300,18 +1300,18 @@ def _host_picker_available() -> bool:
     and is combined with this answer at the render site. It has to be separate,
     because `{% load %}`ing a library that is not installed is a hard
     TemplateSyntaxError raised while the partial COMPILES: a provider-only guard
-    cannot reach its own fallback branch, so on a deployment whose scitex-ui
+    cannot reach its own fallback branch, so on a deployment whose SDK
     predates project scope this page 500'd instead of degrading. The `{% load %}`
     now lives in ``_project_picker.html``, reached only through a guarded
     ``{% include %}``.
 
     Imported lazily: this module is imported by ``urls.py`` at Django startup,
-    and the fleet board must keep working on a deployment whose scitex-ui
+    and the fleet board must keep working on a deployment whose SDK
     predates the project-scope API (the same graceful-degradation rule
     ``settings.py`` applies to the element inspector).
     """
     try:
-        from scitex_ui.project_scope import host_project_provider_url
-    except ImportError:  # older scitex-ui: no provider API, so no host picker
+        from scitex_sdk.ui.project_scope import host_project_provider_url
+    except ImportError:  # older SDK: no provider API, so no host picker
         return False
     return bool(host_project_provider_url())

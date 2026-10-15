@@ -76,12 +76,13 @@ class TestIsStaleActive:
         # Assert
         assert stale is True
 
-    def test_pending_never_stale_active(self):
-        # Arrange
-        t = _card("x", "pending", hours_ago=99)
+    def test_deferred_never_stale_active(self):
+        # Arrange — `pending` was abolished 2026-07-10; `deferred` is the
+        # successor backlog state.
+        t = _card("x", "deferred", hours_ago=99)
         # Act
         stale = is_stale_active(t, now=NOW, stale_hours=2.0)
-        # Assert — pending is open but NOT active, so it is out of scope.
+        # Assert — deferred (backlog) is open but NOT active, so it is out of scope.
         assert stale is False
 
     def test_done_never_stale_active(self):
@@ -154,9 +155,10 @@ class TestDetectStaleActive:
         assert [c.id for c in out["a"]] == ["a1"]
 
     def test_only_in_progress_and_blocked(self):
-        # Arrange
+        # Arrange — `pending` was abolished 2026-07-10; `deferred` is the
+        # successor backlog state (kept id "p" to minimize diff).
         tasks = [
-            _card("p", "pending", hours_ago=99, agent="a"),
+            _card("p", "deferred", hours_ago=99, agent="a"),
             _card("d", "done", hours_ago=99, agent="a"),
             _card("ip", "in_progress", hours_ago=99, agent="a"),
             _card("bl", "blocked", hours_ago=99, agent="a"),

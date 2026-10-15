@@ -92,8 +92,13 @@ class _ExplodingDeliver:
 #: note carrying the card id in both its field and its body. A dispatcher
 #: that reports an enqueue it never performed passes every summary claim.
 @pytest.fixture()
-def reassigned_dispatch(tmp_path):
-    """Dispatch `reassigned` on a card owned by a registered alice."""
+def reassigned_dispatch(tmp_path, postgres_dsn):
+    """Dispatch `reassigned` on a card owned by a registered alice.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     # created_by == owner so the setup `created` event self-excludes the
@@ -174,8 +179,13 @@ def test_reassigned_note_body_mentions_the_card(reassigned_dispatch):
 #: the owner. Self-exclusion has to hold on BOTH surfaces — an empty summary
 #: with a note still sitting in her inbox is the bug, not the fix.
 @pytest.fixture()
-def reassigned_to_self_dispatch(tmp_path):
-    """alice reassigns the card to herself → she is BOTH owner and actor."""
+def reassigned_to_self_dispatch(tmp_path, postgres_dsn):
+    """alice reassigns the card to herself → she is BOTH owner and actor.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     # created_by == owner so the setup `created` event self-excludes the
@@ -230,8 +240,13 @@ def test_reassigned_to_self_leaves_the_actor_inbox_empty(
 #: name must be BOTH the id the summary reports AND the key its inbox is
 #: filed under. Agreeing on one and not the other loses the notification.
 @pytest.fixture()
-def unregistered_owner_dispatch(tmp_path):
-    """`dave` is never registered; the raw name has to carry the delivery."""
+def unregistered_owner_dispatch(tmp_path, postgres_dsn):
+    """`dave` is never registered; the raw name has to carry the delivery.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     add_task(store=store, id="c1", title="x", agent="dave", created_by="dave")
     rec = _ExplodingDeliver()
@@ -277,8 +292,13 @@ def test_unregistered_owner_inbox_is_keyed_on_the_raw_name(
 #: from "the right people got it", and the author's EMPTY inbox is the claim
 #: that fails silently when actor-exclusion regresses.
 @pytest.fixture()
-def commented_dispatch(tmp_path):
-    """bob comments on alice's card, which carries a collaborator + subscriber."""
+def commented_dispatch(tmp_path, postgres_dsn):
+    """bob comments on alice's card, which carries a collaborator + subscriber.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     carol = register_user(kind="agent", names=["carol"], store=store)
@@ -374,8 +394,13 @@ def test_commented_leaves_the_author_inbox_empty(commented_dispatch):
 #: event key). A summary listing one id while the inbox holds two notes is
 #: precisely the double-delivery this pins down, so both are asserted.
 @pytest.fixture()
-def commented_once_dispatch(tmp_path):
-    """A single `commented` event against a card with one recipient."""
+def commented_once_dispatch(tmp_path, postgres_dsn):
+    """A single `commented` event against a card with one recipient.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     # created_by == owner so the setup `created` event self-excludes the
@@ -429,8 +454,13 @@ def test_commented_no_double_delivery(commented_once_dispatch):
 #: inbox write is the double-notification the default-quiet rule exists to
 #: prevent.
 @pytest.fixture()
-def merged_dispatch(tmp_path):
-    """Dispatch the default-quiet `merged` on a card with owner + subscriber."""
+def merged_dispatch(tmp_path, postgres_dsn):
+    """Dispatch the default-quiet `merged` on a card with owner + subscriber.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     eve = register_user(kind="human", names=["eve"], store=store)
@@ -508,8 +538,13 @@ def test_merged_leaves_the_subscriber_inbox_empty(merged_dispatch):
 #: the per-inbox check is what proves the enqueue really happened rather than
 #: merely being reported.
 @pytest.fixture()
-def completed_dispatch(tmp_path):
-    """Dispatch `completed` on a card with an owner and a subscriber."""
+def completed_dispatch(tmp_path, postgres_dsn):
+    """Dispatch `completed` on a card with an owner and a subscriber.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     eve = register_user(kind="human", names=["eve"], store=store)
@@ -628,8 +663,13 @@ def test_missing_card_id_names_its_skip_reason(missing_card_id_dispatch):
 #: nothing — no wire call, nothing enqueued, and `card-not-found` named in
 #: `skipped` so the no-op is auditable.
 @pytest.fixture()
-def unknown_card_dispatch(tmp_path):
-    """The store exists (a user was written) but the card id does not."""
+def unknown_card_dispatch(tmp_path, postgres_dsn):
+    """The store exists (a user was written) but the card id does not.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     register_user(kind="agent", names=["alice"], store=store)
     rec = _ExplodingDeliver()
@@ -678,8 +718,13 @@ def test_unknown_card_names_its_skip_reason(unknown_card_dispatch):
 #: others. "Everyone got it" and "nothing errored" are separate claims — a
 #: swallowed per-recipient failure shows up in `errors`, not in `enqueued`.
 @pytest.fixture()
-def independent_enqueue_dispatch(tmp_path):
-    """Dispatch to two recipients at once and keep the whole summary."""
+def independent_enqueue_dispatch(tmp_path, postgres_dsn):
+    """Dispatch to two recipients at once and keep the whole summary.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     eve = register_user(kind="human", names=["eve"], store=store)
@@ -749,8 +794,13 @@ _SUMMARY_KEYS = (
 
 
 @pytest.fixture()
-def malformed_event_dispatch(tmp_path):
-    """A bogus event type the resolver rejects, dispatched anyway."""
+def malformed_event_dispatch(tmp_path, postgres_dsn):
+    """A bogus event type the resolver rejects, dispatched anyway.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     register_user(kind="agent", names=["alice"], store=store)
     add_task(store=store, id="c1", title="x", agent="alice")
@@ -803,8 +853,13 @@ def test_malformed_event_names_its_skip_reason(malformed_event_dispatch):
 #: card-event summary at all — reaching that assert is itself the proof it
 #: did not raise.
 @pytest.fixture()
-def producer_guarantee_dispatch(tmp_path, env):
-    """Dispatch `reassigned` with the shared-store env pointed at tmp_path."""
+def producer_guarantee_dispatch(tmp_path, env, postgres_dsn):
+    """Dispatch `reassigned` with the shared-store env pointed at tmp_path.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     add_task(store=store, id="c1", title="x", agent="alice")
@@ -864,8 +919,13 @@ def test_emit_through_the_real_bus_returns_a_card_event_summary(
 #: `delivered` stays empty (no synchronous direct-POST). Each of those is a
 #: separate way the bus wiring regresses.
 @pytest.fixture()
-def bus_reassigned_summary(tmp_path, env):
-    """Route a `reassigned` card-event through the real dispatch_event bus."""
+def bus_reassigned_summary(tmp_path, env, postgres_dsn):
+    """Route a `reassigned` card-event through the real dispatch_event bus.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     add_task(store=store, id="c1", title="x", agent="alice")
@@ -933,8 +993,13 @@ def test_dispatch_event_delivers_nothing_directly(bus_reassigned_summary):
 #: empty, and nothing was directly delivered. A consumer that never ran also
 #: produces an empty enqueue, so the presence claim is what separates them.
 @pytest.fixture()
-def bus_merged_summary(tmp_path, env):
-    """Route a default-quiet `merged` card-event through the bus."""
+def bus_merged_summary(tmp_path, env, postgres_dsn):
+    """Route a default-quiet `merged` card-event through the bus.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     register_user(kind="agent", names=["alice"], store=store)
     add_task(store=store, id="c1", title="x", agent="alice")
@@ -985,8 +1050,13 @@ def test_dispatch_event_quiet_event_delivers_nothing(bus_merged_summary):
 #: notify result so a producer / the `emit-event` CLI verb can report
 #: enqueued / delivered.
 @pytest.fixture()
-def emitted_reassigned_result(tmp_path, env):
-    """emit() a `reassigned` event end to end and keep what it returns."""
+def emitted_reassigned_result(tmp_path, env, postgres_dsn):
+    """emit() a `reassigned` event end to end and keep what it returns.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     add_task(store=store, id="c1", title="x", agent="alice")

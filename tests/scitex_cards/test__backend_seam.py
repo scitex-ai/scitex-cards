@@ -34,7 +34,7 @@ from scitex_cards._currency import reset_currency_cache, warn_if_stale_once
 
 
 @pytest.fixture
-def store(env):
+def store(env, postgres_dsn):
     env.set("SCITEX_CARDS_AGENT_ID", "seam-tester")
     env.delete("SCITEX_CARDS_HUB_URL")
     # The database IS the store, so return the DATABASE the conftest pinned and
@@ -47,6 +47,11 @@ def store(env):
     # reason this returns the PINNED target rather than a fresh throwaway: a
     # write stamped with a different store identity fails the next read's stamp
     # check.
+    #
+    # ``postgres_dsn`` is requested but is not the seed target. With no
+    # writable PostgreSQL the harness pins the refused placeholder, so the
+    # seeding below would raise — the fixture fails first, LOUDLY, with the
+    # reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
     return os.environ["SCITEX_STORE_DSN"]
 
 

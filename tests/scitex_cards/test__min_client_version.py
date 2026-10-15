@@ -24,6 +24,13 @@ now has exactly one read path, and it is the one exercised below.
 Every test gets its OWN scratch, schema-complete, floor-UNSET database via the
 suite-wide ``_store_env_stays_pinned`` autouse fixture (``tests/conftest.py``);
 ``os.environ["SCITEX_STORE_DSN"]`` is that path.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 16 checks below target the ambient per-test
+store via ``_db_path()``, which is refused without a writable cluster.
+The 8 pure parse/resolve tests stay unguarded by design (no store
+touch); the fresh-store test stays on ``new_store``, already fail-LOUD
+on its own.
 """
 
 from __future__ import annotations
@@ -158,7 +165,7 @@ def test_resolve_running_version_is_a_dotted_numeric_string():
 # --------------------------------------------------------------------------- #
 # read_floor / stamp_floor                                                    #
 # --------------------------------------------------------------------------- #
-def test_read_floor_is_none_on_a_fresh_database():
+def test_read_floor_is_none_on_a_fresh_database(postgres_dsn):
     # Arrange
     conn = _db.connect(_db_path())
 
@@ -170,7 +177,7 @@ def test_read_floor_is_none_on_a_fresh_database():
     assert floor is None
 
 
-def test_stamp_floor_then_read_floor_round_trips():
+def test_stamp_floor_then_read_floor_round_trips(postgres_dsn):
     # Arrange
     conn = _db.connect(_db_path())
 
@@ -184,7 +191,7 @@ def test_stamp_floor_then_read_floor_round_trips():
     assert floor == "1.2.3"
 
 
-def test_stamp_floor_replaces_a_previously_set_floor():
+def test_stamp_floor_replaces_a_previously_set_floor(postgres_dsn):
     # Arrange
     conn = _db.connect(_db_path())
     stamp_floor(conn, "1.0.0")
@@ -224,7 +231,7 @@ def test_connect_opens_fine_on_a_totally_fresh_store_with_no_schema_meta_table_y
 # --------------------------------------------------------------------------- #
 # connect() — the DB-open chokepoint                                          #
 # --------------------------------------------------------------------------- #
-def test_connect_opens_fine_when_no_floor_is_set():
+def test_connect_opens_fine_when_no_floor_is_set(postgres_dsn):
     # Arrange
     # Act
     conn = _db.connect(_db_path())
@@ -234,7 +241,7 @@ def test_connect_opens_fine_when_no_floor_is_set():
     conn.close()
 
 
-def test_connect_opens_fine_when_the_client_exactly_meets_the_floor():
+def test_connect_opens_fine_when_the_client_exactly_meets_the_floor(postgres_dsn):
     # Arrange
     running = resolve_running_version()
     _set_floor(running)
@@ -247,7 +254,7 @@ def test_connect_opens_fine_when_the_client_exactly_meets_the_floor():
     conn.close()
 
 
-def test_connect_opens_fine_when_the_client_is_newer_than_the_floor():
+def test_connect_opens_fine_when_the_client_is_newer_than_the_floor(postgres_dsn):
     # Arrange
     _set_floor("0.0.1")
 
@@ -259,7 +266,7 @@ def test_connect_opens_fine_when_the_client_is_newer_than_the_floor():
     conn.close()
 
 
-def test_connect_raises_client_too_old_when_the_client_is_below_the_floor():
+def test_connect_raises_client_too_old_when_the_client_is_below_the_floor(postgres_dsn):
     # Arrange
     _set_floor("9999.0.0")
 
@@ -285,7 +292,7 @@ def _refusal_message() -> str:
     return str(exc_info.value)
 
 
-def test_the_too_old_error_names_the_running_version():
+def test_the_too_old_error_names_the_running_version(postgres_dsn):
     # Arrange
     running = resolve_running_version()
     # Act
@@ -294,7 +301,7 @@ def test_the_too_old_error_names_the_running_version():
     assert running in message
 
 
-def test_the_too_old_error_names_the_floor_version():
+def test_the_too_old_error_names_the_floor_version(postgres_dsn):
     # Arrange
     # Act
     message = _refusal_message()
@@ -303,7 +310,7 @@ def test_the_too_old_error_names_the_floor_version():
     assert "9999.0.0" in message
 
 
-def test_the_too_old_error_names_the_wheel_upgrade_command():
+def test_the_too_old_error_names_the_wheel_upgrade_command(postgres_dsn):
     # Arrange
     # Act
     message = _refusal_message()
@@ -311,7 +318,7 @@ def test_the_too_old_error_names_the_wheel_upgrade_command():
     assert "pip install -U scitex-cards" in message
 
 
-def test_the_too_old_error_names_the_editable_checkout_command():
+def test_the_too_old_error_names_the_editable_checkout_command(postgres_dsn):
     # Arrange
     # Act
     message = _refusal_message()
@@ -320,7 +327,7 @@ def test_the_too_old_error_names_the_editable_checkout_command():
     assert "uv pip install -e" in message
 
 
-def test_the_editable_checkout_command_names_this_package():
+def test_the_editable_checkout_command_names_this_package(postgres_dsn):
     # Arrange
     # Act
     message = _refusal_message()
@@ -328,7 +335,7 @@ def test_the_editable_checkout_command_names_this_package():
     assert "scitex-cards" in message
 
 
-def test_the_too_old_error_never_mentions_yaml():
+def test_the_too_old_error_never_mentions_yaml(postgres_dsn):
     # Arrange
     # Act
     message = _refusal_message()
@@ -340,7 +347,7 @@ def test_the_too_old_error_never_mentions_yaml():
 # --------------------------------------------------------------------------- #
 # The gate covers BOTH the write path and the read path                       #
 # --------------------------------------------------------------------------- #
-def test_the_write_path_is_gated_the_same_as_connect():
+def test_the_write_path_is_gated_the_same_as_connect(postgres_dsn):
     """`_db_mirror.mirror_doc_incremental` opens via `_db.open_db`, which is
     `_db.connect` + `init_schema` — the write chokepoint inherits the same
     floor check with no changes needed in `_db_mirror` itself."""
@@ -354,7 +361,7 @@ def test_the_write_path_is_gated_the_same_as_connect():
         _db_mirror.mirror_doc_incremental(doc, _db_path(), store_path=_db_path())
 
 
-def test_the_read_path_is_gated_the_same_as_connect():
+def test_the_read_path_is_gated_the_same_as_connect(postgres_dsn):
     """`_store.list_tasks` -> `_model.load_tasks` ->
     `_store._read_canonical_db_or_raise` -> `_db_export.export_doc` ->
     `_db.open_db` opens via `_db.connect` — the read chokepoint inherits the
@@ -374,7 +381,7 @@ def test_the_read_path_is_gated_the_same_as_connect():
         _store.list_tasks(scope="")
 
 
-def test_the_read_path_still_works_once_the_floor_is_cleared_again():
+def test_the_read_path_still_works_once_the_floor_is_cleared_again(postgres_dsn):
     """Sanity: the gate is not a one-way trap — lowering the floor (or
     unstamping it) restores normal reads, proving the check re-runs on
     every connect rather than caching a bad verdict."""

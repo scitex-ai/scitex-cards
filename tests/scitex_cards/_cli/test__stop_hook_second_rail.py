@@ -28,6 +28,10 @@ No mocks: a real store, real ``_inbox`` records, the real ``confirm_
 notifications`` verb. The defect this guards against was mock-shaped — every
 layer reported success while nothing arrived — so a mocked store would test
 exactly the wrong thing.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every decision below reads the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -149,7 +153,7 @@ def _decide(session_id="sess-1", stop_hook_active=False, agent=AGENT, store=None
 # --------------------------------------------------------------------------- #
 # 1. A pending unacked message BLOCKS                                         #
 # --------------------------------------------------------------------------- #
-def test_a_pending_unacked_message_blocks_the_stop():
+def test_a_pending_unacked_message_blocks_the_stop(postgres_dsn):
     # Arrange
     _send()
 
@@ -160,7 +164,7 @@ def test_a_pending_unacked_message_blocks_the_stop():
     assert out["decision"].get("decision") == "block"
 
 
-def test_the_block_shows_the_message_text():
+def test_the_block_shows_the_message_text(postgres_dsn):
     """The block IS the delivery. A block that withholds the text is the
     deadlock: it demands action on something the agent cannot read."""
     # Arrange
@@ -173,7 +177,7 @@ def test_the_block_shows_the_message_text():
     assert "migrate off Telegram onto cards DMs" in out["decision"]["reason"]
 
 
-def test_the_block_names_the_sender():
+def test_the_block_names_the_sender(postgres_dsn):
     # Arrange
     _send()
 
@@ -184,7 +188,7 @@ def test_the_block_names_the_sender():
     assert "operator" in out["decision"]["reason"]
 
 
-def test_the_block_names_the_verb_that_releases_it():
+def test_the_block_names_the_verb_that_releases_it(postgres_dsn):
     """A refusal that does not say how to comply leaves the agent stuck."""
     # Arrange
     _send()
@@ -196,7 +200,7 @@ def test_the_block_names_the_verb_that_releases_it():
     assert "ack_notifications" in out["decision"]["reason"]
 
 
-def test_the_block_offers_a_path_that_needs_no_mcp():
+def test_the_block_offers_a_path_that_needs_no_mcp(postgres_dsn):
     """STANDALONE. An agent with scitex-cards and nothing else must be able
     to comply, or the hook blocks where the actor cannot remediate."""
     # Arrange
@@ -209,7 +213,7 @@ def test_the_block_offers_a_path_that_needs_no_mcp():
     assert "scitex-cards inbox ack" in out["decision"]["reason"]
 
 
-def test_the_hook_read_does_not_mark_anything_seen():
+def test_the_hook_read_does_not_mark_anything_seen(postgres_dsn):
     """READING NEVER CONFIRMS. If the hook acked what it showed, an agent
     that crashed mid-turn would have lost the message permanently."""
     # Arrange
@@ -226,7 +230,7 @@ def test_the_hook_read_does_not_mark_anything_seen():
 # --------------------------------------------------------------------------- #
 # 2. Acking RELEASES                                                          #
 # --------------------------------------------------------------------------- #
-def test_acking_the_delivered_ids_releases_the_block():
+def test_acking_the_delivered_ids_releases_the_block(postgres_dsn):
     # Arrange
     ids = _send()
     confirm_notifications(AGENT, ids, store=_store())
@@ -238,7 +242,7 @@ def test_acking_the_delivered_ids_releases_the_block():
     assert out["decision"] == {}
 
 
-def test_acking_only_some_ids_still_blocks_on_the_rest():
+def test_acking_only_some_ids_still_blocks_on_the_rest(postgres_dsn):
     """Per-id confirmation, not all-or-nothing: the unconfirmed one returns."""
     # Arrange
     ids = _send(count=3)
@@ -254,7 +258,7 @@ def test_acking_only_some_ids_still_blocks_on_the_rest():
 # --------------------------------------------------------------------------- #
 # 3. THE DEADLOCK GUARD — never demand an ack for a message not shown         #
 # --------------------------------------------------------------------------- #
-def test_the_block_demands_an_ack_only_for_ids_whose_text_it_showed():
+def test_the_block_demands_an_ack_only_for_ids_whose_text_it_showed(postgres_dsn):
     """LOAD-BEARING. On the morning of the outage the queued messages had
     never been shown, so no agent COULD have acked them; a hook that demanded
     an ack anyway would have converted a silent-loss bug into a fleet-wide
@@ -271,7 +275,7 @@ def test_the_block_demands_an_ack_only_for_ids_whose_text_it_showed():
     assert all(reason.count(nid) >= 2 for nid in demanded)
 
 
-def test_messages_beyond_the_turns_capacity_are_not_demanded():
+def test_messages_beyond_the_turns_capacity_are_not_demanded(postgres_dsn):
     """They are not lost either: unconfirmed means unseen means redelivered."""
     # Arrange
     sent = _send(count=MAX_PRESENTED * 3)
@@ -284,7 +288,7 @@ def test_messages_beyond_the_turns_capacity_are_not_demanded():
     assert len(demanded) < len(sent)
 
 
-def test_a_message_that_was_not_shown_is_never_demanded():
+def test_a_message_that_was_not_shown_is_never_demanded(postgres_dsn):
     """THE DEADLOCK GUARD, stated directly. Every id the hook withholds must
     be absent from the ack call it emits — otherwise the agent is told to
     confirm something it cannot read, which is a refusal it cannot satisfy."""
@@ -300,7 +304,7 @@ def test_a_message_that_was_not_shown_is_never_demanded():
     assert not any(nid in reason for nid in withheld)
 
 
-def test_the_withheld_remainder_is_reported_rather_than_hidden():
+def test_the_withheld_remainder_is_reported_rather_than_hidden(postgres_dsn):
     """An omission the agent cannot see is a lie about their inbox — that is
     exactly how three weeks of DMs went unnoticed."""
     # Arrange
@@ -316,7 +320,7 @@ def test_the_withheld_remainder_is_reported_rather_than_hidden():
 # --------------------------------------------------------------------------- #
 # 4. FAIL-OPEN — an unreadable store WARNS, it does not block                 #
 # --------------------------------------------------------------------------- #
-def test_an_unreadable_board_allows_the_stop(env):
+def test_an_unreadable_board_allows_the_stop(env, postgres_dsn):
     """Our own bug must never be the reason an agent cannot finish a turn."""
     # Arrange — the canonical database does not exist, so reading it raises.
     env.set("SCITEX_STORE_DSN", UNREADABLE_DB)
@@ -328,7 +332,7 @@ def test_an_unreadable_board_allows_the_stop(env):
     assert out["decision"] == {}
 
 
-def test_an_unreadable_board_says_why_it_is_silent(env):
+def test_an_unreadable_board_says_why_it_is_silent(env, postgres_dsn):
     """Silence with no explanation is how the original outage stayed hidden."""
     # Arrange
     env.set("SCITEX_STORE_DSN", UNREADABLE_DB)
@@ -340,7 +344,7 @@ def test_an_unreadable_board_says_why_it_is_silent(env):
     assert any("board rail unavailable" in w for w in out["warnings"])
 
 
-def test_an_unreadable_inbox_allows_the_stop(env):
+def test_an_unreadable_inbox_allows_the_stop(env, postgres_dsn):
     """The message rail fails on its own terms — a mail read that raises must
     not wedge the agent any more than a board read that raises."""
     # Arrange — a store that names no backend, so the rail cannot be selected.
@@ -353,7 +357,7 @@ def test_an_unreadable_inbox_allows_the_stop(env):
     assert out["decision"] == {}
 
 
-def test_an_unreadable_inbox_says_why_it_is_silent(env):
+def test_an_unreadable_inbox_says_why_it_is_silent(env, postgres_dsn):
     # Arrange
     env.set("SCITEX_STORE_DSN", UNSELECTABLE_STORE)
 
@@ -364,7 +368,7 @@ def test_an_unreadable_inbox_says_why_it_is_silent(env):
     assert any("message rail unavailable" in w for w in out["warnings"])
 
 
-def test_an_unresolvable_agent_id_allows_the_stop():
+def test_an_unresolvable_agent_id_allows_the_stop(postgres_dsn):
     """No identity means no inbox to read; refusing here helps nobody."""
     # Arrange
 
@@ -375,7 +379,7 @@ def test_an_unresolvable_agent_id_allows_the_stop():
     assert json.loads(result.stdout) == {}
 
 
-def test_a_failing_hook_still_exits_zero():
+def test_a_failing_hook_still_exits_zero(postgres_dsn):
     # Arrange
 
     # Act
@@ -388,7 +392,7 @@ def test_a_failing_hook_still_exits_zero():
 # --------------------------------------------------------------------------- #
 # 5. BOUNDED — a hook that can refuse forever is a new outage                 #
 # --------------------------------------------------------------------------- #
-def test_the_same_message_stops_blocking_after_the_retry_limit():
+def test_the_same_message_stops_blocking_after_the_retry_limit(postgres_dsn):
     """We stop escalating. We do NOT stop remembering: the record is left
     unseen in the store for the operator and for every other rail."""
     # Arrange
@@ -403,7 +407,7 @@ def test_the_same_message_stops_blocking_after_the_retry_limit():
     assert out["decision"] == {}
 
 
-def test_giving_up_on_a_message_is_announced():
+def test_giving_up_on_a_message_is_announced(postgres_dsn):
     """A bound that gives up quietly is indistinguishable from the outage."""
     # Arrange
     _send()
@@ -417,7 +421,7 @@ def test_giving_up_on_a_message_is_announced():
     assert any("giving up on" in w for w in out["warnings"])
 
 
-def test_a_message_the_hook_gave_up_on_is_still_unseen_in_the_store():
+def test_a_message_the_hook_gave_up_on_is_still_unseen_in_the_store(postgres_dsn):
     """Giving up on BLOCKING must never mean marking it delivered."""
     # Arrange
     _send()
@@ -431,7 +435,7 @@ def test_a_message_the_hook_gave_up_on_is_still_unseen_in_the_store():
     assert len(still_unseen) == 1
 
 
-def test_the_retry_budget_is_per_message_not_per_agent():
+def test_the_retry_budget_is_per_message_not_per_agent(postgres_dsn):
     """A newly arrived message gets its own chances, whatever came before."""
     # Arrange
     _send(body="the old one")
@@ -449,7 +453,7 @@ def test_the_retry_budget_is_per_message_not_per_agent():
 # --------------------------------------------------------------------------- #
 # 6. The reason must fit the channel it is injected through                   #
 # --------------------------------------------------------------------------- #
-def test_the_reason_fits_the_injected_context_cap():
+def test_the_reason_fits_the_injected_context_cap(postgres_dsn):
     """Over-cap hook output is spilled to a file and replaced by a preview —
     a message that got spilled was not delivered."""
     # Arrange
@@ -462,7 +466,7 @@ def test_the_reason_fits_the_injected_context_cap():
     assert len(out["decision"]["reason"]) < INJECTED_CONTEXT_CAP
 
 
-def test_the_hook_prints_its_decision_as_json_on_stdout():
+def test_the_hook_prints_its_decision_as_json_on_stdout(postgres_dsn):
     """The Claude Code contract: stdout is the decision, stderr is commentary."""
     # Arrange
     _send()
@@ -493,7 +497,7 @@ def test_the_hook_prints_its_decision_as_json_on_stdout():
 # switched off today, and nobody polls it.
 
 
-def test_an_unrecognised_backend_name_is_not_a_second_rail(env):
+def test_an_unrecognised_backend_name_is_not_a_second_rail(env, postgres_dsn):
     """An unknown selector is refused, never treated as a second rail."""
     # Arrange
     env.set("SCITEX_CARDS_INBOX_BACKEND", "no-such-backend")

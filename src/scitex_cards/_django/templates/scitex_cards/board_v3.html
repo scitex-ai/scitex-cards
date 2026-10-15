@@ -1,31 +1,31 @@
-{% extends "scitex_app/app_shell.html" %}
+{% extends "scitex_sdk/app/app_shell.html" %}
 {% load static %}
 {% comment %}
-  Board v3 now extends the scitex-ui workspace shell (operator-asked,
+  Board v3 now extends the SDK workspace shell (operator-asked,
   TG msg 302 / 303 — wants Alt+I element-inspector + shared chrome
   parity with the legacy GraphView). All inline content is repacked
   into the shell's three blocks: extra_css holds the page-local
-  styles, scitex_app_content holds the kanban + BLOCKING-YOU panel + detail
+  styles, app_content holds the kanban + BLOCKING-YOU panel + detail
   modal, extra_js holds the page logic.
 
-  Alt+I element-inspector wires up automatically via scitex-ui's
-  context_processor (settings.py guards the install at scitex-ui
-  ≥0.5.0). For older scitex-ui installs the inspector degrades
-  silently; the board itself works either way.
+  Alt+I element-inspector wires up automatically via the SDK's
+  context_processor (settings.py guards the install). For older SDK
+  installs the inspector degrades silently; the board itself works
+  either way.
 
-  No favicon link here: scitex-ui's shell supplies the shared SciTeX brand
+  No favicon link here: the SDK's shell supplies the shared SciTeX brand
   mark as its default. One source, not two copies that drift. If the mark is
-  wrong, fix it in scitex-ui, which owns the asset.
+  wrong, fix it in scitex-sdk, which owns the asset.
 {% endcomment %}
 {% block extra_css %}
-<!-- P11b (lead-approved, operator priority 2026-06-12). Load the scitex-ui
+<!-- P11b (lead-approved, operator priority 2026-06-12). Load the SDK
      Combobox bundle (pre-built JS sibling of the TS class shipped in
-     scitex-ui#36/#37). The CSS uses the existing scitex-ui design tokens
+     the SDK UI component). The CSS uses the existing SDK design tokens
      so the popover blends with the board chrome. JS exposes
      window.STX.Combobox; attachCombobox() below layers a Combobox over
      every existing <select.filt> + the card-ctx move-picker as a
      progressive enhancement — if window.STX.Combobox is unavailable
-     (older scitex-ui pin), the page falls back to the plain <select>s
+     (older SDK pin), the page falls back to the plain <select>s
      and the move-picker's existing inline list. -->
 <!-- board_v3 page CSS (extracted 2026-06-12 from a 3800-line monolith).
      The inline <style> block was the root cause of squash-merge regressions
@@ -69,8 +69,8 @@
 {% endcomment %}
 <link rel="prefetch" href="{{ graph_prefetch_url }}" as="fetch" crossorigin="anonymous">
 {# combobox.css (loaded below the page-CSS so its specificity sits ON TOP if needed) #}
-<link rel="stylesheet" href="{% static 'scitex_ui/css/app/combobox.css' %}">
-<script defer src="{% static 'scitex_ui/js/app/combobox.js' %}"></script>
+<link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/combobox.css' %}">
+<script defer src="{% static 'scitex_sdk/ui/js/app/combobox.js' %}"></script>
 {% comment %}
   searchQuery.js — GitHub-style qualifier-syntax parser (project:/agent:/
   status:/...). Exposes window.STX.searchQuery; the page logic below
@@ -246,7 +246,7 @@
 {% endfor %}}</style>
 {% endblock extra_css %}
 
-{% block scitex_app_content %}
+{% block app_content %}
   {% comment %}
     Filterbar reorg (operator TG, lead a2a `b48f7c2c438b464698183d2e95d3bb04`,
     2026-06-12). Three explicit groups end the flex-wrap chaos:
@@ -506,7 +506,7 @@
     <aside class="details-pane stx-shell-sidebar" id="details-panel"
            aria-label="Details">
       {% comment %}
-        The pane itself is scitex-ui's `.stx-shell-sidebar` — the SAME
+        The pane itself is the SDK's `.stx-shell-sidebar` — the SAME
         workspace-pane primitive Writer / Scholar / Console use (shell CSS
         css/shell/stx-shell-sidebar.css, already linked by the standalone
         shell this template extends). We get its 50 px `__header`, its
@@ -777,7 +777,7 @@
   </div>
 
   <div class="toast" id="toast"></div>
-{% endblock scitex_app_content %}
+{% endblock app_content %}
 
 {% block extra_js %}
   <script>
@@ -1309,7 +1309,7 @@
         ["compute", "dependency", "dep", "operator-decision", "agent-wait", "none"]
           .map(b => `<option value="${b}">${b}</option>`).join("") +
         `<option value="__none">no blocker</option>`;
-      // P11b rebind — refresh the scitex-ui Combobox layered over each
+      // P11b rebind — refresh the SDK Combobox layered over each
       // <select.filt> so its item list reflects the freshly-populated
       // option lists. No-op when window.STX.Combobox is unavailable.
       if (typeof attachCombobox === "function") attachCombobox();
@@ -1356,7 +1356,7 @@
         (STATE.graph && STATE.graph.status_colors) || {},
       ).filter((s) => s !== "pending");
       if (!statuses.length) {
-        statuses.push("in_progress", "blocked", "done", "deferred", "failed", "goal");
+        statuses.push("in_progress", "blocked", "done", "deferred", "failed", "goal", "cancelled");
       }
       const isHidden = hiddenSet().has(cardId);
       const menu = document.createElement("div");
@@ -1367,12 +1367,12 @@
         `<button class="card-ctx-item${danger ? " card-ctx-item--danger" : ""}"
           onclick="${fn}">${label}</button>`;
       // P11b (operator priority 2026-06-12) — move-picker is now a
-      // scitex-ui Combobox: fuzzy typeahead over ALL projects +
+      // SDK Combobox: fuzzy typeahead over ALL projects +
       // "+ Create '<query>'" for brand-new ones. Restores the P8
       // capability ("list ALL projects, plus a + New project flow")
       // that regressed in develop AND adds substring search.
       // Progressive enhancement — when window.STX.Combobox is
-      // unavailable (older scitex-ui pin), the inline list rendered
+      // unavailable (older SDK pin), the inline list rendered
       // by the fallback branch below keeps the legacy click-to-pick
       // behaviour. (hook-bypass: line-limit.)
       const _hasCombobox = !!(window.STX && window.STX.Combobox);
@@ -1515,7 +1515,7 @@
       }
     }
 
-    // P11b (operator priority 2026-06-12) — wire the scitex-ui Combobox
+    // P11b (operator priority 2026-06-12) — wire the SDK Combobox
     // popover for the right-click move-to-project flow. Opens a
     // typeahead listing ALL projects + an inline "+ Create '<query>'"
     // affordance for brand-new ones. (hook-bypass: line-limit.)
@@ -1927,9 +1927,10 @@
 
     // === Stale Review layout ─────────────────────────────────────────
     // Operator directive 2026-06-13 (via lead a2a) — a recurring
-    // standing-section that surfaces stale/orphaned PENDING cards so
+    // standing-section that surfaces the stale deferred-backlog rows so
     // the operator can archive them WITH a reason recorded (no silent
-    // drops). Pulls from GET /stale (backend PR #153); per-row Archive
+    // drops). `pending` was abolished 2026-07-10 — GET /stale serves
+    // `deferred` (backend PR #153); per-row Archive
     // button posts to /archive (HTTP twin of CLI `close --reason`
     // verb in PR #151). Layout-state cache so we don't refetch on
     // every render() — invalidate via `loadGraph()` reload or after
@@ -2056,7 +2057,7 @@
       // empty), so we re-prompt if blank.
       const reason = window.prompt(
         `Archive (close with reason) — "${title || id}"\n\n` +
-        `This appends [CLOSED] <reason> to comments[], flips status to deferred,\n` +
+        `This appends [CLOSED] <reason> to comments[], flips status to cancelled (terminal),\n` +
         `and stamps _log_meta.closed_{at,by}. The row stays for audit.\n\n` +
         `Enter a short reason (REQUIRED):`,
         ""
@@ -2344,7 +2345,7 @@
     function toggleDetailsPane() {
       const pane = document.getElementById("details-panel");
       if (!pane) return;
-      // `.collapsed` is scitex-ui's own state class (css/shell/
+      // `.collapsed` is the SDK's own state class (css/shell/
       // stx-shell-sidebar.css): it shrinks the pane to
       // --ui-collapsed-pane-width and flips the header into the vertical
       // icon+label strip. We only toggle it — the behaviour is the shell's.
@@ -2520,16 +2521,16 @@
       // any filters restored from STATE before the operator's first
       // interaction. (hook-bypass: line-limit — see REFACTORING.md.)
       renderActiveFilterChips();
-      // P11b (operator priority 2026-06-12): layer the scitex-ui
+      // P11b (operator priority 2026-06-12): layer the SDK
       // Combobox on top of every <select.filt> for fuzzy-typeahead.
       // Progressive enhancement — when window.STX.Combobox is
-      // unavailable (older scitex-ui pin), the plain <select> stays
+      // unavailable (older SDK pin), the plain <select> stays
       // functional (this just no-ops).
       attachCombobox();
     }
 
     // === P11b — Combobox layer over <select.filt> ========================
-    // For each filter <select>, attach a scitex-ui Combobox that mirrors
+    // For each filter <select>, attach an SDK Combobox that mirrors
     // the option list, opens with a button trigger, and on selection
     // updates the underlying <select>.value + dispatches a "change"
     // event so attachFilters()'s existing listeners fire unchanged.
@@ -2757,7 +2758,7 @@
 
     // ESC closes the open modal — operator TG 265: "popup は常に esc 有効
     // なように." HIG / WAI-ARIA universal expectation. Long-term home is
-    // the scitex-ui Modal primitive (so every scitex-app gets it for free);
+    // the SDK Modal primitive (so every SDK leaf gets it for free);
     // this local handler is the short-term scitex-cards fix until that lands.
     // Listens on document so the focus can be anywhere (the modal contents,
     // an input field, the body) and ESC still closes.

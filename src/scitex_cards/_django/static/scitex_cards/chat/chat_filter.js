@@ -1,19 +1,19 @@
 /* Fuzzy filter over the DM agent list.
  *
  * OPERATOR STANDING REQUEST, repeated: 「普通にあいまい検索でフィルタはいつも入れて
- * ください；scitex-ui にもなければいけない話です」 — a fuzzy-search filter belongs on
- * every list, and the matcher belongs in scitex-ui rather than being re-typed per
+ * ください；[SDK: the old UI package at the time] にもなければいけない話です」 — a fuzzy-search filter belongs on
+ * every list, and the matcher belongs in the SDK rather than being re-typed per
  * page. The board already consumes it (six filter <select>s are wrapped by
- * scitex-ui's Combobox); this page did not, and its list is the one that grows
+ * the SDK's Combobox); this page did not, and its list is the one that grows
  * without bound — every agent the fleet has ever registered, one flat column, no
  * way to narrow it.
  *
- * THE MATCHER IS NOT OURS. `STX.Combobox.fuzzyMatch` is scitex-ui's, exported as
+ * THE MATCHER IS NOT OURS. `STX.Combobox.fuzzyMatch` is the SDK's, exported as
  * a static beside the Combobox class for exactly this reason: consumers that want
  * a list narrowed but not a <select> replaced. Writing a second subsequence
  * matcher here would mean this page and the board disagree about what "matches"
  * means, and the operator would meet two different search behaviours in one app.
- * `substringMatch` below is a FALLBACK for a scitex-ui too old to export it, not
+ * `substringMatch` below is a FALLBACK for an SDK too old to export it, not
  * an alternative implementation — it is deliberately dumber, so a page running on
  * the fallback is visibly (not silently) degraded.
  *
@@ -44,7 +44,7 @@
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
 
-  /* The fallback, used only when scitex-ui is absent or too old to export
+  /* The fallback, used only when the SDK is absent or too old to export
    * `Combobox.fuzzyMatch`. Case-insensitive substring — strictly weaker than the
    * real matcher, on purpose. */
   function substringMatch(query, hay) {
@@ -54,7 +54,7 @@
   }
 
   /* Resolve the matcher at CALL time, not at load time: `chat_filter.js` and
-   * scitex-ui's `combobox.js` are both deferred, and pinning the lookup at load
+   * the SDK's `combobox.js` are both deferred, and pinning the lookup at load
    * would freeze whichever happened to win the race. */
   function matcherFrom(scope) {
     var stx = scope && scope.STX;

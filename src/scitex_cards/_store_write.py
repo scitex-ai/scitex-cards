@@ -207,8 +207,27 @@ def edit_tasks(path: str | Path):
     --------
     >>> with edit_tasks("cards.db") as tasks:        # doctest: +SKIP
     ...     for t in tasks:
-    ...         if t.get("status") == "pending":
-    ...             t["status"] = "deferred"
+    ...         if t.get("status") == "deferred" and not t.get("blocker"):
+    ...             t["status"] = "in_progress"
+
+    The example matches a LIVE status only: ``pending`` was abolished
+    2026-07-10 (see ``ABOLISHED_STATUSES`` in ``_task.py``), so a
+    ``pending``-matching loop is no longer a pattern to copy — the
+    2026-07-10 ``pending``-to-``deferred`` bulk migration that first used
+    this shape is history.
+
+    LEAVING ``done`` INSIDE THIS LOOP MUST DROP THE COMPLETION STAMP. The
+    rows yielded here are raw dicts: assigning ``status`` directly bypasses
+    ``update_task`` and its ``_clear_completion_stamp_on_leaving_done``
+    clock, so a bulk move of a ``done``+stamped card (``complete_task``
+    stamps ``_log_meta.completed_{at,by}``) to a live status keeps
+    ``completed_at`` on a non-``done`` row — the phantom-delivery row
+    ``fleet/timing.py`` + ``timeline.py`` aggregate on ``completed_at``
+    alone (never ``status``). Capture ``prior_status`` BEFORE the flip and
+    call ``scitex_cards._store_clocks._clear_completion_stamp_on_leaving_done``
+    per row — the same named clock every other exit from ``done`` uses,
+    never two inline pops. Restoring a snapshot AS ``done`` keeps its
+    genuine stamp; only LEAVING ``done`` clears.
     """
     path = Path(path).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)

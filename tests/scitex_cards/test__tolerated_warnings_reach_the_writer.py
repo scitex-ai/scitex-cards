@@ -22,12 +22,26 @@ WHAT THAT PERMITTED, measured on the live board 2026-08-16:
 Every one fired the warning. Nobody saw one. Constitution s2: a check whose
 failure nothing reads.
 
-THE FIX RETURNS THE WARNING, IT DOES NOT REFUSE THE WRITE. Refusing is ruled out
-above; returning costs nothing and stops a sweep at card ONE rather than card
-293. Two tests below assert the ruling still holds -- the card is written and the
-value survives.
+THE STORE STILL WARNS, NEVER REFUSES — the ruling holds where it applies
+(reads tolerate legacy rows; ``save_tasks`` never destroys another writer's
+row). But the VERBS are sources, and sources stay strict (same disposition
+as the board, which 400s via ``crud._check_status``): a caller SUPPLYING a
+status outside ``VALID_STATUSES`` gets ``TaskValidationError`` BEFORE the
+store is touched, with the abolition hint for ``pending``. Refusing a
+caller-supplied value costs nobody their card — no card exists yet on
+create, and on update the row keeps its prior (good) status — while a
+warn-only verb lets a sweep through one warning at a time. The tests below
+assert the refusal at the verb layer and keep the warn-only contract pinned
+at the store layer; an ordinary write stays byte-identical.
 
 Real round-trips against the conftest-isolated store, no mocks (STX-NM).
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the ambient-store checks below target the ambient
+per-test store, which is refused without a writable cluster. The refusal
+pins take no fixture — the gate fires before any store touch, so they run
+anywhere. The collector no-op test stays unguarded by design (no store
+touch).
 """
 
 from __future__ import annotations
@@ -35,11 +49,18 @@ from __future__ import annotations
 import pytest
 
 from scitex_cards._store import add_task, get_task, update_task
+from scitex_cards._task import TaskValidationError
 
 
 @pytest.fixture()
-def seeded():
-    """A clean card to mutate, created with a status this build knows."""
+def seeded(postgres_dsn):
+    """A clean card to mutate, created with a status this build knows.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     add_task(id="w1", title="probe", status="deferred", assignee="tester",
              created_by="tester")
     return "w1"
@@ -50,52 +71,61 @@ def seeded():
 # --------------------------------------------------------------------------
 
 
-def test_creating_a_card_with_an_unknown_status_warns_the_caller():
+def test_creating_a_card_with_an_unknown_status_is_refused():
     # Arrange
     unknown = "archived"
     # Act
-    result = add_task(id="w2", title="probe", status=unknown, assignee="t",
-                      created_by="t")
+    def act():
+        add_task(id="w2", title="probe", status=unknown, assignee="t",
+                 created_by="t")
     # Assert
-    assert result.get("warnings"), (
-        "add_task accepted an unknown status and told the caller nothing. This "
-        "is how a several-hundred-card sweep set `archived` unnoticed."
-    )
+    with pytest.raises(TaskValidationError, match="archived"):
+        act()
 
 
-def test_the_returned_warning_names_the_offending_value():
+def test_the_refusal_names_the_offending_value():
     # Arrange
     unknown = "archived"
     # Act
-    result = add_task(id="w3", title="probe", status=unknown, assignee="t",
-                      created_by="t")
+    def act():
+        add_task(id="w3", title="probe", status=unknown, assignee="t",
+                 created_by="t")
     # Assert
-    assert "archived" in " ".join(result["warnings"])
+    with pytest.raises(TaskValidationError, match="archived"):
+        act()
 
 
-def test_creating_a_card_with_an_abolished_status_warns_the_caller():
+def test_creating_a_card_with_an_abolished_status_is_refused_with_the_hint():
     """`pending` was abolished 2026-07-10 and three cards still acquired it."""
     # Arrange
     abolished = "pending"
     # Act
-    result = add_task(id="w4", title="probe", status=abolished, assignee="t",
-                      created_by="t")
+    def act():
+        add_task(id="w4", title="probe", status=abolished, assignee="t",
+                 created_by="t")
     # Assert
-    assert result.get("warnings")
+    with pytest.raises(TaskValidationError, match="abolished"):
+        act()
 
 
-def test_the_card_is_still_created(seeded):
-    """OPERATOR RULING 2026-07-10 -- a status value must never cost a card."""
+def test_the_refused_create_costs_no_card(seeded, postgres_dsn):
+    """OPERATOR RULING 2026-07-10 -- a status value must never cost a card.
+
+    The refusal lands BEFORE the store guard, so the seeded card stands
+    untouched (that a rejected id is never minted is pinned by the
+    gate-before-guard order test beside the verb).
+    """
     # Arrange
-    add_task(id="w5", title="probe", status="archived", assignee="t",
-             created_by="t")
+    with pytest.raises(TaskValidationError):
+        add_task(id="w5", title="probe", status="archived", assignee="t",
+                 created_by="t")
     # Act
-    stored = get_task(None, "w5")
+    stored = get_task(None, "w1")
     # Assert
-    assert stored["status"] == "archived"
+    assert stored["status"] == "deferred"
 
 
-def test_an_ordinary_create_carries_no_warnings_key():
+def test_an_ordinary_create_carries_no_warnings_key(postgres_dsn):
     """A clean write must be byte-identical to before this change."""
     # Arrange
     known = "deferred"
@@ -111,26 +141,31 @@ def test_an_ordinary_create_carries_no_warnings_key():
 # --------------------------------------------------------------------------
 
 
-def test_updating_to_an_unknown_status_warns_the_caller(seeded):
+def test_updating_to_an_unknown_status_is_refused():
     # Arrange
     unknown = "archived"
     # Act
-    result = update_task(None, "w1", status=unknown)
+    def act():
+        update_task(None, "w1", status=unknown)
     # Assert
-    assert result.get("warnings")
+    with pytest.raises(TaskValidationError, match="archived"):
+        act()
 
 
-def test_the_update_still_applies(seeded):
-    """Warn, never refuse -- the same ruling, on the mutate path."""
+def test_the_refused_update_keeps_the_prior_status(seeded, postgres_dsn):
+    """Warn, never refuse, was the old mutate-path contract -- the same ruling,
+    on the same path. The refusal keeps the row's prior (good) status, so
+    nothing is lost; the caller retries with a legal value."""
     # Arrange
-    unknown = "archived"
+    with pytest.raises(TaskValidationError):
+        update_task(None, "w1", status="archived")
     # Act
-    result = update_task(None, "w1", status=unknown)
+    stored = get_task(None, "w1")
     # Assert
-    assert result["status"] == "archived"
+    assert stored["status"] == "deferred"
 
 
-def test_an_ordinary_update_carries_no_warnings_key(seeded):
+def test_an_ordinary_update_carries_no_warnings_key(seeded, postgres_dsn):
     # Arrange
     known = "in_progress"
     # Act
@@ -139,7 +174,7 @@ def test_an_ordinary_update_carries_no_warnings_key(seeded):
     assert "warnings" not in result
 
 
-def test_a_blocked_card_with_no_blocker_also_reaches_the_caller(seeded):
+def test_a_blocked_card_with_no_blocker_also_reaches_the_caller(seeded, postgres_dsn):
     """The OTHER `_warn_tolerated` call site, so the fix is not half-applied."""
     # Arrange
     gateless = "blocked"
@@ -154,7 +189,7 @@ def test_a_blocked_card_with_no_blocker_also_reaches_the_caller(seeded):
 # --------------------------------------------------------------------------
 
 
-def test_a_clean_write_to_ANOTHER_card_inherits_nothing(seeded):
+def test_a_clean_write_to_ANOTHER_card_inherits_nothing(seeded, postgres_dsn):
     """A module-level list would carry the first write's warning into the
     second's result. The collector is per-context precisely to stop that.
 
@@ -174,7 +209,7 @@ def test_a_clean_write_to_ANOTHER_card_inherits_nothing(seeded):
     assert "warnings" not in clean
 
 
-def test_the_writer_is_not_told_about_other_cards_bad_values(seeded):
+def test_the_writer_is_not_told_about_other_cards_bad_values(seeded, postgres_dsn):
     """SCOPED TO THE CALLER'S CARD. `save_tasks` validates the WHOLE task list,
     so an unscoped collector would hand this writer a warning for every off-enum
     row in the document -- eleven of them on the live board today, about cards

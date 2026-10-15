@@ -2,8 +2,10 @@
 # -*- coding: utf-8 -*-
 """`scitex-cards reconcile-merged-prs` — auto-close cards whose linked PR merged.
 
-Terminal twin of the periodic JobSpec (``_jobs_provider.py``). Scans open
-cards (pending / in_progress / blocked) that carry a ``pr_url``, asks GitHub
+Terminal twin of the periodic JobSpec (``_jobs_provider.py``). Scans
+``in_progress`` cards that carry a ``pr_url`` (``OPEN_STATUSES`` in
+``_reconcile_prs`` — ``blocked`` / ``deferred`` excluded by design,
+``pending`` abolished 2026-07-10), asks GitHub
 whether the PR is merged, and — for the merged ones — flips the card to
 ``done`` plus an audit comment. DRY-RUN by default (report only); ``--apply``
 performs the mutation (mirrors scitex-dev's board-mutation pattern — no
@@ -29,7 +31,8 @@ from .._reconcile_prs import reconcile_merged_prs
     "reconcile-merged-prs",
     help=(
         "Auto-close cards whose linked PR (pr_url) has MERGED.\n\n"
-        "Scans pending / in_progress / blocked cards with a pr_url; for "
+        "Scans in_progress cards with a pr_url (blocked/deferred excluded, "
+        "pending abolished 2026-07-10); for "
         "each, checks the PR merge-state (gh, then a curl GitHub REST "
         "fallback) and — when merged — flips the card to `done` with an "
         "audit comment. DRY-RUN by default; pass --apply to mutate.\n\n"

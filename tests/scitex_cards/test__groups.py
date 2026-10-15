@@ -27,9 +27,13 @@ def _write_store(tmp_path: Path, body: str) -> Path:
 class TestStoreWithoutGroupsKey:
     def test_returns_empty_list(self, tmp_path: Path) -> None:
         # Arrange — store without any `groups:` key (the back-compat path).
+        # Fixture seeds `status: deferred`: `pending` was abolished
+        # 2026-07-10 (ABOLISHED_STATUSES in _task.py) and the assertion
+        # under test never touches the status, so a `pending` seed would
+        # pass while teaching the abolished value as a live example.
         store = _write_store(
             tmp_path,
-            "tasks:\n  - id: a\n    title: A\n    status: pending\n",
+            "tasks:\n  - id: a\n    title: A\n    status: deferred\n",
         )
         # Act
         groups = load_groups(store)

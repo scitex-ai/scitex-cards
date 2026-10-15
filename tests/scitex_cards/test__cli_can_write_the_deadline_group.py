@@ -29,6 +29,12 @@ real CLI and re-reads THE STORE.
 
 No mocks (STX-NM002): the verb is driven end-to-end and the store is the
 conftest's fresh canonical DB.
+
+CliRunner against the ambient per-test store. No mocks.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every write below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -62,7 +68,7 @@ def _update(task_id, *args):
 
 
 class TestScheduledIsWritable:
-    def test_the_value_reaches_the_store(self):
+    def test_the_value_reaches_the_store(self, postgres_dsn):
         # Arrange
         _card("sched-1")
 
@@ -72,7 +78,7 @@ class TestScheduledIsWritable:
         # Assert
         assert _reload("sched-1")["scheduled"] == SCHEDULED
 
-    def test_an_empty_value_clears_it(self):
+    def test_an_empty_value_clears_it(self, postgres_dsn):
         # Arrange
         _card("sched-2")
         _update("sched-2", "--scheduled", SCHEDULED)
@@ -85,7 +91,7 @@ class TestScheduledIsWritable:
 
 
 class TestDeadlineIsWritable:
-    def test_the_value_reaches_the_store(self):
+    def test_the_value_reaches_the_store(self, postgres_dsn):
         # Arrange
         _card("dl-1")
 
@@ -95,7 +101,7 @@ class TestDeadlineIsWritable:
         # Assert
         assert _reload("dl-1")["deadline"] == DEADLINE
 
-    def test_an_empty_value_clears_it(self):
+    def test_an_empty_value_clears_it(self, postgres_dsn):
         # Arrange
         _card("dl-2")
         _update("dl-2", "--deadline", DEADLINE)
@@ -108,7 +114,7 @@ class TestDeadlineIsWritable:
 
 
 class TestDeadlinesListIsWritable:
-    def test_repeated_flags_reach_the_store_as_a_list(self):
+    def test_repeated_flags_reach_the_store_as_a_list(self, postgres_dsn):
         # Arrange
         _card("dls-1")
 
@@ -118,7 +124,7 @@ class TestDeadlinesListIsWritable:
         # Assert
         assert _reload("dls-1")["deadlines"] == ["2026-09-01", "2026-09-08"]
 
-    def test_one_empty_value_clears_the_list(self):
+    def test_one_empty_value_clears_the_list(self, postgres_dsn):
         # Arrange
         _card("dls-2")
         _update("dls-2", "--deadlines", "2026-09-01")
@@ -139,7 +145,7 @@ class TestTheVerbStillRefusesAnEmptyUpdate:
     rather than assumed.
     """
 
-    def test_passing_no_field_flags_is_still_an_error(self):
+    def test_passing_no_field_flags_is_still_an_error(self, postgres_dsn):
         # Arrange
         _card("noop-1")
 

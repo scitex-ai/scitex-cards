@@ -21,7 +21,8 @@ from scitex_cards._store import add_task
 
 
 @pytest.fixture()
-def store_with_blocks() -> None:
+def store_with_blocks(postgres_dsn) -> None:
+    """Seed the ambient per-test store; ``postgres_dsn`` is the fail-LOUD guard (refuses without a writable cluster)."""
     add_task(
         id="dec-a",
         title="Decide on A",
@@ -140,7 +141,7 @@ def _seed_without_blocks() -> None:
     )
 
 
-def test_empty_queue_exits_zero():
+def test_empty_queue_exits_zero(postgres_dsn):
     # Arrange
     _seed_without_blocks()
     # Act
@@ -149,7 +150,7 @@ def test_empty_queue_exits_zero():
     assert result.exit_code == 0
 
 
-def test_empty_queue_is_reported_clearly():
+def test_empty_queue_is_reported_clearly(postgres_dsn):
     # Arrange
     _seed_without_blocks()
     # Act

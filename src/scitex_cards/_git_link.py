@@ -297,13 +297,15 @@ def _main(argv: list[str] | None = None) -> int:
 
     ``python -m scitex_cards._git_link card-id <branch> [<commit-msg-file>]``
         Resolve the card id (branch, then ``Card:`` trailer in the message
-        file) and print it to stdout. Prints NOTHING when none is found.
+        file) and emit it to stdout via :func:`write_content`. Emits NOTHING
+        when none is found.
 
     ``python -m scitex_cards._git_link emit-event \\``
         ``--repo R --branch B --sha S [--author A] [--message-file F]``
         ``[--trigger commit|push]``
-        Resolve the card id and print the full canonical push-event JSON to
-        stdout (one line). Prints NOTHING when no card id resolves -> the
+        Resolve the card id and emit the full canonical push-event JSON to
+        stdout (one line) via :func:`write_content`. Emits NOTHING when no
+        card id resolves -> the
         shell hook treats empty output as a SOFT skip and never calls the
         consumer. ``--trigger`` (default ``push``) tells the consumer
         whether this came from ``post-commit`` (``commit``) or ``pre-push``
@@ -363,7 +365,7 @@ def _main(argv: list[str] | None = None) -> int:
             trigger=ns.trigger,
         )
         if event is not None:
-            print(json.dumps(event))
+            write_content(json.dumps(event))
         return 0
 
     return 0

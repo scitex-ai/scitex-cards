@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Board shell migration gate: ``scitex_ui`` standalone shell -> ``scitex_app`` shell.
+"""Board shell migration gate: retired shells -> ``scitex_sdk`` shells.
 
 THE MIGRATION THIS FILE PINS. Both operator-facing board pages were re-targeted
-from the scitex-ui standalone shell to the scitex-app shell, and ``scitex_app``
-was registered in ``INSTALLED_APPS`` so its templates resolve through
-AppDirectoriesFinder::
+from the retired scitex-app / scitex-ui shells to the scitex-sdk shells, and
+``scitex_sdk.app`` / ``scitex_sdk.ui`` were registered in ``INSTALLED_APPS``
+so their templates resolve through AppDirectoriesFinder::
 
-    {% extends "scitex_ui/standalone_shell.html" %}  ->  {% extends "scitex_app/app_shell.html" %}
-    {% block app_content %}                          ->  {% block scitex_app_content %}
+    {% extends "scitex_app/app_shell.html" %}  ->  {% extends "scitex_sdk/app/app_shell.html" %}
+    {% block scitex_app_content %}              ->  {% block app_content %}
 
-The shell the pages extend is built by the SIBLING scitex-app package: its
-``app_shell.html`` extends ``scitex_ui/standalone_shell.html`` and re-exports
-``scitex_app_content`` as a nested block inside ``app_content``. Our pages
-therefore override the INNER block (``scitex_app_content``), not the outer one
-(``app_content``) — overriding ``app_content`` would replace the whole content
-slot and bypass the shell's nesting.
+The shell the pages extend is built by the SIBLING scitex-sdk package: its
+``app_shell.html`` extends ``scitex_sdk/ui/standalone_shell.html`` and keeps a
+nested legacy block inside ``app_content`` for backwards compatibility. Our
+pages override the OUTER block (``app_content``) — overriding the legacy inner
+block would keep rendering today but re-pin the retired name the migration
+removes.
 
-WHY A GATE EXISTS. The installed scitex-app wheel does not always ship
-``app_shell.html`` — the template is present in the scitex-app *source* but may
-be absent from the *distribution* (measured on 0.22.1 and 0.23.0). Consequence:
+WHY A GATE EXISTS. The installed SDK wheel does not always ship
+``app_shell.html`` — the template is present in the SDK *source* but may
+be absent from the *distribution*. Consequence:
 when the shell is absent, both board views' ``render_to_string(...)`` raise
 ``TemplateDoesNotExist``, the views' ``except Exception`` catches it, and they
 serve the static graph fallback instead of the rich board. The operator sees a
@@ -28,7 +28,7 @@ exact "board works but wrong" silence the 2026-07-29 outage was made of.
 
 This file is the Cards-side CONTRACT for the migration. It is fully hermetic:
 it parses OUR templates and reads OUR settings, so it needs no store, no
-database, no sibling checkout, and no network. It is portable across scitex-app
+database, no sibling checkout, and no network. It is portable across SDK
 versions because the one assertion that depends on the wheel's contents
 (:func:`test_missing_shell_degrades_to_template_does_not_exist`) computes a
 single outcome instead of assuming the shell is present or absent.
@@ -54,17 +54,17 @@ from django.template.loader import get_template, render_to_string  # noqa: E402
 from django.test import RequestFactory  # noqa: E402
 
 #: The two operator-facing pages the migration re-targeted. (``chat.html`` is
-#: intentionally absent: it renders its own inline shell and does not extend
-#: either of the two shells — a third page is a different migration.)
+#: intentionally absent: it extends the raw SDK standalone shell directly
+#: rather than the app shell — a third page is a different migration.)
 _PAGES = ("scitex_cards/standalone.html", "scitex_cards/board_v3.html")
 
 #: The shell the migration points at, and the block our pages must override.
-_SHELL = "scitex_app/app_shell.html"
-_NEW_BLOCK = "scitex_app_content"
-_RETIRED_BLOCK = "app_content"
+_SHELL = "scitex_sdk/app/app_shell.html"
+_NEW_BLOCK = "app_content"
+_RETIRED_BLOCK = "scitex_app_content"
 
-#: The retired scitex-ui shell the pages used to extend.
-_OLD_SHELL = "scitex_ui/standalone_shell.html"
+#: The retired shells the pages used to extend.
+_OLD_SHELLS = ("scitex_app/app_shell.html", "scitex_ui/standalone_shell.html")
 
 _EXTENDS = re.compile(r"""\{%[-\s]*extends\s+['"]([^'"]+)['"]""")
 _BLOCK = re.compile(r"""\{%[-\s]*block\s+([A-Za-z0-9_]+)""")
@@ -84,7 +84,7 @@ def _page_source(name: str) -> str:
 # === positive controls ======================================================
 #
 # A regex that quietly matches nothing makes every assertion below vacuous ("all
-# pages extend the scitex_app shell" reads true when it examined no extends).
+# pages extend the SDK shell" reads true when it examined no extends).
 # Pin the scan's own reach first — one intent (and one assertion) per test.
 
 
@@ -119,47 +119,47 @@ def test_scans_find_a_block_tag_on_every_page(page: str) -> None:
 # === (1) the extends target ================================================
 #
 # Two intents, two tests (STX-TQ007): pointing at the NEW shell is a different
-# contract from no longer pointing at the RETIRED shell, so each gets its own
+# contract from no longer pointing at a RETIRED shell, so each gets its own
 # single assertion.
 
 
 @pytest.mark.parametrize("page", _PAGES)
-def test_page_extends_the_scitex_app_shell(page: str) -> None:
-    """Both pages point at ``scitex_app/app_shell.html``."""
+def test_page_extends_the_sdk_app_shell(page: str) -> None:
+    """Both pages point at ``scitex_sdk/app/app_shell.html``."""
     # Arrange
     src = _page_source(page)
     # Act
     parents = _EXTENDS.findall(src)
     # Assert
     assert _SHELL in parents, (
-        f"{page} extends {parents!r}; expected the scitex_app shell "
+        f"{page} extends {parents!r}; expected the SDK shell "
         f"({_SHELL}). The migration was reverted."
     )
 
 
 @pytest.mark.parametrize("page", _PAGES)
-def test_page_no_longer_extends_the_retired_scitex_ui_shell(page: str) -> None:
-    """The retired scitex-ui shell is gone from the extends list."""
+def test_page_extends_neither_retired_shell(page: str) -> None:
+    """Both retired shells are gone from the extends list."""
     # Arrange
     src = _page_source(page)
     # Act
     parents = _EXTENDS.findall(src)
     # Assert
-    assert _OLD_SHELL not in parents, (
-        f"{page} still extends the retired scitex-ui shell {_OLD_SHELL!r} "
+    assert not any(old in parents for old in _OLD_SHELLS), (
+        f"{page} still extends a retired shell {_OLD_SHELLS!r} "
         f"(extends {parents!r})"
     )
 
 
 # === (2) the block name =====================================================
 #
-# Overriding the INNER ``scitex_app_content`` block is one intent; NOT
-# overriding the OUTER ``app_content`` is a different one. Split (STX-TQ007).
+# Overriding the OUTER ``app_content`` block is one intent; NOT
+# overriding the retired legacy inner block is a different one. Split (STX-TQ007).
 
 
 @pytest.mark.parametrize("page", _PAGES)
-def test_page_overrides_the_scitex_app_content_block(page: str) -> None:
-    """Our content slot is the INNER block the scitex_app shell re-exports."""
+def test_page_overrides_the_app_content_block(page: str) -> None:
+    """Our content slot is the outer block the SDK shell defines."""
     # Arrange
     src = _page_source(page)
     # Act
@@ -167,46 +167,47 @@ def test_page_overrides_the_scitex_app_content_block(page: str) -> None:
     # Assert
     assert _NEW_BLOCK in blocks, (
         f"{page} defines blocks {blocks!r} but not `{_NEW_BLOCK}` — the shell "
-        "re-exports that nested block; without it the page paints nothing."
+        "defines that content slot; without it the page paints nothing."
     )
 
 
 @pytest.mark.parametrize("page", _PAGES)
-def test_page_does_not_override_the_outer_app_content_block(page: str) -> None:
-    """Overriding ``app_content`` would replace the whole slot and bypass the
-    shell's nesting. The migration must target ``scitex_app_content`` only."""
+def test_page_does_not_override_the_retired_inner_block(page: str) -> None:
+    """Overriding the legacy inner block would re-pin the retired name.
+
+    The migration must target ``app_content`` only."""
     # Arrange
     src = _page_source(page)
     # Act
     blocks = _BLOCK.findall(src)
     # Assert
     assert _RETIRED_BLOCK not in blocks, (
-        f"{page} overrides the outer `{_RETIRED_BLOCK}` block ({blocks!r}); "
-        "the shell nests `scitex_app_content` inside it, so our page must "
-        "override the inner one."
+        f"{page} overrides the retired `{_RETIRED_BLOCK}` block ({blocks!r}); "
+        "the SDK keeps it only for backwards compatibility, so our page must "
+        "override the outer block."
     )
 
 
 # === (3) app registration ===================================================
 
 
-def test_scitex_app_is_registered_in_installed_apps() -> None:
-    """The shell resolves through AppDirectoriesFinder only if scitex_app is an
-    installed app. The migration added it; pin it so it cannot be dropped."""
+def test_sdk_apps_are_registered_in_installed_apps() -> None:
+    """The shells resolve through AppDirectoriesFinder only if both SDK apps are
+    installed apps. The migration added them; pin them so neither is dropped."""
     # Arrange
     installed = settings.INSTALLED_APPS
     # Act
-    present = "scitex_app" in installed
+    missing = [app for app in ("scitex_sdk.app", "scitex_sdk.ui") if app not in installed]
     # Assert
-    assert present, (
-        f"INSTALLED_APPS={installed!r} does not register `scitex_app`; the "
-        "shell template would never be found by the app-dirs loader."
+    assert not missing, (
+        f"INSTALLED_APPS={installed!r} does not register {missing!r}; the "
+        "shell templates would never be found by the app-dirs loader."
     )
 
 
 # === (4) the graceful-degradation seam (version-robust) ====================
 #
-# The one test that depends on the WHEEL's contents. The installed scitex-app
+# The one test that depends on the WHEEL's contents. The installed SDK
 # may or may not ship the shell; both are legitimate, so instead of assuming
 # either (or branching with a top-level ``if``/``else`` in a parametrized test,
 # which STX-TQ006 forbids), compute a single outcome and assert it once:

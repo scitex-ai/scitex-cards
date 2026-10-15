@@ -75,7 +75,11 @@ def upsert_task(
     ANY state — including ``done`` and ``cancelled`` — sets ``status`` to what
     the caller asked for and refreshes ``last_activity``, so a recurring
     condition re-enters the queue instead of accumulating comments on a closed
-    card.
+    card. Reopening a ``done`` card drops ``_log_meta.completed_{at,by}``
+    via ``_clear_completion_stamp_on_leaving_done`` (same clock
+    ``update_task`` uses): throughput aggregates on ``completed_at`` alone,
+    so a reopened row keeping the stamp would count as delivered work
+    forever.
 
     The whole read-decide-write runs under one store lock, so two concurrent
     callers cannot both observe "no card" and double-insert. That is
@@ -94,7 +98,13 @@ def upsert_task(
         Required. ``status`` is what the card must be in AFTERWARDS — pass a
         status your queue actually surfaces (``in_progress`` or ``deferred``
         for something a human must pick up; ``blocked`` only when it genuinely
-        waits on someone).
+        waits on someone). A ``status`` outside ``VALID_STATUSES`` — including
+        the abolished ``"pending"`` (abolished 2026-07-10) — raises
+        ``TaskValidationError`` BEFORE the store lock, via the same
+        source-strict contract the create/update verbs and the board
+        reopen/restore handlers use (the save path itself only warns on bad
+        values per the 2026-07-10 ruling, so without this check an alerter
+        could mint a row the enum forbids).
     **fields
         Any other card field. On create they are written; on update only the
         keys in :data:`REFRESHABLE` are refreshed, so an upsert cannot quietly
@@ -107,6 +117,13 @@ def upsert_task(
         ``"reopened"``. The caller needs to know which happened: an alerter
         that reopened a closed card is reporting a RECURRENCE, which is
         different news from a first occurrence.
+
+    Raises
+    ------
+    TaskValidationError
+        On a ``status`` outside ``VALID_STATUSES`` (including abolished
+        ``"pending"``) — before any read, lock, or write, so a rejected
+        upsert never touches the store.
     """
     if not (isinstance(id, str) and id.strip()):
         raise ValueError("upsert_task: 'id' is required and must be non-empty")
@@ -122,6 +139,20 @@ def upsert_task(
 
     from . import _task
     from ._store import _read_write_doc, _utc_now_iso
+
+    # The store verb is a SOURCE, so it stays strict like add/update and the
+    # board reopen/restore handlers: a status outside VALID_STATUSES
+    # (including abolished "pending") raises BEFORE the store lock — the save
+    # path only warns on bad values per the 2026-07-10 ruling, so without
+    # this an alerter could mint a forbidden row through this verb.
+    if status not in _task.VALID_STATUSES:
+        hint = _task.ABOLISHED_STATUSES.get(status)
+        if hint is not None:
+            raise _task.TaskValidationError(f"upsert_task: {hint}")
+        raise _task.TaskValidationError(
+            f"upsert_task: invalid status {status!r}; "
+            f"must be one of {_task.VALID_STATUSES}"
+        )
 
     card_id = id.strip()
     resolved = _resolved_store(store)
@@ -146,7 +177,20 @@ def upsert_task(
                     "deletion was wrong, or choose a different id."
                 )
             action = "reopened" if task.get("status") != status else "refreshed"
+            prior_status = task.get("status")
             task["status"] = status
+            # Leaving `done` must drop the completion stamp: throughput
+            # (fleet/timing.py + timeline.py) aggregates SOLELY on
+            # `completed_at` and never consults `status`, so a reopened row
+            # keeping the stamp counts as delivered work forever while also
+            # nagging its owner as backlog — the same lie `update_task`
+            # clears via this same clock and `reopen_task`/`/archive` clear
+            # via `clear_completion_stamp`. This path writes via
+            # `_save_doc_unlocked` directly and bypasses that clock, so it
+            # calls the helper itself. No-op unless the card was `done`.
+            from ._store_clocks import _clear_completion_stamp_on_leaving_done
+
+            _clear_completion_stamp_on_leaving_done(task, prior_status)
             for key in REFRESHABLE:
                 if key == "title":
                     task["title"] = title

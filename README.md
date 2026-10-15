@@ -491,7 +491,7 @@ managed by the registry + inbox layers). Each task:
 |--------------|----------|------------------------------------------------------------------|
 | `id`         | yes      | unique id, referenced by `depends_on` / `blocks`                 |
 | `title`      | yes      | short label                                                      |
-| `status`     | yes      | `goal` \| `pending` \| `in_progress` \| `blocked` \| `done` \| `deferred` \| `failed` |
+| `status`     | yes      | `goal` \| `in_progress` \| `blocked` \| `done` \| `deferred` \| `failed` \| `cancelled` |
 | `agent` / `assignee` | no | the card owner (role: `owner`)                              |
 | `collaborators` / `subscribers` | no | role lists feeding the notify resolver              |
 | `repo`       | no       | owning repo / area                                               |
@@ -503,7 +503,7 @@ managed by the registry + inbox layers). Each task:
 | `parent`     | no       | id of the task this nests under (drill-down view)                |
 | `comments`   | no       | the Gitea-compatible activity thread (`comment_task` appends)    |
 | `notify`     | no       | per-card notify override (`events` / `add` / `mute`)             |
-| `kind`       | no       | `task` (default) \| `compute` — `compute` marks a row updated by an external writer (Spartan/CI watcher) |
+| `kind`       | no       | `task` (default) \| `compute` \| `decision` \| `status` — `compute` marks a row updated by an external writer (Spartan/CI watcher); `decision` an operator/agent decision node; `status` a non-actionable status-tracking row |
 | `job_id` / `host` / `command` / `started_at` / `finished_at` | no | compute-job metadata; only with `kind: compute` |
 | `deadline` / `deadlines` / `scheduled` | no | ISO-8601 deadline schema with optional `+1d`/`+1w`/`+1m`/`+1y` repeater. **A view, never a notifier** — see below |
 
@@ -541,7 +541,7 @@ untouched `deferred` cards.
 | `done`        | green `#c8e6c9` | solid         |
 | `in_progress` | yellow `#fff9c4`| solid         |
 | `blocked`     | bright-orange `#ff8a65` | solid |
-| `pending`     | grey `#eceff1`          | solid |
+| `cancelled`   | grey `#eceff1`          | solid |
 | `deferred`    | amber `#ffca28`         | dashed border |
 | `failed`      | red `#ffcdd2`   | solid         |
 

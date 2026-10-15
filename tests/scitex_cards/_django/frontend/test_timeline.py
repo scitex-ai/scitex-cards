@@ -8,7 +8,7 @@ Table / Recent / Calendar.
 
 This module pins the LOAD-BEARING CSS CONTRACT: key selectors are
 present + NO hardcoded colors (the dark/light theme flip rides entirely
-on the scitex-ui token variables). Mocks-free: open the source files
+on the SDK token variables). Mocks-free: open the source files
 and grep them.
 """
 
@@ -104,7 +104,7 @@ def test_timeline_css_declares_selector(selector: str) -> None:
 
 def test_timeline_css_no_hardcoded_colors_hex_hits() -> None:
     """No hex / rgb / named-color literals — everything must ride through
-    the scitex-ui token variables so the dark/light flip stays clean."""
+    the SDK token variables so the dark/light flip stays clean."""
     # Arrange
     css = _read(_TIMELINE_CSS)
     # Strip comments before scanning so /* ...#ffffff... */ doc colour
@@ -129,7 +129,7 @@ def test_timeline_css_no_hardcoded_colors_hex_hits() -> None:
 
 def test_timeline_css_no_hardcoded_colors_func_hits() -> None:
     """No hex / rgb / named-color literals — everything must ride through
-    the scitex-ui token variables so the dark/light flip stays clean."""
+    the SDK token variables so the dark/light flip stays clean."""
     # Arrange
     css = _read(_TIMELINE_CSS)
     # Strip comments before scanning so /* ...#ffffff... */ doc colour
@@ -154,7 +154,7 @@ def test_timeline_css_no_hardcoded_colors_func_hits() -> None:
 
 def test_timeline_css_no_hardcoded_colors_named() -> None:
     """No hex / rgb / named-color literals — everything must ride through
-    the scitex-ui token variables so the dark/light flip stays clean."""
+    the SDK token variables so the dark/light flip stays clean."""
     # Arrange
     css = _read(_TIMELINE_CSS)
     # Strip comments before scanning so /* ...#ffffff... */ doc colour
@@ -187,7 +187,7 @@ def test_timeline_css_imported_by_board_css() -> None:
 
 
 def test_timeline_css_uses_token_variables() -> None:
-    """The stylesheet must rely on the scitex-ui token namespace
+    """The stylesheet must rely on the SDK token namespace
     (``--stx-…``) — that's how the dark/light flip propagates."""
     # Arrange
     # Act

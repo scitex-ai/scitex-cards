@@ -13,7 +13,7 @@
  * a 375pt-wide iPhone viewport.
  * ============================================================ */
 @media (max-width: 768px) {
-  /* OVERRIDE the scitex-ui shell's three-column grid (workspace-three-col
+  /* OVERRIDE the SDK shell's three-column grid (workspace-three-col
    * sets a desktop layout with sidebars + fixed widths that swallow the
    * board content on phone widths). On mobile collapse the shell to a
    * single column so the board's filterbar + columns get the full
@@ -33,7 +33,7 @@
     flex: 1 1 100% !important;
     min-width: 0 !important;
   }
-  /* Hide the scitex-ui shell's left/right utility panes on mobile. */
+  /* Hide the SDK shell's left/right utility panes on mobile. */
   .ws-ai-pane,
   .ws-worktree-pane,
   .ws-viewer-pane,

@@ -266,7 +266,7 @@ def test_blocked_reasons_constant_has_four_entries():
 # === CLI =================================================================
 
 
-def test_cli_blocked_lists_blocked_tasks():
+def test_cli_blocked_lists_blocked_tasks(postgres_dsn):
     # Arrange
     add_task(
         id="t-a",
@@ -282,7 +282,7 @@ def test_cli_blocked_lists_blocked_tasks():
     assert result.exit_code == 0
 
 
-def test_cli_blocked_json_emits_structured_payload():
+def test_cli_blocked_json_emits_structured_payload(postgres_dsn):
     # Arrange
     add_task(
         id="t-a",
@@ -302,7 +302,7 @@ def test_cli_blocked_json_emits_structured_payload():
     assert set(payload.keys()) == {"tasks", "total", "by_reason"}
 
 
-def test_cli_blocked_empty_queue_emits_clear_message():
+def test_cli_blocked_empty_queue_emits_clear_message(postgres_dsn):
     # Arrange — no blocked tasks at all.
     add_task(id="t-a", title="x", status="deferred", assignee="agent:test-suite")
     runner = CliRunner()

@@ -76,10 +76,14 @@ ever calls it).
 
 | Name               | Meaning                                                       |
 |--------------------|---------------------------------------------------------------|
-| `VALID_STATUSES`   | `goal`/`pending`/`in_progress`/`blocked`/`done`/`deferred`/`failed`/`cancelled` (cancelled = closed-as-not-planned, terminal) |
+| `VALID_STATUSES`   | `goal`/`in_progress`/`blocked`/`done`/`deferred`/`failed`/`cancelled` (cancelled = closed-as-not-planned, terminal) |
 | `STATUS_STYLE`     | per-status fill color + edge style used by `build_mermaid`     |
 | `TaskValidationError` | raised by `load_tasks`/`save_tasks` on a bad task           |
 | `RenderError`      | raised by `render*` when no backend can produce the PNG       |
+
+`pending` was abolished 2026-07-10 and is NOT in `VALID_STATUSES` —
+a row carrying it fails validation. Backlog is `deferred`; claimed
+work is `in_progress`.
 
 ## Task schema
 

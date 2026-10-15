@@ -5,6 +5,12 @@
 Mirrors the criteria of the board's `/stale` endpoint (PR #153) +
 the 🧹 Stale Review panel (PR #154). AAA pattern + one assertion
 per test (TQ002 / TQ007).
+
+CliRunner against the ambient per-test store. No mocks.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every seed below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -42,20 +48,20 @@ def _store(tmp_path):
     text = textwrap.dedent(
         f"""\
         tasks:
-          - id: old-pending-card
-            title: '[P2] long stale pending card'
+          - id: old-deferred-card
+            title: '[P2] long stale deferred card'
             status: deferred
             created_at: '{old}'
             project: scitex-dev
             assignee: proj-scitex-dev
-          - id: recent-pending-card
-            title: '[P2] recently created pending card'
+          - id: recent-deferred-card
+            title: '[P2] recently created deferred card'
             status: deferred
             created_at: '{recent}'
             project: scitex-dev
             assignee: proj-scitex-dev
           - id: no-timestamp-card
-            title: 'undated pending card'
+            title: 'undated deferred card'
             status: deferred
             project: business
             assignee: proj-scitex-lead
@@ -74,7 +80,7 @@ def _store(tmp_path):
     return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 
-def test_stale_list_exits_zero(tmp_path):
+def test_stale_list_exits_zero(tmp_path, postgres_dsn):
     # Arrange
     runner = CliRunner()
     _store(tmp_path)
@@ -84,27 +90,27 @@ def test_stale_list_exits_zero(tmp_path):
     assert result.exit_code == 0, result.output
 
 
-def test_stale_list_includes_old_pending(tmp_path):
+def test_stale_list_includes_old_deferred(tmp_path, postgres_dsn):
     # Arrange
     runner = CliRunner()
     _store(tmp_path)
     # Act
     result = runner.invoke(main, ["list-stale"])
     # Assert
-    assert "old-pending-card" in result.output
+    assert "old-deferred-card" in result.output
 
 
-def test_stale_list_excludes_recent_pending(tmp_path):
+def test_stale_list_excludes_recent_deferred(tmp_path, postgres_dsn):
     # Arrange
     runner = CliRunner()
     _store(tmp_path)
     # Act
     result = runner.invoke(main, ["list-stale"])
     # Assert
-    assert "recent-pending-card" not in result.output
+    assert "recent-deferred-card" not in result.output
 
 
-def test_stale_list_excludes_done(tmp_path):
+def test_stale_list_excludes_done(tmp_path, postgres_dsn):
     # Arrange
     runner = CliRunner()
     _store(tmp_path)
@@ -114,7 +120,7 @@ def test_stale_list_excludes_done(tmp_path):
     assert "done-card" not in result.output
 
 
-def test_stale_list_includes_no_timestamp_by_default(tmp_path):
+def test_stale_list_includes_no_timestamp_by_default(tmp_path, postgres_dsn):
     # Arrange
     runner = CliRunner()
     _store(tmp_path)
@@ -124,7 +130,7 @@ def test_stale_list_includes_no_timestamp_by_default(tmp_path):
     assert "no-timestamp-card" in result.output
 
 
-def test_stale_list_exclude_no_timestamp_filter(tmp_path):
+def test_stale_list_exclude_no_timestamp_filter(tmp_path, postgres_dsn):
     # Arrange
     runner = CliRunner()
     _store(tmp_path)
@@ -138,7 +144,7 @@ def test_stale_list_exclude_no_timestamp_filter(tmp_path):
     assert "no-timestamp-card" not in result.output
 
 
-def test_stale_list_project_filter(tmp_path):
+def test_stale_list_project_filter(tmp_path, postgres_dsn):
     # Arrange
     runner = CliRunner()
     _store(tmp_path)
@@ -148,7 +154,7 @@ def test_stale_list_project_filter(tmp_path):
     assert "no-timestamp-card" not in result.output
 
 
-def test_stale_list_json_emits_array(tmp_path):
+def test_stale_list_json_emits_array(tmp_path, postgres_dsn):
     # Arrange
     runner = CliRunner()
     _store(tmp_path)
@@ -159,7 +165,7 @@ def test_stale_list_json_emits_array(tmp_path):
     assert isinstance(data, list)
 
 
-def test_stale_list_rejects_negative_days(tmp_path):
+def test_stale_list_rejects_negative_days(tmp_path, postgres_dsn):
     # Arrange
     runner = CliRunner()
     _store(tmp_path)
@@ -169,7 +175,7 @@ def test_stale_list_rejects_negative_days(tmp_path):
     assert result.exit_code != 0
 
 
-def test_stale_list_empty_when_days_huge(tmp_path):
+def test_stale_list_empty_when_days_huge(tmp_path, postgres_dsn):
     # Arrange
     runner = CliRunner()
     _store(tmp_path)

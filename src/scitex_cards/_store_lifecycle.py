@@ -152,7 +152,8 @@ def complete_task(
         raise _task_not_found(task_id)
     # Active-unblock DRIVE (ADR-0009) — OUTSIDE the file lock (the emit
     # re-loads the store + may comment on dependents, which take the
-    # same lock). Only on a real pending→done transition.
+    # same lock). Only on a real non-done→done transition
+    # (``pending`` was abolished 2026-07-10).
     if transitioned:
         _emit_unblock_for_dependents(resolved, task_id, by=by)
         # C5: a completion emits a canonical `completed` card-event (the
@@ -303,14 +304,50 @@ def restore_task(
     ``ValueError`` (use ``update_task`` to mutate; this verb is the
     Delete-Undo partner only). A tombstoned row is exactly what this verb
     expects to find and reverses in place.
+
+    On a ``task.status`` outside ``VALID_STATUSES`` (including abolished
+    ``"pending"``) — before any store resolution, lock, or write, so a
+    rejected restore never touches the store. A mapping with NO status at
+    all defaults to ``"deferred"`` (the ``handle_restore`` twin default),
+    never a status-less row. A restored status other than ``"blocked"``
+    drops the ``blocker`` gate (the schema validator rejects a real blocker
+    on a non-``blocked`` row — without this a status-less+blocked mapping
+    defaulted to ``deferred`` fails on its own gate). A snapshot stamp
+    does not survive the restore unless the card re-enters AS ``done`` —
+    ``completed_at`` on a live row is the phantom-delivery row the
+    throughput aggregates count forever.
+
+    Raises:
+        ValueError: ``task`` is not a dict with an ``id``.
+        TaskValidationError: ``task.status`` is present but outside
+            ``VALID_STATUSES`` (abolished values carry the abolition hint).
     """
     from . import _model, _task
     from ._store import _read_write_doc, _utc_now_iso
 
-    refuse_ineffective_store(store, verb="restore_task")
-    tasks_path = _resolved_store(store)
     if not isinstance(task, dict) or not task.get("id"):
         raise ValueError("restore_task: 'task' must be a dict with 'id'")
+    # The store verb is a SOURCE, so it stays strict like the board restore
+    # handler (``undo.handle_restore``) and the sibling verbs: a restored
+    # status outside VALID_STATUSES (including abolished "pending") raises
+    # BEFORE the store is resolved or locked — the save path only warns on
+    # bad values per the 2026-07-10 ruling, so without this a crafted `task`
+    # mapping (MCP ``restore_task`` replays the ``delete_task`` payload
+    # verbatim) could mint a forbidden row through Delete→Undo. A mapping
+    # with NO status at all is defaulted to "deferred" on the COPY below
+    # (the handle_restore twin default) — the caller's dict is never
+    # mutated: the Undo payload stays replayable.
+    status = task.get("status")
+    if status and status not in _task.VALID_STATUSES:
+        hint = _task.ABOLISHED_STATUSES.get(status)
+        if hint is not None:
+            raise _task.TaskValidationError(f"restore_task: {hint}")
+        raise _task.TaskValidationError(
+            f"restore_task: invalid status {status!r}; "
+            f"must be one of {_task.VALID_STATUSES}"
+        )
+    refuse_ineffective_store(store, verb="restore_task")
+    tasks_path = _resolved_store(store)
     tid = task["id"]
     with _model._store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
@@ -322,6 +359,41 @@ def restore_task(
         # re-delete the card — an Undo that undoes itself. We do not mutate
         # the caller's dict: the Undo payload stays replayable.
         restored = dict(task)
+        if not restored.get("status"):
+            # Twin of the board default (``handle_restore``): a mapping with
+            # NO status lands in the backlog, never a status-less row. The
+            # gate above already refused every PRESENT-but-bad value, so
+            # only falsy (missing/None/"") reaches this line — and the
+            # caller's dict keeps whatever it had (replayable Undo payload).
+            restored["status"] = "deferred"
+        if restored.get("status") != "blocked":
+            # Leaving `blocked` MUST clear the gate: the validator REJECTS a
+            # real blocker on a non-`blocked` row (`_validate.py` rule (b)),
+            # so without this a status-less+gated mapping defaulted to
+            # `deferred` above fails on its own gate — the same 400-on-own-
+            # gate `handle_archive` + `close --reason` were fixed for, and
+            # the same pop `handle_reopen` keeps on non-`blocked` restores.
+            # A verbatim blocked snapshot (status `blocked`) keeps its gate.
+            restored.pop("blocker", None)
+        if restored.get("status") != COMPLETED_STATUS:
+            # The restored card re-enters as LIVE work: a done+stamped
+            # snapshot restored to a live status would keep `completed_at`
+            # on a non-`done` row — the phantom-delivery row throughput
+            # (fleet/timing.py + timeline.py) counts forever, because those
+            # aggregates never consult `status`. Restored AS `done` keeps
+            # its genuine stamp (it really was completed). Twin of the
+            # `handle_restore` board clear; same honesty class as the
+            # `reopen_task` + `update_task` + upsert clears.
+            #
+            # Unshare `_log_meta` first: `restored` is a SHALLOW copy, so
+            # its nested meta dict IS the caller's — and the clear pops
+            # keys in place. Without this the caller's Undo payload would
+            # lose its stamp (the contract above promises the caller's
+            # dict is never mutated and stays replayable).
+            _meta = restored.get("_log_meta")
+            if isinstance(_meta, dict):
+                restored["_log_meta"] = dict(_meta)
+            clear_completion_stamp(restored)
         touch_last_activity(restored, _utc_now_iso())
         existing = next((t for t in tasks if t.get("id") == tid), None)
         if existing is not None:

@@ -15,6 +15,10 @@ audit comment ``"reassigned <old> -> <new> by <actor>"``.
 The event is captured via the documented in-process ``entry_points=``
 injection seam (a real fake handler) — no mocks, no monkeypatch
 (STX-NM / PA-306). AAA pattern.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every seed below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -76,8 +80,14 @@ def _by_id(store, tid: str) -> dict:
 #: with a wrong report is still a broken primitive — and vice versa. Nine
 #: claims behind one first-assert means eight of them never run.
 @pytest.fixture()
-def bulk_move_of_three_cards(tmp_path: Path):
-    """Three cards owned by proj-old, all moved to proj-new in one call."""
+def bulk_move_of_three_cards(tmp_path: Path, postgres_dsn):
+    """Three cards owned by proj-old, all moved to proj-new in one call.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     card_ids = ("c-1", "c-2", "c-3")
     for cid in card_ids:
@@ -170,7 +180,7 @@ def test_bulk_result_names_the_acting_operator(bulk_move_of_three_cards):
     assert result["actor"] == "operator"
 
 
-def test_each_moved_card_gets_audit_comment(tmp_path: Path):
+def test_each_moved_card_gets_audit_comment(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     for cid in ("c-1", "c-2"):
@@ -195,8 +205,14 @@ def test_each_moved_card_gets_audit_comment(tmp_path: Path):
 #: emitting one `reassigned` per card satisfies the first claim completely
 #: while being exactly the notification flood this design exists to avoid.
 @pytest.fixture()
-def bulk_move_capturing_events(tmp_path: Path):
-    """Four cards moved in one call, with every emitted event captured."""
+def bulk_move_capturing_events(tmp_path: Path, postgres_dsn):
+    """Four cards moved in one call, with every emitted event captured.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     for cid in ("c-1", "c-2", "c-3", "c-4"):
         add_task(store=store, id=cid, title=cid, agent="proj-old")
@@ -229,8 +245,14 @@ def test_emits_no_per_card_reassigned_events(bulk_move_capturing_events):
 #: to whom, and how many. Each field is a separate thing a consumer reads and
 #: a separate thing that silently goes missing.
 @pytest.fixture()
-def batch_event_payload(tmp_path: Path):
-    """The one `reassigned_batch` event emitted for a three-card move."""
+def batch_event_payload(tmp_path: Path, postgres_dsn):
+    """The one `reassigned_batch` event emitted for a three-card move.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     for cid in ("c-1", "c-2", "c-3"):
         add_task(store=store, id=cid, title=cid, agent="proj-old")
@@ -294,8 +316,14 @@ def test_batch_event_lists_every_moved_card_id(batch_event_payload):
 #: most operationally (an empty batch event still wakes every consumer), and
 #: the untouched-card claim is the one that catches an over-broad match.
 @pytest.fixture()
-def bulk_move_matching_nobody(tmp_path: Path):
-    """Nobody is owned by `ghost`, so the move should touch nothing."""
+def bulk_move_matching_nobody(tmp_path: Path, postgres_dsn):
+    """Nobody is owned by `ghost`, so the move should touch nothing.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", agent="proj-keep")
     sink = _Capturing()
@@ -355,8 +383,14 @@ def test_no_matches_leaves_the_other_card_untouched(bulk_move_matching_nobody):
 #: the SAME move must be the same total no-op as never matching at all
 #: (count 0, unchanged, and crucially no second event for work already done).
 @pytest.fixture()
-def repeated_bulk_move(tmp_path: Path):
-    """Run the same move twice; capture only what the SECOND run did."""
+def repeated_bulk_move(tmp_path: Path, postgres_dsn):
+    """Run the same move twice; capture only what the SECOND run did.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", agent="proj-old")
     reassign_all(store, "proj-old", "proj-new")
@@ -403,8 +437,14 @@ def test_second_call_emits_no_event(repeated_bulk_move):
 #: compare against; what matters is that reassign_all did not rescope a card
 #: it had no business touching.
 @pytest.fixture()
-def bulk_move_with_a_bystander(tmp_path: Path):
-    """A mix of owners: two proj-old cards move, one proj-other must not."""
+def bulk_move_with_a_bystander(tmp_path: Path, postgres_dsn):
+    """A mix of owners: two proj-old cards move, one proj-other must not.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", agent="proj-old")
     add_task(store=store, id="c-2", title="y", agent="proj-other")
@@ -459,13 +499,23 @@ def test_bystander_card_is_not_rescoped(bulk_move_with_a_bystander):
 #: owner fields — matching it but only half-writing it would leave a card the
 #: next run can no longer find.
 @pytest.fixture()
-def bulk_move_of_legacy_assignee_card(tmp_path: Path):
-    """A card owned only via the legacy `assignee` field (no agent)."""
+def bulk_move_of_legacy_assignee_card(tmp_path: Path, postgres_dsn):
+    """A card owned only via the legacy `assignee` field (no agent).
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     from conftest import seed_db_from_doc
 
+    # Seed uses the successor default (abolished ``pending`` -> ``deferred``
+    # 2026-07-10): the bulk move matches on owner only and never reads the
+    # lifecycle field, so a legacy seed would pass while teaching a dead
+    # value as live.
     doc = {
         "tasks": [
-            {"id": "c-1", "title": "x", "status": "pending", "assignee": "proj-old"}
+            {"id": "c-1", "title": "x", "status": "deferred", "assignee": "proj-old"}
         ]
     }
     seed_db_from_doc(doc, os.environ["SCITEX_STORE_DSN"])
@@ -508,7 +558,7 @@ def test_legacy_assignee_card_gets_the_new_assignee(
 # === old_owner == new_owner raises ValueError =============================
 
 
-def test_same_owner_raises_value_error(tmp_path: Path):
+def test_same_owner_raises_value_error(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", agent="proj-old")
@@ -554,8 +604,14 @@ def test_missing_new_owner_raises_value_error(tmp_path: Path):
 #: one" are checked. A write that replaced the comment list would keep the
 #: count plausible while erasing the record.
 @pytest.fixture()
-def bulk_move_of_a_populated_card(tmp_path: Path):
-    """A card with title, status, priority, and an existing comment, moved."""
+def bulk_move_of_a_populated_card(tmp_path: Path, postgres_dsn):
+    """A card with title, status, priority, and an existing comment, moved.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(
         store=store,
@@ -627,8 +683,14 @@ def test_moved_card_gains_exactly_one_audit_comment(bulk_move_of_a_populated_car
 #: has to be on disk — a fail-soft that swallows the exception but loses the
 #: write is the worst of both.
 @pytest.fixture()
-def bulk_move_with_an_exploding_handler(tmp_path: Path):
-    """Move two cards while the entry-point handler raises."""
+def bulk_move_with_an_exploding_handler(tmp_path: Path, postgres_dsn):
+    """Move two cards while the entry-point handler raises.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     for cid in ("c-1", "c-2"):
         add_task(store=store, id=cid, title=cid, agent="proj-old")

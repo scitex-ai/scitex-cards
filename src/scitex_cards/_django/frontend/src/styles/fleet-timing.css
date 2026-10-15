@@ -14,7 +14,7 @@
  *   - On adapter error, the pill renders a red ring + ``!`` marker
  *     and the back-end error is in the tooltip.
  *
- * All colors come from scitex-ui design tokens declared on the board
+ * All colors come from SDK design tokens declared on the board
  * root (see board.css `.stx-cards-board`):
  *   --status-success / --status-warning / --status-error / --stx-danger
  *   plus board-local --stx-text / --stx-text-muted / --stx-border /
@@ -205,7 +205,7 @@
  *
  * The TS ``barColorToken`` helper picks ONE of these three classes
  * based on the bar's width-percentage. The actual color resolves
- * against the scitex-ui design tokens so a future swap of
+ * against the SDK design tokens so a future swap of
  * success / warning / error flows through automatically.
  */
 .stx-cards-fleet-timing__bar--ok {

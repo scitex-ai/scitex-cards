@@ -10,9 +10,9 @@ from __future__ import annotations
 import pytest
 
 pytest.importorskip("django")
-sdk = pytest.importorskip("scitex_ui.templatetags.scitex_project_picker")
+sdk = pytest.importorskip("scitex_sdk.ui.templatetags.scitex_project_picker")
 
-from django.template import engines  # noqa: E402
+from django.template import Context, engines  # noqa: E402
 from django.template.loader import render_to_string  # noqa: E402
 from django.test import RequestFactory, override_settings  # noqa: E402
 
@@ -83,7 +83,13 @@ def real_picker():
 def _canonical(context, request):
     # Use the tag itself as the capability authority. A future canonical user
     # capability can emit markup without Cards adding a second scope policy.
-    return sdk.scitex_project_picker({**context, "request": request}, current="A")
+    # Wrap in a real Context: the SDK tag reads ``context.template`` (None on
+    # a fresh Context, taking the render_to_string branch — the same branch a
+    # header render without an enclosing template takes), which a plain dict
+    # cannot provide.
+    return sdk.scitex_project_picker(
+        Context({**context, "request": request}), current="A"
+    )
 
 
 @pytest.mark.parametrize("active", ["board", "dm"])

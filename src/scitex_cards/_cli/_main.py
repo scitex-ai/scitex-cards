@@ -247,7 +247,7 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
         examples=(
             ('{prog} list-tasks --assignee "$SCITEX_CARDS_AGENT_ID" --json', ""),
             (
-                "{prog} list-tasks --project scitex-cards --status pending "
+                "{prog} list-tasks --project scitex-cards --status deferred "
                 "--status in_progress",
                 "",
             ),

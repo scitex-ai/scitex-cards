@@ -18,6 +18,12 @@ Both carried COMMENTS saying they had been moved to a terminal state. The prose
 claimed the change; the FIELD never took it. They nagged the fleet for two days.
 
 An invariant nobody runs is not an invariant — so it is a health check.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the ``store`` fixture below seeds the ambient
+per-test store, which is refused without a writable cluster. The two
+unreadable-store tests stay unguarded by design (an explicit missing
+path is refused before any store read).
 """
 
 from __future__ import annotations
@@ -46,7 +52,7 @@ from scitex_cards._health import (
 
 
 @pytest.fixture()
-def store() -> str:
+def store(postgres_dsn) -> str:
     # The database is the store now: the conftest pins + bootstraps the canonical DB
     # and both store-identity env vars at a per-test scratch dir. Seed the two
     # cards through the real write path, then hand back the PINNED store path
@@ -54,6 +60,11 @@ def store() -> str:
     # round-trips. Passing a test's own tmp_path/tasks.yaml would stamp the DB
     # for a different store and the next read would refuse it (THE STORE-PATH
     # RULE).
+    #
+    # ``postgres_dsn`` is requested but is not the seed target. With no
+    # writable PostgreSQL the harness pins the refused placeholder, so the
+    # seeding below would raise — the fixture fails first, LOUDLY, with the
+    # reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
     path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(
         path, id="live", title="ordinary open work", status="deferred", agent="a"

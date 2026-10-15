@@ -107,11 +107,19 @@ def _check_status(payload: dict):
     status must never cost someone their card on the SHARED store, where
     the bad row may be another, newer agent's), so the 400 that used to
     fall out of save-side validation must be raised here on purpose.
+
+    An ABOLISHED value (``pending``, abolished 2026-07-10) gets the same
+    disposition hint the store write-side and ``upsert_task`` return —
+    not the generic "invalid" text — so the operator learns what to pick
+    instead (``in_progress`` / ``blocked`` + blocker / ``deferred``).
     """
-    from scitex_cards._model import VALID_STATUSES
+    from scitex_cards._model import ABOLISHED_STATUSES, VALID_STATUSES
 
     status = payload.get("status")
     if status is not None and status not in VALID_STATUSES:
+        hint = ABOLISHED_STATUSES.get(status)
+        if hint is not None:
+            return JsonResponse({"error": hint}, status=400)
         return JsonResponse(
             {
                 "error": f"invalid status {status!r}; "
@@ -133,7 +141,8 @@ def handle_create(request, board):
     stamp. Owner (``assignee`` or ``agent``) REQUIRED -> 400 otherwise.
     ``created_by`` defaults payload -> ``$SCITEX_CARDS_AGENT_ID`` -> ``"operator"``
     (the board is the operator's surface), never blank. ``status`` defaults
-    ``pending``; the id is unique across the union view (global + lanes).
+    ``deferred`` (the backlog status since ``pending`` was abolished
+    2026-07-10); the id is unique across the union view (global + lanes).
     """
     if request.method != "POST":
         return JsonResponse({"error": "create endpoint requires POST"}, status=405)
@@ -208,7 +217,9 @@ def handle_update(request, board):
     """POST update -> patch an existing task. Body: ``{id, <fields...>}``.
 
     Only the provided editable fields change; ``id`` is immutable. Returns the
-    updated task. Unknown id -> 404. DELEGATES to
+    updated task. Unknown id -> 404. An EXPLICIT ``status: null`` is a 400
+    ("status cannot be cleared — every card carries a decision"); an absent
+    status simply leaves the row's status untouched. DELEGATES to
     :func:`scitex_cards._store.update_task` (fresh read + write under the
     store flock), which also stamps ``last_activity`` and emits the canonical
     status-flip card-events the cache-write path never did.

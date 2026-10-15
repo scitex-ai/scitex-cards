@@ -115,8 +115,13 @@ def _initialize_under_poll_loop(agent):
 
 
 @pytest.fixture()
-def drain_with_canary(tmp_path):
-    """Five seeded notifications drained with a canary task racing the loop."""
+def drain_with_canary(tmp_path, postgres_dsn):
+    """Five seeded notifications drained with a canary task racing the loop.
+
+    ``postgres_dsn`` is requested but is not the seed target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the seeding
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     agent = "canary-agent"
     _seed(store, agent, 5)
@@ -125,11 +130,15 @@ def drain_with_canary(tmp_path):
 
 
 @pytest.fixture()
-def initialize_result(tmp_path, env):
+def initialize_result(tmp_path, env, postgres_dsn):
     """``initialize`` completed against a server whose poll loop is running.
 
     Pre-fix this would hang: the poll loop's inline store reads blocked the loop
     so the initialize response was never sent.
+
+    ``postgres_dsn`` is requested but is not the seed target — same
+    fail-LOUD guard as the fixture above: the seeding below writes the
+    ambient store, which is refused without a cluster.
     """
     store = _store(tmp_path)
     agent = "handshake-agent"

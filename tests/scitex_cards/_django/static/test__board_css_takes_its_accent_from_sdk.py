@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The SPA must take its accent from scitex-ui, never from its own hex literals.
+"""The SPA must take its accent from the SDK, never from its own hex literals.
 
 OPERATOR REPORT (Hub mount, 2026-09-16/17): "mixed dark/light surfaces and
 hardcoded accents". The hardcoded accents were measurable in this stylesheet:
@@ -9,7 +9,7 @@ borders, #9b7fd6 for borders, #a78bfa in the dark token), plus three
 accent-filled chips whose label was a bare `#fff`.
 
 WHY THE LITERALS MATTER AND NOT JUST STYLE. board.css does map its `--stx-*`
-variables onto scitex-ui's semantic variables — but only in ONE block, and the
+variables onto the SDK's semantic variables — but only in ONE block, and the
 rules below it then re-picked the same violet by hand. Two consequences, both
 observed before in this repo:
 
@@ -22,8 +22,8 @@ observed before in this repo:
     theme only. On the dark theme's lavender (#a78bfa) white text is ~2:1 —
     below every legibility floor — while the theme's own "on-accent" colour is
     the readable one. The chat page paid for this same mistake when a private
-    palette starved a scitex-ui component and its menu items rendered as
-    near-invisible grey (see test__chat_page_uses_scitex_ui_palette.py).
+    palette starved an SDK component and its menu items rendered as
+    near-invisible grey (see test__chat_page_uses_sdk_palette.py).
 
 WHAT IS DELIBERATELY NOT INCLUDED: the STATUS colours (#c0392b blocked,
 #ffc107 awaiting-operator, #222 text on a JS-supplied status fill, recent.css's

@@ -10,7 +10,7 @@
  * one of these", so the page switcher borrows it rather than inventing a
  * second idiom.
  *
- * Every value comes from released scitex-ui theme tokens. Workspace-prefixed
+ * Every value comes from released SDK theme tokens. Workspace-prefixed
  * tokens are intentional: the legacy board still defines private generic
  * names such as --text-muted, and must not shadow this shared navigation.
  */

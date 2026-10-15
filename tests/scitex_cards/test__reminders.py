@@ -23,7 +23,6 @@ from scitex_cards._reminders import (
     EVENT_CREATOR_ESCALATION,
     EVENT_DIGEST,
     EVENT_ESCALATION,
-    load_reminder_state,
     sweep_reminders,
 )
 
@@ -316,11 +315,17 @@ def test_the_collapsed_digest_names_every_stale_card(tmp_path):
 #: due. Three tests split the claim: the owner is absent from `digested`, they
 #: ARE present in `skipped` (surfaced, not silently dropped), and no second note
 #: went out. The middle one is what stops "not due" from becoming "forgotten".
+#:
+#: Bookkeeping threads through `state=box` (one dict across sweeps, no PG):
+#: the database layer fail-softs on a non-Postgres store, so without the seam
+#: a PG-free second sweep always reads empty state and every suppression test
+#: below would be vacuous. Single-sweep helpers need no box.
 def _swept_before_the_interval(tmp_path):
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     tasks = [_t(id="c1", owner="alice", hours_ago=10.0)]
-    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}), interval_minutes=5.0)
+    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}), interval_minutes=5.0, state=box)
     sweep_reminders(tasks, now=_NOW, **kw)
     out2 = sweep_reminders(tasks, now=_NOW + _dt.timedelta(minutes=4), **kw)
     return out2, rec
@@ -333,8 +338,9 @@ def _swept_before_the_interval(tmp_path):
 def _swept_after_the_interval_with_new_content(tmp_path):
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     tasks = [_t(id="c1", owner="alice", hours_ago=10.0)]
-    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}), interval_minutes=5.0)
+    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}), interval_minutes=5.0, state=box)
     sweep_reminders(tasks, now=_NOW, **kw)
     tasks2 = tasks + [_t(id="c2", owner="alice", hours_ago=10.0)]
     out2 = sweep_reminders(tasks2, now=_NOW + _dt.timedelta(minutes=6), **kw)
@@ -349,8 +355,9 @@ def _swept_after_the_interval_with_new_content(tmp_path):
 def _swept_many_times_unchanged(tmp_path):
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     tasks = [_t(id="c1", owner="alice", hours_ago=10.0)]
-    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}), interval_minutes=5.0)
+    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}), interval_minutes=5.0, state=box)
     sweep_reminders(tasks, now=_NOW, **kw)
     outs = [
         sweep_reminders(tasks, now=_NOW + _dt.timedelta(minutes=minutes), **kw)
@@ -362,8 +369,9 @@ def _swept_many_times_unchanged(tmp_path):
 def _swept_past_the_floor(tmp_path):
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     tasks = [_t(id="c1", owner="alice", hours_ago=10.0)]
-    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}), interval_minutes=5.0)
+    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}), interval_minutes=5.0, state=box)
     sweep_reminders(tasks, now=_NOW, **kw)
     out = sweep_reminders(tasks, now=_NOW + _dt.timedelta(hours=25), **kw)
     return out, rec
@@ -373,7 +381,8 @@ def _swept_past_the_floor(tmp_path):
 def _swept_with_a_status_change(tmp_path):
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
-    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}), interval_minutes=5.0)
+    box = {}
+    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}), interval_minutes=5.0, state=box)
     tasks = [_t(id="c1", owner="alice", hours_ago=10.0, status="in_progress")]
     sweep_reminders(tasks, now=_NOW, **kw)
     tasks2 = [_t(id="c1", owner="alice", hours_ago=10.0, status="blocked")]
@@ -387,8 +396,9 @@ def _swept_with_a_status_change(tmp_path):
 def _swept_either_side_of_the_default_interval(tmp_path):
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     tasks = [_t(id="c1", owner="alice", hours_ago=10.0)]
-    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}))
+    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}), state=box)
     sweep_reminders(tasks, now=_NOW, **kw)
     grown = tasks + [_t(id="c2", owner="alice", hours_ago=10.0)]
     early = sweep_reminders(grown, now=_NOW + _dt.timedelta(minutes=4), **kw)
@@ -401,8 +411,9 @@ def _swept_either_side_of_the_default_interval(tmp_path):
 def _swept_with_a_card_level_override(tmp_path):
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     tasks = [_t(id="c1", owner="alice", hours_ago=10.0, interval_minutes=1)]
-    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}))
+    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}), state=box)
     sweep_reminders(tasks, now=_NOW, **kw)
     grown = tasks + [_t(id="c2", owner="alice", hours_ago=10.0)]
     out2 = sweep_reminders(grown, now=_NOW + _dt.timedelta(seconds=90), **kw)
@@ -559,8 +570,9 @@ def test_config_interval_knob_is_honored(tmp_path):
     _write_user_config('{"reminders": {"interval_minutes": 2}}')
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     tasks = [_t(id="c1", owner="alice", hours_ago=10.0)]
-    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}))
+    kw = dict(store=store, enqueue=rec, resolve_key=_resolver({}), state=box)
     sweep_reminders(tasks, now=_NOW, **kw)
     grown = tasks + [_t(id="c2", owner="alice", hours_ago=10.0)]
     # Act
@@ -581,6 +593,7 @@ def test_config_interval_knob_is_honored(tmp_path):
 def _escalated_after_threshold(tmp_path):
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     tasks = [_t(id="c1", owner="alice", hours_ago=50.0, priority=0)]
     kw = dict(
         store=store,
@@ -590,6 +603,7 @@ def _escalated_after_threshold(tmp_path):
         escalate_after=2,
         escalate_priority=1,
         interval_minutes=5.0,
+        state=box,
     )
     sweep_reminders(tasks, now=_NOW, **kw)
     out2 = sweep_reminders(tasks, now=_NOW + _dt.timedelta(minutes=6), **kw)
@@ -636,6 +650,7 @@ def test_escalation_fires_once_per_streak(tmp_path):
     # Arrange
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     tasks = [_t(id="c1", owner="alice", hours_ago=50.0, priority=0)]
     kw = dict(
         store=store,
@@ -644,6 +659,7 @@ def test_escalation_fires_once_per_streak(tmp_path):
         escalate_after=1,
         escalate_priority=1,
         interval_minutes=5.0,
+        state=box,
     )
     sweep_reminders(tasks, now=_NOW, **kw)  # count1 >= 1 → escalate
     # Act
@@ -656,6 +672,7 @@ def test_low_priority_card_never_escalates(tmp_path):
     # Arrange
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     tasks = [_t(id="c1", owner="alice", hours_ago=99.0, priority=5)]
     kw = dict(
         store=store,
@@ -664,6 +681,7 @@ def test_low_priority_card_never_escalates(tmp_path):
         escalate_after=1,
         escalate_priority=1,
         interval_minutes=5.0,
+        state=box,
     )
     sweep_reminders(tasks, now=_NOW, **kw)
     # Act
@@ -744,11 +762,12 @@ def test_the_mixed_digest_sends_one_escalation_note(tmp_path):
 def _swept_then_card_done(tmp_path):
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     stale = [_t(id="c1", owner="alice", hours_ago=10.0)]
     sweep_reminders(
-        stale, store=store, now=_NOW, enqueue=rec, resolve_key=_resolver({})
+        stale, store=store, now=_NOW, enqueue=rec, resolve_key=_resolver({}), state=box
     )
-    armed = "alice" in load_reminder_state(store)["owners"]
+    armed = "alice" in box["owners"]
 
     done = [_t(id="c1", owner="alice", status="done", hours_ago=10.0)]
     out = sweep_reminders(
@@ -757,13 +776,14 @@ def _swept_then_card_done(tmp_path):
         now=_NOW + _dt.timedelta(hours=10),
         enqueue=rec,
         resolve_key=_resolver({}),
+        state=box,
     )
-    return armed, out, store
+    return armed, out, box
 
 
 def test_the_first_sweep_arms_the_owner_cadence(tmp_path):
     # Arrange
-    armed, _out, _store = _swept_then_card_done(tmp_path)
+    armed, _out, _box = _swept_then_card_done(tmp_path)
     # Act
     was_armed = armed
     # Assert — without this, the pruning below could be a no-op.
@@ -772,7 +792,7 @@ def test_the_first_sweep_arms_the_owner_cadence(tmp_path):
 
 def test_a_done_card_leaves_the_owner_undigested(tmp_path):
     # Arrange
-    _armed, out, _store = _swept_then_card_done(tmp_path)
+    _armed, out, _box = _swept_then_card_done(tmp_path)
     # Act
     digested = out["digested"]
     # Assert
@@ -781,9 +801,9 @@ def test_a_done_card_leaves_the_owner_undigested(tmp_path):
 
 def test_state_pruned_when_owner_has_no_stale_cards(tmp_path):
     # Arrange
-    _armed, _out, store = _swept_then_card_done(tmp_path)
+    _armed, _out, box = _swept_then_card_done(tmp_path)
     # Act
-    owners = load_reminder_state(store)["owners"]
+    owners = box["owners"]
     # Assert — the cadence entry is pruned, so the nag genuinely stops.
     assert "alice" not in owners
 
@@ -791,6 +811,7 @@ def test_state_pruned_when_owner_has_no_stale_cards(tmp_path):
 def _swept_then_hot_card_done(tmp_path):
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     hot = [_t(id="c1", owner="alice", hours_ago=50.0, priority=0)]
     kw = dict(
         store=store,
@@ -798,18 +819,19 @@ def _swept_then_hot_card_done(tmp_path):
         resolve_key=_resolver({}),
         escalate_after=1,
         escalate_priority=1,
+        state=box,
     )
     sweep_reminders(hot, now=_NOW, **kw)
-    latched = "c1" in load_reminder_state(store)["cards"]
+    latched = "c1" in box["cards"]
 
     done = [_t(id="c1", owner="alice", status="done", hours_ago=50.0, priority=0)]
     sweep_reminders(done, now=_NOW + _dt.timedelta(hours=30), **kw)
-    return latched, store
+    return latched, box
 
 
 def test_the_first_sweep_latches_the_escalation(tmp_path):
     # Arrange
-    latched, _store = _swept_then_hot_card_done(tmp_path)
+    latched, _box = _swept_then_hot_card_done(tmp_path)
     # Act
     was_latched = latched
     # Assert
@@ -818,9 +840,9 @@ def test_the_first_sweep_latches_the_escalation(tmp_path):
 
 def test_escalation_latch_pruned_when_card_no_longer_stale(tmp_path):
     # Arrange
-    _latched, store = _swept_then_hot_card_done(tmp_path)
+    _latched, box = _swept_then_hot_card_done(tmp_path)
     # Act
-    cards = load_reminder_state(store)["cards"]
+    cards = box["cards"]
     # Assert — a future stall must be able to re-escalate.
     assert "c1" not in cards
 
@@ -1292,6 +1314,7 @@ def test_a_non_registered_owner_sends_no_creator_note(tmp_path):
 def _creator_escalated_twice(tmp_path):
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     tasks = [_task_with_creator("c1", owner="alice", creator="bob")]
     kw = dict(
         store=store,
@@ -1299,15 +1322,16 @@ def _creator_escalated_twice(tmp_path):
         resolve_key=_resolver({"bob": "u_bob"}),
         resolve_user=_user_resolver({"alice": _seen(_NOW, seconds_ago=7200)}),
         liveness_ttl=600,
+        state=box,
     )
     sweep_reminders(tasks, now=_NOW, **kw)
     sweep_reminders(tasks, now=_NOW + _dt.timedelta(minutes=30), **kw)
-    return rec, store
+    return rec, box
 
 
 def test_creator_escalation_latches_once_per_streak(tmp_path):
     # Arrange
-    rec, _store = _creator_escalated_twice(tmp_path)
+    rec, _box = _creator_escalated_twice(tmp_path)
     # Act
     fired = len(_creator_escs(rec))
     # Assert
@@ -1316,9 +1340,9 @@ def test_creator_escalation_latches_once_per_streak(tmp_path):
 
 def test_the_creator_latch_is_persisted_on_the_card(tmp_path):
     # Arrange
-    _rec, store = _creator_escalated_twice(tmp_path)
+    _rec, box = _creator_escalated_twice(tmp_path)
     # Act
-    card_state = load_reminder_state(store)["cards"]["c1"]
+    card_state = box["cards"]["c1"]
     # Assert — the latch survives the process, not just the loop.
     assert card_state["creator_escalated"] is True
 
@@ -1405,6 +1429,7 @@ def test_the_missing_creator_fallback_is_addressed_to_the_operator(tmp_path):
 def _swept_while_the_digest_is_not_due(tmp_path):
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     tasks = [_task_with_creator("c1", owner="alice", creator="bob")]
     kw = dict(
         store=store,
@@ -1413,6 +1438,7 @@ def _swept_while_the_digest_is_not_due(tmp_path):
         resolve_user=_user_resolver({"alice": _seen(_NOW, seconds_ago=7200)}),
         liveness_ttl=600,
         interval_minutes=5.0,
+        state=box,
     )
     sweep_reminders(tasks, now=_NOW, **kw)
     out2 = sweep_reminders(tasks, now=_NOW + _dt.timedelta(minutes=1), **kw)
@@ -1442,6 +1468,7 @@ def test_creator_escalation_ignores_digest_cadence(tmp_path):
 def _creator_latched_then_card_done(tmp_path):
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     tasks = [_task_with_creator("c1", owner="alice", creator="bob")]
     kw = dict(
         store=store,
@@ -1449,19 +1476,20 @@ def _creator_latched_then_card_done(tmp_path):
         resolve_key=_resolver({"bob": "u_bob"}),
         resolve_user=_user_resolver({"alice": _seen(_NOW, seconds_ago=7200)}),
         liveness_ttl=600,
+        state=box,
     )
     sweep_reminders(tasks, now=_NOW, **kw)
-    latched = "c1" in load_reminder_state(store)["cards"]
+    latched = "c1" in box["cards"]
 
     done = [_task_with_creator("c1", owner="alice", creator="bob", hours_ago=50.0)]
     done[0]["status"] = "done"
     sweep_reminders(done, now=_NOW + _dt.timedelta(hours=1), **kw)
-    return latched, store
+    return latched, box
 
 
 def test_the_first_sweep_latches_the_creator_escalation(tmp_path):
     # Arrange
-    latched, _store = _creator_latched_then_card_done(tmp_path)
+    latched, _box = _creator_latched_then_card_done(tmp_path)
     # Act
     was_latched = latched
     # Assert
@@ -1470,9 +1498,9 @@ def test_the_first_sweep_latches_the_creator_escalation(tmp_path):
 
 def test_creator_escalation_latch_pruned_when_card_no_longer_stale(tmp_path):
     # Arrange
-    _latched, store = _creator_latched_then_card_done(tmp_path)
+    _latched, box = _creator_latched_then_card_done(tmp_path)
     # Act
-    cards = load_reminder_state(store)["cards"]
+    cards = box["cards"]
     # Assert — a future stall must be able to re-escalate.
     assert "c1" not in cards
 
@@ -1539,6 +1567,7 @@ def test_a_live_owner_adds_no_creator_escalation(tmp_path):
 def _swept_with_the_digest_suppressed(tmp_path):
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
+    box = {}
     tasks = [_t(id="c1", owner="alice", hours_ago=50.0, priority=0)]
     kw = dict(
         store=store,
@@ -1548,6 +1577,7 @@ def _swept_with_the_digest_suppressed(tmp_path):
         escalate_after=2,
         escalate_priority=1,
         interval_minutes=5.0,
+        state=box,
     )
     sweep_reminders(tasks, now=_NOW, **kw)
     out2 = sweep_reminders(tasks, now=_NOW + _dt.timedelta(minutes=6), **kw)

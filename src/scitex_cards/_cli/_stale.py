@@ -106,7 +106,7 @@ def _age_days(task: dict, now):
 @click.command(
     "list-stale",
     **spec_command_kwargs(
-        summary="List PENDING cards that match the stale-review criteria.",
+        summary="List deferred-backlog cards that match the stale-review criteria.",
         description=(
             "Mirrors the board's `/stale` endpoint (PR #153) + the "
             "🧹 Stale Review panel (PR #154) so the operator can sweep "

@@ -24,6 +24,10 @@ anymore and are deleted. What SURVIVES is the deeper rule they stood for:
     (round-trip), not against a git commit; and
   * the 13 GB disaster is prevented BY CONSTRUCTION — the write path creates
     no per-store ``.git`` at all.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every write below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -45,7 +49,7 @@ def _store_dir() -> Path:
     return resolve_tasks_path(None).parent
 
 
-def test_a_card_write_is_durable():
+def test_a_card_write_is_durable(postgres_dsn):
     """A write PERSISTS — the surviving rule the old 'a write is committed'
     test pinned, now against the canonical database store rather than a git
     commit."""
@@ -57,7 +61,7 @@ def test_a_card_write_is_durable():
     assert got is not None and got["id"] == "c1"
 
 
-def test_a_write_creates_no_per_store_git_repo():
+def test_a_write_creates_no_per_store_git_repo(postgres_dsn):
     """THE 13 GB era is over by construction.
 
     The per-write autocommit repo was removed with the database cutover, so a

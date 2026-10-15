@@ -3,7 +3,7 @@
  * per-card `comments[]` substrate. Drops into NodeDetailPanel's drawer
  * alongside the legacy comment section.
  *
- * Themed via scitex-ui tokens already exposed by board.css's
+ * Themed via SDK tokens already exposed by board.css's
  * `.stx-cards-board` block (--stx-text, --stx-text-muted, --stx-panel-bg,
  * --stx-canvas-bg, --stx-border, --stx-border-strong, --stx-accent, …).
  * No hardcoded color literals here — light/dark mode flips ride entirely

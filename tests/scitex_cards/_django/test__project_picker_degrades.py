@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The SDK project picker degrades on a deployment whose scitex-ui predates it.
+"""The SDK project picker degrades on a deployment whose SDK predates it.
 
 WHAT WAS MEASURED, on this tree before the fix. ``project_board.html`` opened
 with ``{% load static scitex_project_picker scitex_paths %}``, and ``{% load %}``
 of a library that is not installed is a ``TemplateSyntaxError`` raised while the
 template **COMPILES** — so ``render_project_board`` raised for EVERY state, the
 page answered 500 rather than a board or a refusal, and the docstring of
-``_host_picker_available`` ("keeps a missing scitex-ui API a graceful degradation
+``_host_picker_available`` ("keeps a missing SDK API a graceful degradation
 ... instead of a TemplateSyntaxError on a deployment whose SDK predates project
 scope") described a fallback branch that could never execute, because the page
-died before any context flag was read. Measured 2026-09-27 against scitex-ui
-0.20.2, which the declared floor ``scitex-ui>=0.11.1`` permits: 49 tests in this
+died before any context flag was read. Measured 2026-09-27 against the old
+shell 0.20.2, which the then-declared floor permitted: 49 tests in this
 directory failed on that compile error, and 22 pass once the load is conditional.
 
 The failure, verbatim::
@@ -33,9 +33,9 @@ scitex-writer ships the same partial for the same measured reason (its
 ``views._project_picker_available``), so this is the fleet's shape rather than a
 local arrangement.
 
-THE LIBRARY IS SIMULATED, NOT IMPORTED. scitex-ui 0.20.2 is what is installed on
-this host and it ships no ``templatetags/scitex_project_picker.py``; the fleet's
-CI resolves a newer one. Registering a stub in the engine's own registry — the
+THE LIBRARY IS SIMULATED, NOT IMPORTED. The old shell 0.20.2 is what the 2026-09
+measurement ran against and it ships no ``templatetags/scitex_project_picker.py``; the fleet's
+CI resolves a newer SDK. Registering a stub in the engine's own registry — the
 exact dict that both ``{% load %}`` and ``views._project_picker_library_registered``
 consult — exercises BOTH branches on EITHER version, which importing the real
 library could not do, and it is what lets these tests pass on a host whose SDK
@@ -61,7 +61,7 @@ from scitex_cards._django.handlers import project_board as pb  # noqa: E402
 
 _TEMPLATES = Path(views.__file__).resolve().parent / "templates" / "scitex_cards"
 
-#: The tag library scitex-ui ships from 0.22.0 on.
+#: The tag library the SDK ships with its UI component.
 _TAG_LIBRARY = "scitex_project_picker"
 
 #: ``{% load ... scitex_project_picker ... %}`` — the load tag itself, anywhere.
@@ -72,7 +72,7 @@ _LOADS_LIBRARY = re.compile(r"\{%\s*load\b[^%]*\b" + _TAG_LIBRARY + r"\b[^%]*%\}
 #: The one file allowed to name the library in a load tag.
 _PARTIAL = "_project_picker.html"
 
-#: The SDK's own markup hook, emitted by scitex-ui's ``_project_picker.html``;
+#: The SDK's own markup hook, emitted by the SDK's ``_project_picker.html``;
 #: the stub below emits it too, so an assertion is about the slot being REACHED
 #: rather than about the SDK's stylesheet links.
 _SDK_MARKER = "data-stx-project-picker"
@@ -193,9 +193,9 @@ def sdk_library():
     THE TAG LIBRARY: the same dict the real one occupies, so ``{% load %}``
     resolves and ``views._project_picker_library_registered`` answers True.
 
-    AND ``scitex_ui.project_scope``, which is the SEPARATE half — an installed
-    scitex-ui can in principle ship one without the other, and on this host
-    (0.20.2) it ships neither. Without this module ``host_project_provider_url``
+    AND ``scitex_sdk.ui.project_scope``, which is the SEPARATE half — an installed
+    SDK can in principle ship one without the other, and an SDK predating
+    project scope ships neither. Without this module ``host_project_provider_url``
     raises ImportError and the availability flag is false no matter what the
     settings say, so the "picker present" branch would be untestable here rather
     than merely untested.
@@ -212,8 +212,8 @@ def sdk_library():
 
     engine = engines["django"].engine
     previous_library = engine.template_libraries.get(_TAG_LIBRARY)
-    previous_module = sys.modules.get("scitex_ui.project_scope")
-    stub_sdk = types.ModuleType("scitex_ui.project_scope")
+    previous_module = sys.modules.get("scitex_sdk.ui.project_scope")
+    stub_sdk = types.ModuleType("scitex_sdk.ui.project_scope")
 
     def _provider_url() -> str:
         from django.conf import settings
@@ -248,7 +248,7 @@ def sdk_library():
 
     _STUB.calls.clear()
     engine.template_libraries[_TAG_LIBRARY] = _STUB.library
-    sys.modules["scitex_ui.project_scope"] = stub_sdk
+    sys.modules["scitex_sdk.ui.project_scope"] = stub_sdk
     _reset_template_loaders(engine)
     try:
         yield _STUB
@@ -258,9 +258,9 @@ def sdk_library():
         else:
             engine.template_libraries[_TAG_LIBRARY] = previous_library
         if previous_module is None:
-            sys.modules.pop("scitex_ui.project_scope", None)
+            sys.modules.pop("scitex_sdk.ui.project_scope", None)
         else:
-            sys.modules["scitex_ui.project_scope"] = previous_module
+            sys.modules["scitex_sdk.ui.project_scope"] = previous_module
         _reset_template_loaders(engine)
 
 
@@ -269,7 +269,7 @@ def no_sdk_library():
     """Evict the REAL tag library for one test, restoring it afterwards.
 
     The absence-premise tests pin behaviour "without the library", but the
-    suite also runs where scitex-ui SHIPS it (0.22.0+, including the fleet
+    suite also runs where the SDK SHIPS it (including the fleet
     CI) — there the premise is false unless a test establishes it, and the
     un-evicted render takes the include path: the real tag, with no provider
     behind it, renders nothing, so the body carries NEITHER marker. Eviction
@@ -402,7 +402,7 @@ def test_the_slot_appears_exactly_when_the_views_own_flag_says_it_can():
     """End to end on the SDK this host actually has, and the loop that matters:
     the header is fed the flag the VIEW computes — not one this test picked —
     and the slot appears if and only if that flag is true. On a deployment whose
-    scitex-ui predates the picker the flag is false, the partial is never
+    SDK predates the picker the flag is false, the partial is never
     compiled, and the band still renders; before the fix the load sat at the top
     level of the page, so this same host raised instead.
     """
@@ -529,7 +529,7 @@ def test_the_shared_header_shows_the_project_the_request_resolved_to(
     sdk_library,  # noqa: ARG001
 ):
     """The slot is fed the RESOLVED project, not a template-side guess — the
-    precedence belongs to scitex-ui's ``resolve_project``."""
+    precedence belongs to the SDK's ``resolve_project``."""
     # Arrange
     # Act
     html = _render_header()

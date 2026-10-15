@@ -75,24 +75,22 @@ dependencies = [
     # `scitex-cards[mcp]` resolved fine and produced a client that could not
     # open the canonical store. Removing the choice removes the failure.
     #
-    # The board (django, scitex-app, scitex-ui) and the MCP server (fastmcp)
+    # The board (django, scitex-sdk) and the MCP server (fastmcp)
     # are not optional capabilities of this package in any sense a user would
     # recognise: the board IS how the operator reads the store, and the MCP
     # server IS how every agent writes to it.
     "django>=4.2",
-    # >=0.24.0 is MEASURED, 2026-09-14: the board pages (board_v3.html,
-    # standalone.html) extend `scitex_app/app_shell.html`, and that template
-    # first shipped in the 0.24.0 wheel (verified from the published PyPI
-    # wheel: scitex_app/templates/scitex_app/app_shell.html, blocks
-    # app_content/scitex_app_content, extends scitex_ui/standalone_shell.html).
-    # 0.22.1 and 0.23.0 ship no Django templates at all (the wheel is a Python
-    # SDK), so below the floor the pages degrade to the static-graph fallback
+    # >=0.3.5 is MEASURED, 2026-10-15: the board pages (board_v3.html,
+    # standalone.html) extend `scitex_sdk/app/app_shell.html`, and that template
+    # first ships in the installed 0.3.5 wheel (verified in-environment:
+    # scitex_sdk/app/templates/scitex_sdk/app/app_shell.html, outer content
+    # block app_content, extends scitex_sdk/ui/standalone_shell.html).
+    # The SDK UI component ships the project-scope API, the scitex_project_picker
+    # library, and the combobox/theme/context-menu static assets the pages
+    # consume — below the floor the pages degrade to the static-graph fallback
     # and the rich-board rendering tests fail — the silent wrong-board shape
     # the migration gate (test__board_shell_migration.py) exists to surface.
-    "scitex-app>=0.24.0",
-    # >=0.11.1 is MEASURED, not aspirational -- see the note in the `dev`
-    # extra below for what breaks at 0.7.1 and why presence is not currency.
-    "scitex-ui>=0.11.1",
+    "scitex-sdk>=0.3.5",
     # <4 is MEASURED, 2026-09-05: fastmcp 4.0.3 stopped holding mcp below
     # 2.0, so an unbounded resolution now installs mcp 2.1.1, whose
     # ServerSession no longer takes the initialization options positionally.
@@ -158,27 +156,22 @@ dev = [
     # tests; include them so a fresh `pip install -e .[dev]` runs the full
     # suite rather than silently skipping the board tests (PS-210).
     "django>=4.2",
-    "scitex_app",
-    # >=0.11.1, and the number is MEASURED rather than aspirational:
+    "scitex-sdk>=0.3.5",
+    # >=0.3.5, and the number is MEASURED rather than aspirational (see the
+    # `dependencies` note for what the board consumes from the SDK):
     #
-    #   0.7.1  — the shell template's DEFAULT favicon. Our templates declare no
+    #   <0.3.5  — the shell template's DEFAULT favicon. Our templates declare no
     #            <link rel="icon"> of their own any more, so an older shell
-    #            renders NO icon at all.
-    #   0.11.1 — `font-family: inherit` on `.stx-app-context-menu__item`. The
-    #            chat page's right-click menu consumes base's context-menu.css
-    #            and its items are <button>; buttons do not inherit the page
-    #            font and base ships no global button reset, so below 0.11.1 the
-    #            menu renders in the UA button font. `context-menu.css` EXISTS
-    #            at 0.7.1 (verified by `git show v0.7.1:...`) without that rule
-    #            — presence is not currency, which is exactly why a file-exists
-    #            check could not have caught this and a floor has to.
+    #            renders NO icon at all; and the context-menu.css the chat
+    #            page's right-click menu consumes may predate the
+    #            `font-family: inherit` rule its <button> items need, so the
+    #            menu renders in the UA button font. Presence is not currency,
+    #            which is exactly why a file-exists check could not have caught
+    #            this and a floor has to.
     #
-    # chat.html has documented the 0.11.1 requirement since #581 and said "the
-    # upgrade ships alongside this"; it never did, so the declaration sat two
-    # minor versions under what the code needs. A resolver honouring 0.7.1 gets
-    # a page that renders and is subtly wrong — the failure mode a floor exists
-    # to prevent. Do not loosen it.
-    "scitex_ui>=0.11.1",
+    # A resolver honouring an older SDK gets a page that renders and is subtly
+    # wrong — the failure mode a floor exists to prevent. Do not loosen it.
+    "psycopg[binary]>=3.1",
     # Same PS-210 reason as the web extras above, and caught by the same rule:
     # the backend tests import psycopg UNGUARDED, so without it here a fresh
     # `pip install -e .[dev]` collects them and errors rather than running the
@@ -197,7 +190,7 @@ docs = [
 ]
 web = [
     # KEPT AS A REDUNDANT ALIAS, like `postgres` below and for the same reason:
-    # django/scitex-app/scitex-ui are hard dependencies now (see `dependencies`),
+    # django/scitex-sdk are hard dependencies now (see `dependencies`),
     # so this extra adds nothing and `scitex-cards[web]` still resolves.
     #
     # IT RESTATES ITS REQUIREMENTS RATHER THAN BEING EMPTY, and that is PS-214,
@@ -219,8 +212,7 @@ web = [
     # else's build for a change of mine. Ordering it the other way costs nothing
     # and lands the noise on nobody.
     "django>=4.2",
-    "scitex-app",
-    "scitex-ui>=0.11.1",
+    "scitex-sdk",
 ]
 mcp = [
     # Same redundant-alias contract as `web` above. FastMCP is the canonical

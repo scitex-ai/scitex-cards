@@ -23,6 +23,12 @@ LOCALLY THIS FILE ERRORS, and that is the intended failure mode rather than a
 skip: the seed needs `$SCITEX_STORE_DSN`, which only exists when a throwaway
 cluster is resolvable (in CI). A skipped gate and a passing one look identical,
 so this errors instead of pretending.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the ``store`` fixture below seeds the ambient per-test
+store via ``seed_db_from_doc``, which is refused without a writable cluster.
+``test_the_scoped_read_refuses_an_empty_project`` stays unguarded by design:
+it raises ``ValueError`` before the store opens and never touches it.
 """
 
 from __future__ import annotations
@@ -71,7 +77,7 @@ _DOC = {
 
 
 @pytest.fixture
-def store():
+def store(postgres_dsn):
     """Seed a throwaway store this test may read; never the fleet's."""
     from conftest import seed_db_from_doc
 

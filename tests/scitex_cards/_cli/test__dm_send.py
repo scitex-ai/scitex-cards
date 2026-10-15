@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""First-class ``scitex-cards dm send`` contract (real PostgreSQL, no mocks)."""
+"""First-class ``scitex-cards dm send`` contract (real PostgreSQL, no mocks).
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every send below targets the ambient per-test
+store, which is refused without a writable cluster.
+"""
 
 from __future__ import annotations
 
@@ -59,7 +64,7 @@ def test_send_help_names_identity_and_delivery_boundary():
     assert "--sender" in words and "live visibility" in words
 
 
-def test_json_success_includes_the_durable_message_id():
+def test_json_success_includes_the_durable_message_id(postgres_dsn):
     # Arrange
     args = ("agent:recipient", "hello", "--json")
     # Act
@@ -69,7 +74,7 @@ def test_json_success_includes_the_durable_message_id():
     assert result.exit_code == 0 and payload["message_id"].startswith("m_")
 
 
-def test_public_api_is_the_responder_that_issues_the_exchange():
+def test_public_api_is_the_responder_that_issues_the_exchange(postgres_dsn):
     # Arrange
     recipient = "agent:recipient"
     # Act
@@ -84,7 +89,7 @@ def test_public_api_is_the_responder_that_issues_the_exchange():
     ) == (True, True, 202)
 
 
-def test_scope_spelling_is_canonicalized_to_the_live_agent_identity():
+def test_scope_spelling_is_canonicalized_to_the_live_agent_identity(postgres_dsn):
     # Arrange
     request_id = f"req_canonical_{uuid.uuid4().hex}"
     # Act
@@ -103,7 +108,7 @@ def test_scope_spelling_is_canonicalized_to_the_live_agent_identity():
     ) == ("sender", "recipient", True)
 
 
-def test_json_success_does_not_claim_delivery_or_ack():
+def test_json_success_does_not_claim_delivery_or_ack(postgres_dsn):
     # Arrange
     args = ("agent:recipient", "hello", "--json")
     # Act
@@ -116,7 +121,7 @@ def test_json_success_does_not_claim_delivery_or_ack():
     )
 
 
-def test_default_sender_is_persisted_in_postgres():
+def test_default_sender_is_persisted_in_postgres(postgres_dsn):
     # Arrange
     key = thread_key("test-suite", "recipient")
     # Act
@@ -127,7 +132,7 @@ def test_default_sender_is_persisted_in_postgres():
     assert [row["id"] for row in stored] == [payload["message_id"]]
 
 
-def test_sender_flag_overrides_the_environment_identity():
+def test_sender_flag_overrides_the_environment_identity(postgres_dsn):
     # Arrange
     sender = "agent:explicit"
     # Act
@@ -138,7 +143,7 @@ def test_sender_flag_overrides_the_environment_identity():
     assert any(row["id"] == payload["message_id"] for row in stored)
 
 
-def test_human_success_says_persisted_but_unconfirmed():
+def test_human_success_says_persisted_but_unconfirmed(postgres_dsn):
     # Arrange
     message = "human output"
     # Act
@@ -180,7 +185,7 @@ def test_unresolved_sender_uses_native_http_status(env):
     )
 
 
-def test_invalid_shared_ledger_target_fails_before_persisting(env):
+def test_invalid_shared_ledger_target_fails_before_persisting(env, postgres_dsn):
     # Arrange
     valid_store = os.environ["SCITEX_STORE_DSN"]
     env.set("SCITEX_STORE_DSN", "not-a-postgres-dsn")
@@ -219,7 +224,7 @@ def test_status_wire_does_not_reinvent_ok_or_retryable():
     assert set(status.to_dict()) == {"kind", "code", "message"}
 
 
-def test_exchange_status_round_trips_through_shared_ledger():
+def test_exchange_status_round_trips_through_shared_ledger(postgres_dsn):
     # Arrange
     sent = json.loads(_invoke("agent:recipient", "tracked", "--json").output)
     # Act
@@ -237,7 +242,7 @@ def test_exchange_status_round_trips_through_shared_ledger():
     ) == (202, False, "test-suite", "recipient", "cards.dm.delivery")
 
 
-def test_same_responder_exchange_id_reaches_notification_row():
+def test_same_responder_exchange_id_reaches_notification_row(postgres_dsn):
     # Arrange
     sent = json.loads(_invoke("agent:recipient", "one exchange", "--json").output)
     # Act
@@ -250,7 +255,7 @@ def test_same_responder_exchange_id_reaches_notification_row():
     )
 
 
-def test_delivery_retry_reuses_the_same_notification_and_exchange():
+def test_delivery_retry_reuses_the_same_notification_and_exchange(postgres_dsn):
     # Arrange
     sent = json.loads(_invoke("agent:recipient", "retry rail", "--json").output)
     # Act -- a consumer may die after either poll; neither poll acknowledges.
@@ -287,7 +292,7 @@ def _conclude_exchange(exchange_id: str, status: StatusCode) -> None:
         )
 
 
-def test_terminal_failure_rotates_exchange_but_preserves_delivery_id():
+def test_terminal_failure_rotates_exchange_but_preserves_delivery_id(postgres_dsn):
     # Arrange
     sent = scitex_cards.dm_send(
         f"agent:{RECIPIENT}",
@@ -327,7 +332,7 @@ def test_terminal_failure_rotates_exchange_but_preserves_delivery_id():
     )
 
 
-def test_nonfinal_102_reuses_original_exchange():
+def test_nonfinal_102_reuses_original_exchange(postgres_dsn):
     # Arrange
     sent = scitex_cards.dm_send(
         f"agent:{RECIPIENT}",
@@ -355,7 +360,7 @@ def test_nonfinal_102_reuses_original_exchange():
     assert row["exchange_id"] == sent["exchange_id"]
 
 
-def test_concurrent_failed_delivery_retries_converge_on_one_successor():
+def test_concurrent_failed_delivery_retries_converge_on_one_successor(postgres_dsn):
     # Arrange
     sent = scitex_cards.dm_send(
         f"agent:{RECIPIENT}",
@@ -385,7 +390,7 @@ def test_concurrent_failed_delivery_retries_converge_on_one_successor():
     assert successors[0] == successors[1] != sent["exchange_id"]
 
 
-def test_confirmed_terminal_failure_is_not_reopened():
+def test_confirmed_terminal_failure_is_not_reopened(postgres_dsn):
     # Arrange: confirmation is stronger than the failed attempt status. Once
     # the recipient has acknowledged this delivery id, polling history must
     # not create fresh work for it.
@@ -414,7 +419,7 @@ def test_confirmed_terminal_failure_is_not_reopened():
     ) == ([sent["notification_id"]], sent["exchange_id"])
 
 
-def test_timeout_after_commit_retry_returns_original_three_ids():
+def test_timeout_after_commit_retry_returns_original_three_ids(postgres_dsn):
     # Arrange -- the first response is deliberately ignored, as after timeout.
     request_id = "req_timeout_after_commit"
     first = scitex_cards.dm_send(
@@ -445,7 +450,7 @@ def test_generated_cli_retry_key_is_surfaced_before_submission():
     assert result.stderr.startswith("client_request_id=req_")
 
 
-def test_dry_run_writes_no_dm():
+def test_dry_run_writes_no_dm(postgres_dsn):
     # Arrange
     key = thread_key("test-suite", "recipient")
     # Act

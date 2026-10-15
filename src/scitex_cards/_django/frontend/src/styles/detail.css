@@ -2,7 +2,7 @@
  * Imported by board.css (kept as one import site).
  *
  * Colors come from the --stx-* palette defined on .stx-cards-board (board.css),
- * which is derived from the scitex-ui shell theme vars and flips with
+ * which is derived from the SDK shell theme vars and flips with
  * <html data-theme>. The drawer is rendered inside .stx-cards-board, so those
  * variables cascade here. */
 

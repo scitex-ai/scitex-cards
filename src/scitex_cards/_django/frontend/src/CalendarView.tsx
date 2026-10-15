@@ -157,7 +157,7 @@ function DayCell({
 
 /** The 4th LAYOUT — month grid. Honors the toolbar's search + status +
  * repo filters via `taskMatchesFilter`, so typing
- * `project:paper-scitex-clew status:pending` narrows the calendar the
+ * `project:paper-scitex-clew status:blocked` narrows the calendar the
  * same way it narrows Graph / Table / Recent. */
 export function CalendarView({ graph }: { graph: GraphPayload }) {
   const query = useBoardStore((s) => s.query);

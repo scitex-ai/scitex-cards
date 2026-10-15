@@ -19,6 +19,10 @@ Real round-trips against the canonical store — no mocks of the thing
 under test (Req STX-NM). The store is database-only now: the CRUD verbs read
 and write the canonical DB (the conftest bootstraps a fresh empty one per
 test), so every helper below seeds/reads THAT store rather than a YAML file.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every test below seeds/reads the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -49,7 +53,7 @@ def _reload(task_id):
 # --------------------------------------------------------------------------- #
 # blocker: "" CLEARS (the reported bug)                                       #
 # --------------------------------------------------------------------------- #
-def test_a_freshly_inserted_blocked_card_names_its_gate():
+def test_a_freshly_inserted_blocked_card_names_its_gate(postgres_dsn):
     # Arrange — a blocked card that names its gate.
 
     # Act
@@ -59,7 +63,7 @@ def test_a_freshly_inserted_blocked_card_names_its_gate():
     assert _reload("triage-1")["blocker"] == "operator-decision"
 
 
-def test_blocker_empty_string_deletes_the_key_from_the_merged_card():
+def test_blocker_empty_string_deletes_the_key_from_the_merged_card(postgres_dsn):
     # Arrange — a blocked card that names its gate.
     _blocked_card()
 
@@ -70,7 +74,7 @@ def test_blocker_empty_string_deletes_the_key_from_the_merged_card():
     assert "blocker" not in merged
 
 
-def test_blocker_empty_string_deletes_the_key_from_the_persisted_card():
+def test_blocker_empty_string_deletes_the_key_from_the_persisted_card(postgres_dsn):
     # Arrange — a blocked card that names its gate.
     _blocked_card()
 
@@ -81,7 +85,7 @@ def test_blocker_empty_string_deletes_the_key_from_the_persisted_card():
     assert "blocker" not in _reload("triage-1")
 
 
-def test_clearing_a_blocker_still_applies_the_sibling_status():
+def test_clearing_a_blocker_still_applies_the_sibling_status(postgres_dsn):
     # Arrange — a blocked card that names its gate.
     _blocked_card()
 
@@ -92,7 +96,7 @@ def test_clearing_a_blocker_still_applies_the_sibling_status():
     assert _reload("triage-1")["status"] == "in_progress"
 
 
-def test_blocker_empty_string_never_reaches_the_store_as_a_value():
+def test_blocker_empty_string_never_reaches_the_store_as_a_value(postgres_dsn):
     # Arrange
     _blocked_card(task_id="triage-raw")
 
@@ -104,7 +108,7 @@ def test_blocker_empty_string_never_reaches_the_store_as_a_value():
     assert "blocker" not in _reload("triage-raw")
 
 
-def test_blocker_whitespace_only_is_also_a_clear():
+def test_blocker_whitespace_only_is_also_a_clear(postgres_dsn):
     # Arrange — "  " is a typo'd "", never a legal enum member.
     _blocked_card(task_id="triage-ws")
 
@@ -120,7 +124,7 @@ def test_blocker_whitespace_only_is_also_a_clear():
 # --------------------------------------------------------------------------- #
 # The validator is NOT weakened                                               #
 # --------------------------------------------------------------------------- #
-def test_genuinely_invalid_blocker_still_raises():
+def test_genuinely_invalid_blocker_still_raises(postgres_dsn):
     # Arrange
     _blocked_card(task_id="triage-bad")
 
@@ -144,7 +148,7 @@ def _refusal_message(fn) -> str:
     return ""
 
 
-def test_an_invalid_blocker_refusal_names_the_offending_value():
+def test_an_invalid_blocker_refusal_names_the_offending_value(postgres_dsn):
     # Arrange
     _blocked_card(task_id="triage-bad")
 
@@ -157,7 +161,7 @@ def test_an_invalid_blocker_refusal_names_the_offending_value():
     assert "banana" in message
 
 
-def test_an_invalid_blocker_refusal_leaves_the_store_untouched():
+def test_an_invalid_blocker_refusal_leaves_the_store_untouched(postgres_dsn):
     # Arrange
     _blocked_card(task_id="triage-bad")
 
@@ -172,7 +176,7 @@ def test_an_invalid_blocker_refusal_leaves_the_store_untouched():
 # --------------------------------------------------------------------------- #
 # The done-while-blocked guard still fires (regression: do NOT weaken)        #
 # --------------------------------------------------------------------------- #
-def test_done_while_blocker_still_set_is_still_refused():
+def test_done_while_blocker_still_set_is_still_refused(postgres_dsn):
     # Arrange — a blocked card with a real blocker.
     _blocked_card(task_id="triage-done")
 
@@ -183,7 +187,7 @@ def test_done_while_blocker_still_set_is_still_refused():
         _store.update_task(task_id="triage-done", status="done")
 
 
-def test_the_done_while_blocked_refusal_names_the_blocker():
+def test_the_done_while_blocked_refusal_names_the_blocker(postgres_dsn):
     # Arrange — a blocked card with a real blocker.
     _blocked_card(task_id="triage-done")
 
@@ -196,7 +200,7 @@ def test_the_done_while_blocked_refusal_names_the_blocker():
     assert "blocker" in message
 
 
-def test_done_with_the_gate_cleared_in_the_same_call_applies_the_status():
+def test_done_with_the_gate_cleared_in_the_same_call_applies_the_status(postgres_dsn):
     # Arrange — a blocked card with a real blocker.
     _blocked_card(task_id="triage-done")
 
@@ -207,7 +211,7 @@ def test_done_with_the_gate_cleared_in_the_same_call_applies_the_status():
     assert merged["status"] == "done"
 
 
-def test_done_with_the_gate_cleared_in_the_same_call_drops_the_blocker():
+def test_done_with_the_gate_cleared_in_the_same_call_drops_the_blocker(postgres_dsn):
     # Arrange — a blocked card with a real blocker.
     _blocked_card(task_id="triage-done")
 
@@ -221,7 +225,7 @@ def test_done_with_the_gate_cleared_in_the_same_call_drops_the_blocker():
 # --------------------------------------------------------------------------- #
 # status is NOT clearable — a card must carry a decision                      #
 # --------------------------------------------------------------------------- #
-def test_status_cannot_be_cleared_and_says_why():
+def test_status_cannot_be_cleared_and_says_why(postgres_dsn):
     # Arrange
     _blocked_card(task_id="triage-status")
 
@@ -231,7 +235,7 @@ def test_status_cannot_be_cleared_and_says_why():
         _store.update_task(task_id="triage-status", status="")
 
 
-def test_the_status_clear_refusal_says_it_cannot_clear():
+def test_the_status_clear_refusal_says_it_cannot_clear(postgres_dsn):
     # Arrange
     _blocked_card(task_id="triage-status")
 
@@ -244,7 +248,7 @@ def test_the_status_clear_refusal_says_it_cannot_clear():
     assert "cannot clear" in message
 
 
-def test_the_status_clear_refusal_offers_the_valid_set():
+def test_the_status_clear_refusal_offers_the_valid_set(postgres_dsn):
     # Arrange
     _blocked_card(task_id="triage-status")
 
@@ -257,7 +261,7 @@ def test_the_status_clear_refusal_offers_the_valid_set():
     assert "in_progress" in message and "deferred" in message
 
 
-def test_a_refused_status_clear_leaves_the_cards_status_intact():
+def test_a_refused_status_clear_leaves_the_cards_status_intact(postgres_dsn):
     # Arrange
     _blocked_card(task_id="triage-status")
 
@@ -268,7 +272,7 @@ def test_a_refused_status_clear_leaves_the_cards_status_intact():
     assert _reload("triage-status")["status"] == "blocked"
 
 
-def test_status_clear_is_refused_before_the_store_is_touched():
+def test_status_clear_is_refused_before_the_store_is_touched(postgres_dsn):
     # Arrange — the refusal must happen BEFORE the lock/write, so a doomed
     # mutation never partially applies alongside its sibling fields.
     _blocked_card(task_id="triage-early")
@@ -279,7 +283,7 @@ def test_status_clear_is_refused_before_the_store_is_touched():
         _store.update_task(task_id="triage-early", status="", note="new note")
 
 
-def test_a_refused_status_clear_does_not_land_its_sibling_field():
+def test_a_refused_status_clear_does_not_land_its_sibling_field(postgres_dsn):
     # Arrange — the refusal must happen BEFORE the lock/write.
     _blocked_card(task_id="triage-early")
 
@@ -306,7 +310,7 @@ def _misfiled_kind_card(task_id: str) -> None:
     )
 
 
-def test_kind_empty_string_deletes_the_key_from_the_merged_card():
+def test_kind_empty_string_deletes_the_key_from_the_merged_card(postgres_dsn):
     # Arrange — a card mis-filed as kind=status.
     _misfiled_kind_card("kind-1")
 
@@ -317,7 +321,7 @@ def test_kind_empty_string_deletes_the_key_from_the_merged_card():
     assert "kind" not in merged
 
 
-def test_kind_empty_string_deletes_the_key_from_the_persisted_card():
+def test_kind_empty_string_deletes_the_key_from_the_persisted_card(postgres_dsn):
     # Arrange — a card mis-filed as kind=status.
     _misfiled_kind_card("kind-1")
 
@@ -331,7 +335,7 @@ def test_kind_empty_string_deletes_the_key_from_the_persisted_card():
 # --------------------------------------------------------------------------- #
 # add_task (the sibling write path) honours the same ONE rule                 #
 # --------------------------------------------------------------------------- #
-def test_add_task_empty_enum_is_not_written():
+def test_add_task_empty_enum_is_not_written(postgres_dsn):
     # Arrange — "" on insert = "no value", never a literal "".
 
     # Act
@@ -348,7 +352,7 @@ def test_add_task_empty_enum_is_not_written():
     assert "blocker" not in inserted and "kind" not in inserted
 
 
-def test_add_task_refuses_a_status_less_card():
+def test_add_task_refuses_a_status_less_card(postgres_dsn):
     # Arrange
 
     # Act
@@ -378,7 +382,7 @@ def _run_the_bulk_triage_batch() -> None:
     _store.update_task(task_id="bulk-3", status="done", blocker="")
 
 
-def test_bulk_triage_clears_the_first_cards_blocker():
+def test_bulk_triage_clears_the_first_cards_blocker(postgres_dsn):
     # Arrange
 
     # Act
@@ -388,7 +392,7 @@ def test_bulk_triage_clears_the_first_cards_blocker():
     assert "blocker" not in _reload("bulk-0")
 
 
-def test_bulk_triage_applies_the_first_cards_status():
+def test_bulk_triage_applies_the_first_cards_status(postgres_dsn):
     # Arrange
 
     # Act
@@ -398,7 +402,7 @@ def test_bulk_triage_applies_the_first_cards_status():
     assert _reload("bulk-0")["status"] == "in_progress"
 
 
-def test_bulk_triage_clears_the_second_cards_blocker():
+def test_bulk_triage_clears_the_second_cards_blocker(postgres_dsn):
     # Arrange
 
     # Act
@@ -408,7 +412,7 @@ def test_bulk_triage_clears_the_second_cards_blocker():
     assert "blocker" not in _reload("bulk-1")
 
 
-def test_bulk_triage_still_applies_a_real_blocker_value():
+def test_bulk_triage_still_applies_a_real_blocker_value(postgres_dsn):
     # Arrange
 
     # Act
@@ -418,7 +422,7 @@ def test_bulk_triage_still_applies_a_real_blocker_value():
     assert _reload("bulk-2")["blocker"] == "agent-wait"
 
 
-def test_bulk_triage_applies_the_last_cards_status():
+def test_bulk_triage_applies_the_last_cards_status(postgres_dsn):
     # Arrange
 
     # Act
@@ -428,7 +432,7 @@ def test_bulk_triage_applies_the_last_cards_status():
     assert _reload("bulk-3")["status"] == "done"
 
 
-def test_bulk_triage_clears_the_last_cards_blocker():
+def test_bulk_triage_clears_the_last_cards_blocker(postgres_dsn):
     # Arrange
 
     # Act
@@ -456,7 +460,7 @@ def _cli_clear_blocker():
     )
 
 
-def test_cli_update_with_an_empty_blocker_exits_clean():
+def test_cli_update_with_an_empty_blocker_exits_clean(postgres_dsn):
     # Arrange
 
     # Act
@@ -466,7 +470,7 @@ def test_cli_update_with_an_empty_blocker_exits_clean():
     assert result.exit_code == 0, result.output
 
 
-def test_cli_update_blocker_empty_string_clears():
+def test_cli_update_blocker_empty_string_clears(postgres_dsn):
     # Arrange
 
     # Act
@@ -486,7 +490,7 @@ def _cli_clear_kind():
     )
 
 
-def test_cli_update_with_an_empty_kind_exits_clean():
+def test_cli_update_with_an_empty_kind_exits_clean(postgres_dsn):
     # Arrange
 
     # Act
@@ -496,7 +500,7 @@ def test_cli_update_with_an_empty_kind_exits_clean():
     assert result.exit_code == 0, result.output
 
 
-def test_cli_update_kind_empty_string_clears():
+def test_cli_update_kind_empty_string_clears(postgres_dsn):
     # Arrange
 
     # Act

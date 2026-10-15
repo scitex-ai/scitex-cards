@@ -31,6 +31,10 @@ prior rows are SEEDED into the canonical DB (`SCITEX_STORE_DSN`) via
 `seed_db_from_doc`. In the database `users` round-trips as a LIST of records and
 `inboxes` as a `{recipient: [notification]}` map (the DB table shapes) — not
 the old YAML dict-of-users shape.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every write below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -61,13 +65,23 @@ def _store() -> str:
 
 
 @pytest.fixture()
-def good_store() -> Path:
-    """A pre-existing valid store (in the canonical DB) with two tasks."""
+def good_store(postgres_dsn) -> Path:
+    """A pre-existing valid store (in the canonical DB) with two tasks.
+
+    Requests ``postgres_dsn`` so the no-cluster failure is LOUD (setup ERROR
+    with reason+remedy) rather than an opaque refusal deep in the write path.
+    The seed target stays the per-test store, never the fixture value.
+
+    Seeds use ``deferred`` (the successor default; ``pending`` was abolished
+    2026-07-10): every assertion here pins crash-safety (validation gate,
+    txn atomicity, section preservation, round-trip fixed point), never the
+    status, so the fixtures must exercise the live-status path.
+    """
     seed_db_from_doc(
         {
             "tasks": [
-                {"id": "t-a", "title": "task a", "status": "pending"},
-                {"id": "t-b", "title": "task b", "status": "pending"},
+                {"id": "t-a", "title": "task a", "status": "deferred"},
+                {"id": "t-b", "title": "task b", "status": "deferred"},
             ]
         },
         os.environ["SCITEX_STORE_DSN"],
@@ -78,11 +92,11 @@ def good_store() -> Path:
 # === 1. Pre-write validation raises BEFORE committing anything ==============
 
 
-def test_invalid_in_memory_structure_raises_before_write():
+def test_invalid_in_memory_structure_raises_before_write(postgres_dsn):
     # Arrange
     bad = [
-        {"id": "dup", "title": "first", "status": "pending"},
-        {"id": "dup", "title": "second", "status": "pending"},
+        {"id": "dup", "title": "first", "status": "deferred"},
+        {"id": "dup", "title": "second", "status": "deferred"},
     ]
 
     # Act
@@ -91,11 +105,11 @@ def test_invalid_in_memory_structure_raises_before_write():
         save_tasks(bad, _store())
 
 
-def test_invalid_in_memory_does_not_persist_anything():
+def test_invalid_in_memory_does_not_persist_anything(postgres_dsn):
     # Arrange — the bootstrapped store is empty; a failed save must not write.
     bad = [
-        {"id": "dup", "title": "first", "status": "pending"},
-        {"id": "dup", "title": "second", "status": "pending"},
+        {"id": "dup", "title": "first", "status": "deferred"},
+        {"id": "dup", "title": "second", "status": "deferred"},
     ]
 
     # Act
@@ -108,11 +122,11 @@ def test_invalid_in_memory_does_not_persist_anything():
     assert load_tasks(_store()) == []
 
 
-def test_invalid_in_memory_leaves_existing_store_unchanged(good_store: Path):
+def test_invalid_in_memory_leaves_existing_store_unchanged(good_store: Path, postgres_dsn):
     # Arrange
     bad = [
-        {"id": "dup", "title": "first", "status": "pending"},
-        {"id": "dup", "title": "second", "status": "pending"},
+        {"id": "dup", "title": "first", "status": "deferred"},
+        {"id": "dup", "title": "second", "status": "deferred"},
     ]
 
     # Act
@@ -144,7 +158,7 @@ _KILL_MID_WRITE_SCRIPT = textwrap.dedent(
     # Build a beefy payload so the write takes well over the kill delay; the
     # killer fires before the transaction commits.
     huge = [
-        {"id": f"t-{i}", "title": "X" * 200, "status": "pending",
+        {"id": f"t-{i}", "title": "X" * 200, "status": "deferred",
          "note": "Y" * 1000}
         for i in range(5000)
     ]
@@ -153,7 +167,7 @@ _KILL_MID_WRITE_SCRIPT = textwrap.dedent(
 )
 
 
-def test_sigkill_mid_write_leaves_store_unchanged(good_store: Path):
+def test_sigkill_mid_write_leaves_store_unchanged(good_store: Path, postgres_dsn):
     # Arrange
     script = good_store.parent / "killer.py"
     script.write_text(_KILL_MID_WRITE_SCRIPT)
@@ -171,7 +185,7 @@ def test_sigkill_mid_write_leaves_store_unchanged(good_store: Path):
     assert [t["id"] for t in load_tasks(good_store)] == ["t-a", "t-b"]
 
 
-def test_sigkill_mid_write_leaves_store_loadable(good_store: Path):
+def test_sigkill_mid_write_leaves_store_loadable(good_store: Path, postgres_dsn):
     # Arrange
     script = good_store.parent / "killer.py"
     script.write_text(_KILL_MID_WRITE_SCRIPT)
@@ -193,10 +207,10 @@ def test_sigkill_mid_write_leaves_store_loadable(good_store: Path):
 # === 3. Happy path still round-trips ========================================
 
 
-def test_clean_save_round_trips_through_load():
+def test_clean_save_round_trips_through_load(postgres_dsn):
     # Arrange
     tasks_in = [
-        {"id": "t-a", "title": "task a", "status": "pending"},
+        {"id": "t-a", "title": "task a", "status": "deferred"},
         {"id": "t-b", "title": "task b", "status": "done"},
     ]
 
@@ -226,7 +240,7 @@ def _seed_store_with_extra_sections() -> Path:
     seed_db_from_doc(
         {
             "tasks": [
-                {"id": "t-a", "title": "task a", "status": "pending"},
+                {"id": "t-a", "title": "task a", "status": "deferred"},
             ],
             "users": [
                 {
@@ -256,7 +270,7 @@ def _seed_store_with_extra_sections() -> Path:
     return Path(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
 
 
-def test_save_preserves_users_section():
+def test_save_preserves_users_section(postgres_dsn):
     # Arrange — a store with a populated `users:` registry.
     store = _seed_store_with_extra_sections()
     tasks = load_tasks(store)
@@ -273,7 +287,7 @@ def test_save_preserves_users_section():
     ]
 
 
-def test_save_preserves_all_top_level_keys():
+def test_save_preserves_all_top_level_keys(postgres_dsn):
     # Arrange
     store = _seed_store_with_extra_sections()
     tasks = load_tasks(store)
@@ -287,7 +301,7 @@ def test_save_preserves_all_top_level_keys():
     assert list(after.keys()) == ["tasks", "users", "inboxes"]
 
 
-def test_save_preserves_custom_inboxes_section_value():
+def test_save_preserves_custom_inboxes_section_value(postgres_dsn):
     # Arrange
     store = _seed_store_with_extra_sections()
     tasks = load_tasks(store)
@@ -315,13 +329,13 @@ def test_save_preserves_custom_inboxes_section_value():
 # === 5. Tasks round-trip exactly (load -> save -> load equals) ==============
 
 
-def test_save_round_trips_tasks_exactly():
+def test_save_round_trips_tasks_exactly(postgres_dsn):
     # Arrange — a store with rich task fields.
     tasks_in = [
         {
             "id": "t-a",
             "title": "task a",
-            "status": "pending",
+            "status": "deferred",
             "priority": 1,
             "note": "multi\nline\nnote",
             "tags": ["x", "y"],
@@ -346,12 +360,12 @@ def _append_task_and_save() -> Path:
     """Seed a multi-section store, append one card, and save it back."""
     store = _seed_store_with_extra_sections()
     tasks = load_tasks(store)
-    tasks.append({"id": "t-new", "title": "new", "status": "pending"})
+    tasks.append({"id": "t-new", "title": "new", "status": "deferred"})
     save_tasks(tasks, store)
     return store
 
 
-def test_append_save_writes_a_complete_task_list():
+def test_append_save_writes_a_complete_task_list(postgres_dsn):
     # Arrange
     # Act
     store = _append_task_and_save()
@@ -360,7 +374,7 @@ def test_append_save_writes_a_complete_task_list():
     assert [t["id"] for t in load_tasks(store)] == ["t-a", "t-new"]
 
 
-def test_append_save_keeps_the_users_section_present():
+def test_append_save_keeps_the_users_section_present(postgres_dsn):
     # Arrange
     # Act
     store = _append_task_and_save()

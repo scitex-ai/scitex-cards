@@ -13,6 +13,11 @@ rather than the cancellation, which is exactly the confusion it was added to
 end.
 
 No mocks (STX-NM002): the helper is pure, so these are plain dicts in and out.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 4 end-to-end checks below target the ambient
+per-test store, which is refused without a writable cluster. The pure
+dict tests above stay unguarded by design (no store touch).
 """
 
 from __future__ import annotations
@@ -192,7 +197,7 @@ def test_update_task_actually_calls_the_cancellation_stamp():
     assert "_stamp_cancellation_attribution" in source
 
 
-def test_a_real_cancel_through_update_task_records_an_actor():
+def test_a_real_cancel_through_update_task_records_an_actor(postgres_dsn):
     # Arrange — the end-to-end check a source grep cannot give: drive the real
     # write path against the ambient test store.
     from scitex_cards._store import add_task, get_task, update_task
@@ -207,7 +212,7 @@ def test_a_real_cancel_through_update_task_records_an_actor():
     assert get_task(None, "cancel-e2e-1").get(FIELD_CANCELLED_BY)
 
 
-def test_a_real_cancel_through_update_task_records_a_timestamp():
+def test_a_real_cancel_through_update_task_records_a_timestamp(postgres_dsn):
     # Arrange
     from scitex_cards._store import add_task, get_task, update_task
 
@@ -219,7 +224,7 @@ def test_a_real_cancel_through_update_task_records_a_timestamp():
     assert get_task(None, "cancel-e2e-2").get(FIELD_CANCELLED_AT)
 
 
-def test_a_real_reopen_through_update_task_clears_the_attribution():
+def test_a_real_reopen_through_update_task_clears_the_attribution(postgres_dsn):
     # Arrange — a stale signature on a live card is the failure this prevents.
     from scitex_cards._store import add_task, get_task, update_task
 
@@ -232,7 +237,7 @@ def test_a_real_reopen_through_update_task_clears_the_attribution():
     assert FIELD_CANCELLED_BY not in get_task(None, "cancel-e2e-3")
 
 
-def test_a_passing_edit_on_a_real_cancelled_card_keeps_the_original_actor():
+def test_a_passing_edit_on_a_real_cancelled_card_keeps_the_original_actor(postgres_dsn):
     # Arrange — the transition-only invariant, end to end rather than in a dict.
     from scitex_cards._store import add_task, get_task, update_task
 

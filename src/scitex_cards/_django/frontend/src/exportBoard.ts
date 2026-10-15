@@ -22,10 +22,10 @@ const STATUS_ORDER = [
   "goal",
   "in_progress",
   "blocked",
-  "pending",
   "deferred",
   "failed",
   "done",
+  "cancelled",
 ];
 
 /** Markdown export: a section per status, with one bullet per task carrying

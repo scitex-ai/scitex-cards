@@ -3,8 +3,8 @@
 """The agent list must SHIP a fuzzy filter, and it must survive the poll.
 
 OPERATOR STANDING REQUEST, repeated: 「普通にあいまい検索でフィルタはいつも入れてくだ
-さい；scitex-ui にもなければいけない話です」 — a fuzzy-search filter belongs on every
-list, and the matcher belongs in scitex-ui rather than being re-typed per page.
+さい；[SDK: the old UI package at the time] にもなければいけない話です」 — a fuzzy-search filter belongs on every
+list, and the matcher belongs in the SDK rather than being re-typed per page.
 
 The board honoured it; this page did not. Its agent list is one flat column
 holding every agent the fleet has ever registered, and the only way to find one
@@ -121,19 +121,19 @@ def test_the_page_serves_the_filter_module(page: str) -> None:
     assert "chat/chat_filter.js" in page
 
 
-def test_the_page_serves_the_scitex_ui_matcher(page: str) -> None:
+def test_the_page_serves_the_sdk_matcher(page: str) -> None:
     """The whole point: the matcher is base's, so search means one thing here."""
     # Arrange
     # Act
     # Assert
-    assert "scitex_ui/js/app/combobox.js" in page
+    assert "scitex_sdk/ui/js/app/combobox.js" in page
 
 
 def test_the_matcher_loads_before_the_filter_module(page: str) -> None:
     """Both are `defer`, so document order IS execution order."""
     # Arrange
     # Act
-    combobox = page.index("scitex_ui/js/app/combobox.js")
+    combobox = page.index("scitex_sdk/ui/js/app/combobox.js")
     chat_filter = page.index("chat/chat_filter.js")
     # Assert
     assert combobox < chat_filter
@@ -303,7 +303,7 @@ def test_the_observer_does_not_watch_the_subtree(filter_js: str) -> None:
 # === the matcher is consumed, not copied ===================================
 
 
-def test_the_module_reads_the_matcher_off_scitex_ui(filter_js: str) -> None:
+def test_the_module_reads_the_matcher_off_the_sdk(filter_js: str) -> None:
     """A private subsequence matcher would make this page disagree with the board."""
     # Arrange
     code = _uncommented(filter_js)

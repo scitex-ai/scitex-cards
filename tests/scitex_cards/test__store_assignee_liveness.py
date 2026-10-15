@@ -8,6 +8,10 @@ PA-306). Covers that ``add_task`` / ``reassign_task`` / assignee-setting
 assignee as alive / stale / unknown, and that no block is attached when there
 is no assignee to classify (structurally impossible for add_task, which
 requires an owner, but exercised for update_task).
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every write below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -84,7 +88,7 @@ def _unregistered_liveness(tmp_path):
 # --------------------------------------------------------------------------- #
 # add_task attaches assignee_liveness                                         #
 # --------------------------------------------------------------------------- #
-def test_add_task_attaches_an_assignee_liveness_block(tmp_path):
+def test_add_task_attaches_an_assignee_liveness_block(tmp_path, postgres_dsn):
     # Arrange
     expected_key = "assignee_liveness"
     # Act
@@ -93,7 +97,7 @@ def test_add_task_attaches_an_assignee_liveness_block(tmp_path):
     assert expected_key in result
 
 
-def test_add_task_alive_assignee(tmp_path):
+def test_add_task_alive_assignee(tmp_path, postgres_dsn):
     # Arrange
     expected_status = "alive"
     # Act
@@ -102,7 +106,7 @@ def test_add_task_alive_assignee(tmp_path):
     assert result["assignee_liveness"]["status"] == expected_status
 
 
-def test_add_task_alive_assignee_carries_last_seen(tmp_path):
+def test_add_task_alive_assignee_carries_last_seen(tmp_path, postgres_dsn):
     # Arrange
     result = _alive_liveness(tmp_path)
     # Act
@@ -111,7 +115,7 @@ def test_add_task_alive_assignee_carries_last_seen(tmp_path):
     assert live["last_seen"] is not None
 
 
-def test_add_task_alive_assignee_carries_integer_age(tmp_path):
+def test_add_task_alive_assignee_carries_integer_age(tmp_path, postgres_dsn):
     # Arrange
     result = _alive_liveness(tmp_path)
     # Act
@@ -120,7 +124,7 @@ def test_add_task_alive_assignee_carries_integer_age(tmp_path):
     assert isinstance(live["age_seconds"], int)
 
 
-def test_add_task_stale_assignee(tmp_path):
+def test_add_task_stale_assignee(tmp_path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _register_seen(store, "old-agent", seconds_ago=3600)  # 1 hour ago
@@ -130,7 +134,7 @@ def test_add_task_stale_assignee(tmp_path):
     assert result["assignee_liveness"]["status"] == "stale"
 
 
-def test_add_task_unknown_assignee_unregistered(tmp_path):
+def test_add_task_unknown_assignee_unregistered(tmp_path, postgres_dsn):
     # Arrange
     expected_status = "unknown"
     # Act
@@ -139,7 +143,7 @@ def test_add_task_unknown_assignee_unregistered(tmp_path):
     assert result["assignee_liveness"]["status"] == expected_status
 
 
-def test_add_task_unregistered_assignee_has_no_last_seen(tmp_path):
+def test_add_task_unregistered_assignee_has_no_last_seen(tmp_path, postgres_dsn):
     # Arrange
     result = _unregistered_liveness(tmp_path)
     # Act
@@ -148,7 +152,7 @@ def test_add_task_unregistered_assignee_has_no_last_seen(tmp_path):
     assert live["last_seen"] is None
 
 
-def test_add_task_unregistered_assignee_has_no_age(tmp_path):
+def test_add_task_unregistered_assignee_has_no_age(tmp_path, postgres_dsn):
     # Arrange
     result = _unregistered_liveness(tmp_path)
     # Act
@@ -157,7 +161,7 @@ def test_add_task_unregistered_assignee_has_no_age(tmp_path):
     assert live["age_seconds"] is None
 
 
-def test_add_task_unknown_assignee_never_seen(tmp_path):
+def test_add_task_unknown_assignee_never_seen(tmp_path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _users.register_user(kind="agent", names=["idle-agent"], store=store)
@@ -177,7 +181,7 @@ def _reassigned_to_fresh_owner(tmp_path):
     return _store.reassign_task(store, "t1", "new-owner", by="agent:test-suite")
 
 
-def test_reassign_task_reports_the_owner_changed(tmp_path):
+def test_reassign_task_reports_the_owner_changed(tmp_path, postgres_dsn):
     # Arrange
     expected_changed = True
     # Act
@@ -186,7 +190,7 @@ def test_reassign_task_reports_the_owner_changed(tmp_path):
     assert out["changed"] is expected_changed
 
 
-def test_reassign_task_reports_new_owner_liveness(tmp_path):
+def test_reassign_task_reports_new_owner_liveness(tmp_path, postgres_dsn):
     # Arrange
     expected_status = "alive"
     # Act
@@ -195,7 +199,7 @@ def test_reassign_task_reports_new_owner_liveness(tmp_path):
     assert out["assignee_liveness"]["status"] == expected_status
 
 
-def test_update_task_setting_assignee_reports_liveness(tmp_path):
+def test_update_task_setting_assignee_reports_liveness(tmp_path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _register_seen(store, "u-owner", seconds_ago=30)
@@ -206,7 +210,7 @@ def test_update_task_setting_assignee_reports_liveness(tmp_path):
     assert merged["assignee_liveness"]["status"] == "alive"
 
 
-def test_update_task_without_assignee_change_has_no_liveness(tmp_path):
+def test_update_task_without_assignee_change_has_no_liveness(tmp_path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _add_owned_by(store, "orig")

@@ -16,6 +16,12 @@ export is built exclusively from the verbatim ``card_json`` payload — the S2
 exactness contract). In a healthy DB both agree, because every write
 populates them together; a disagreement means the export does not reflect
 the DB's current state.
+
+CliRunner against the ambient per-test store. No mocks.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every seed below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -72,7 +78,7 @@ def _desync_typed_last_activity(task_id: str, newer: str) -> None:
         conn.close()
 
 
-def test_a_fresh_export_passes_the_freshness_guard(tmp_path):
+def test_a_fresh_export_passes_the_freshness_guard(tmp_path, postgres_dsn):
     """card_json and the typed columns agree — the guard does not fire."""
     # Arrange
     _seed_one_task()
@@ -108,7 +114,7 @@ def _desynced_snapshot_output(tmp_path) -> str:
     return result.output
 
 
-def test_a_stale_export_is_refused_by_the_freshness_guard(tmp_path):
+def test_a_stale_export_is_refused_by_the_freshness_guard(tmp_path, postgres_dsn):
     """The 2026-07-21 shape: card_json lags the DB's live typed columns."""
     # Arrange
     _seed_one_task()
@@ -123,7 +129,7 @@ def test_a_stale_export_is_refused_by_the_freshness_guard(tmp_path):
     assert result.exit_code != 0, "a stale export must not be snapshotted silently"
 
 
-def test_the_stale_export_refusal_is_labelled_as_such(tmp_path):
+def test_the_stale_export_refusal_is_labelled_as_such(tmp_path, postgres_dsn):
     # Arrange
     # Act
     output = _desynced_snapshot_output(tmp_path)
@@ -131,7 +137,7 @@ def test_the_stale_export_refusal_is_labelled_as_such(tmp_path):
     assert "STALE EXPORT" in output
 
 
-def test_the_stale_export_refusal_reports_the_exports_value(tmp_path):
+def test_the_stale_export_refusal_reports_the_exports_value(tmp_path, postgres_dsn):
     # Arrange
     # Act
     output = _desynced_snapshot_output(tmp_path)
@@ -139,7 +145,7 @@ def test_the_stale_export_refusal_reports_the_exports_value(tmp_path):
     assert _LAST_ACTIVITY in output
 
 
-def test_the_stale_export_refusal_reports_the_databases_live_value(tmp_path):
+def test_the_stale_export_refusal_reports_the_databases_live_value(tmp_path, postgres_dsn):
     # Arrange
     # Act
     output = _desynced_snapshot_output(tmp_path)
@@ -148,7 +154,7 @@ def test_the_stale_export_refusal_reports_the_databases_live_value(tmp_path):
     assert "2026-07-21T10:47:00Z" in output
 
 
-def test_a_stale_export_leaves_no_commit_behind(tmp_path):
+def test_a_stale_export_leaves_no_commit_behind(tmp_path, postgres_dsn):
     """A refused snapshot must not leave a commit an operator could trust."""
     # Arrange
     snaps = tmp_path / "snapshots"

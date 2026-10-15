@@ -22,7 +22,7 @@
  *
  * Filter strip: REUSES the toolbar's qualifier-syntax search (PR #102)
  * via the shared `taskMatchesFilter` helper — so typing
- * `project:paper-scitex-clew status:pending` filters the Recent view.
+ * `project:paper-scitex-clew status:blocked` filters the Recent view.
  *
  * Default lookback: 30 days. A "Show older" toggle reveals the rest.
  */

@@ -64,7 +64,8 @@ For every task with `status: blocked`:
 1. **`compute`**: is the `depends_on:` job/task still pending? Query
    the upstream — Spartan job state, SIF build dir, GPU-lane scheduler.
    If the upstream is `done` (or its analogue), flip the blocked task
-   to `pending` + clear `blocker`. Append a comment:
+   to `deferred` (the backlog state since `pending` was abolished
+   2026-07-10) + clear `blocker`. Append a comment:
    `"[task-harvest YYYY-MM-DD] unblocked — compute dependency
    <id> resolved."`
 2. **`quota`**: is the account / API limit reset? (Quotas typically
@@ -108,10 +109,13 @@ The point isn't politeness; it's keeping consumption-rate > arrival-rate.
 
 ## Worked example — one sweep
 
+> Dated record (2026-06-08, pre-abolition): `pending` below is the abolished status —
+> read it as `deferred` and do NOT copy `status: pending` into live commands.
+
 Starting state (267 tasks):
 - 5 `status: blocked`
 - 18 `status: in_progress`
-- 135 `status: pending` (= RUNNABLE)
+- 135 `status: pending` (= RUNNABLE at the time; `deferred` today)
 - rest = `done` / `goal` / `deferred`
 
 ### Phase 1 (re-check blockers)
@@ -128,7 +132,7 @@ Starting state (267 tasks):
 
 ### Phase 2 (escalate RUNNABLE)
 
-After Phase 1: 137 RUNNABLE (135 pending + 2 just-unblocked). The lead
+After Phase 1: 137 RUNNABLE (135 pending-at-the-time, i.e. `deferred` today, + 2 just-unblocked). The lead
 filters to the **highest-priority N** per agent (e.g. top 3 per owning
 agent) to avoid flooding inboxes, then a2a-dispatches:
 

@@ -250,8 +250,16 @@ def test_the_blocker_is_removed_when_the_context_exits(canary_root):
     assert raised is None, f"the blocker leaked: {root} is still unimportable"
 
 
-def test_crud_surface_survives_absence_of_forbidden_modules(tmp_path, env):
+def test_crud_surface_survives_absence_of_forbidden_modules(env, postgres_dsn):
     """The CRUD surface must complete with sac/the telegrammer UNINSTALLABLE.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the CRUD cycle
+    below writes the ambient per-test store, which is refused without a
+    cluster. (Reviewer Ask 2: the ineffective ``store=tmp_path`` is dropped —
+    ``_read_write_doc`` ignores it and it only warned via
+    ``refuse_ineffective_store`` — so isolation comes from the harness's
+    per-test schema, not a temp path.)
 
     WHY THIS, AND NOT "no forbidden module is in ``sys.modules``" (the shape
     this test had until 2026-07-22): that assertion measured the wrong thing
@@ -290,7 +298,6 @@ def test_crud_surface_survives_absence_of_forbidden_modules(tmp_path, env):
     # promising TWO would reasonably "fix" it by adding a pin for a variable
     # that does not exist.
     env.set("SCITEX_CARDS_AGENT_ID", "decoupling-gate-test")
-    store = tmp_path / "tasks.yaml"
     from scitex_cards import _store
 
     # Act — the cycle itself carries the proof: any hard requirement on a
@@ -302,10 +309,10 @@ def test_crud_surface_survives_absence_of_forbidden_modules(tmp_path, env):
     # passes identically when the packages are merely absent (as on CI), so it
     # could never have caught a broken blocker.
     with _roots_uninstallable(FORBIDDEN_ROOTS):
-        _store.add_task(store, id="t", title="t", status="deferred", agent="a")
-        _store.list_tasks(store)
-        _store.comment_task(store, "t", "standalone", by="a")
-        _store.complete_task(store, "t", by="a")
+        _store.add_task(id="t", title="t", status="deferred", agent="a")
+        _store.list_tasks()
+        _store.comment_task("t", "standalone", by="a")
+        _store.complete_task("t", by="a")
         leaked = {m.split(".")[0] for m in sys.modules} & FORBIDDEN_ROOTS
 
     # Assert — nothing slipped back in through a cached reference
@@ -333,9 +340,13 @@ def forbidden_port_providers():
 
 
 def test_port_provider_failure_is_swallowed_by_the_hook_dispatcher(
-    tmp_path, env, caplog, forbidden_port_providers
+    env, caplog, forbidden_port_providers, postgres_dsn
 ):
     """Prove the CRUD cycle REALLY reaches the coupling surface and tolerates it.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as above: the write below targets the ambient per-test
+    store (ineffective ``store=tmp_path`` dropped per Reviewer Ask 2).
 
     Without this, ``test_crud_surface_survives_absence_of_forbidden_modules``
     is vacuous wherever no forbidden package is installed — nothing registers
@@ -351,12 +362,11 @@ def test_port_provider_failure_is_swallowed_by_the_hook_dispatcher(
     # Arrange
     provided = forbidden_port_providers
     env.set("SCITEX_CARDS_AGENT_ID", "decoupling-gate-test")
-    store = tmp_path / "tasks.yaml"
     from scitex_cards import _store
 
     # Act — a write, with the provider's package unimportable
     with caplog.at_level(logging.WARNING), _roots_uninstallable(FORBIDDEN_ROOTS):
-        _store.add_task(store, id="t", title="t", status="deferred", agent="a")
+        _store.add_task(id="t", title="t", status="deferred", agent="a")
 
     # Assert — the dispatcher tried to load it and kept going
     names = {ep.name for ep in provided}

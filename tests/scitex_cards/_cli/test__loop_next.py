@@ -15,6 +15,13 @@ per STX-NM / PA-306). Covers:
   - --assignee + --mine mutually exclusive
   - --auto-claim flips status to in_progress + stamps a comment
 
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the ``store`` fixture seeds the ambient per-test
+store via ``add_task``, which is refused without a writable cluster;
+tests inheriting ``store`` carry the guard through the fixture while
+the empty-board no-candidate test stays unguarded by design (no seed,
+passes clusterless).
+
 The coverage audit (proj-scitex-cards overnight, lead a2a `1397f103`)
 flagged `_cli/_loop.py` at 33% with no dedicated tests; this file
 adds end-to-end coverage of the `next` verb side. The `watch` verb
@@ -68,7 +75,7 @@ _CARDS = (
 
 
 @pytest.fixture
-def store():
+def store(postgres_dsn):
     for card in _CARDS:
         add_task(**card)
     yield None

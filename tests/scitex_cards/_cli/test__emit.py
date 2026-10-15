@@ -18,6 +18,10 @@ like the sibling CLI tests — no mocks (STX-NM / PA-306). Covers:
 * ``emit-event --type bogus`` → fails loud (non-zero, names valid types).
 * ``find-card --repo R`` → prints the ids of cards with repo=R; empty
   output when none; honors ``--kind`` / ``--status`` filters.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every seed and CLI call below targets the ambient
+per-test store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -152,7 +156,7 @@ def _release_to_subscriber(env):
     return result, alice, eve
 
 
-def test_emit_event_released_exits_zero(env):
+def test_emit_event_released_exits_zero(env, postgres_dsn):
     # Arrange
     # Act
     result, _alice, _eve = _release_to_subscriber(env)
@@ -160,7 +164,7 @@ def test_emit_event_released_exits_zero(env):
     assert result.exit_code == 0, result.output
 
 
-def test_emit_event_released_summary_names_the_event_type(env):
+def test_emit_event_released_summary_names_the_event_type(env, postgres_dsn):
     # Arrange
     # Act
     result, _alice, _eve = _release_to_subscriber(env)
@@ -169,7 +173,7 @@ def test_emit_event_released_summary_names_the_event_type(env):
     assert summary["notify"]["event_type"] == "released"
 
 
-def test_emit_event_released_summary_enqueues_the_subscriber(env):
+def test_emit_event_released_summary_enqueues_the_subscriber(env, postgres_dsn):
     # Arrange
     # Act
     result, _alice, eve = _release_to_subscriber(env)
@@ -178,7 +182,7 @@ def test_emit_event_released_summary_enqueues_the_subscriber(env):
     assert summary["notify"]["enqueued"] == [eve.id]
 
 
-def test_emit_event_released_reaches_subscriber_inbox(env):
+def test_emit_event_released_reaches_subscriber_inbox(env, postgres_dsn):
     # Arrange
     # Act
     _result, _alice, eve = _release_to_subscriber(env)
@@ -187,7 +191,7 @@ def test_emit_event_released_reaches_subscriber_inbox(env):
     assert [r["event_type"] for r in eve_inbox] == ["released"]
 
 
-def test_emit_event_released_inbox_row_names_the_card(env):
+def test_emit_event_released_inbox_row_names_the_card(env, postgres_dsn):
     # Arrange
     # Act
     _result, _alice, eve = _release_to_subscriber(env)
@@ -196,7 +200,7 @@ def test_emit_event_released_inbox_row_names_the_card(env):
     assert [r["card_id"] for r in eve_inbox] == ["card-rel"]
 
 
-def test_emit_event_released_leaves_the_owner_inbox_empty(env):
+def test_emit_event_released_leaves_the_owner_inbox_empty(env, postgres_dsn):
     # Arrange
     # Act
     _result, alice, _eve = _release_to_subscriber(env)
@@ -231,7 +235,7 @@ def _release_caused_by_the_subscriber(env):
     return result, alice
 
 
-def test_emit_event_released_by_the_actor_exits_zero(env):
+def test_emit_event_released_by_the_actor_exits_zero(env, postgres_dsn):
     # Arrange
     # Act
     result, _alice = _release_caused_by_the_subscriber(env)
@@ -239,7 +243,7 @@ def test_emit_event_released_by_the_actor_exits_zero(env):
     assert result.exit_code == 0, result.output
 
 
-def test_emit_event_released_summary_drops_the_actor(env):
+def test_emit_event_released_summary_drops_the_actor(env, postgres_dsn):
     # Arrange
     # Act
     result, _alice = _release_caused_by_the_subscriber(env)
@@ -248,7 +252,7 @@ def test_emit_event_released_summary_drops_the_actor(env):
     assert summary["notify"]["enqueued"] == []
 
 
-def test_emit_event_released_actor_is_not_notified(env):
+def test_emit_event_released_actor_is_not_notified(env, postgres_dsn):
     # Arrange
     # Act
     _result, alice = _release_caused_by_the_subscriber(env)
@@ -401,7 +405,7 @@ def _find_card_filtered_by_status():
     )
 
 
-def test_find_card_exits_zero(env):
+def test_find_card_exits_zero(env, postgres_dsn):
     # Arrange
     # Act
     result = _find_card_across_two_repos()
@@ -409,7 +413,7 @@ def test_find_card_exits_zero(env):
     assert result.exit_code == 0, result.output
 
 
-def test_find_card_prints_matching_ids(env):
+def test_find_card_prints_matching_ids(env, postgres_dsn):
     # Arrange
     # Act
     result = _find_card_across_two_repos()
@@ -418,7 +422,7 @@ def test_find_card_prints_matching_ids(env):
     assert ids == {"c-a", "c-b"}
 
 
-def test_find_card_no_match_exits_zero(env):
+def test_find_card_no_match_exits_zero(env, postgres_dsn):
     # Arrange
     # Act
     result = _find_card_with_no_match()
@@ -426,7 +430,7 @@ def test_find_card_no_match_exits_zero(env):
     assert result.exit_code == 0, result.output
 
 
-def test_find_card_empty_when_none_match(env):
+def test_find_card_empty_when_none_match(env, postgres_dsn):
     # Arrange
     # Act
     result = _find_card_with_no_match()
@@ -434,7 +438,7 @@ def test_find_card_empty_when_none_match(env):
     assert result.output.strip() == ""
 
 
-def test_find_card_status_filter_exits_zero(env):
+def test_find_card_status_filter_exits_zero(env, postgres_dsn):
     # Arrange
     # Act
     result = _find_card_filtered_by_status()
@@ -442,7 +446,7 @@ def test_find_card_status_filter_exits_zero(env):
     assert result.exit_code == 0, result.output
 
 
-def test_find_card_status_filter_selects_only_matches(env):
+def test_find_card_status_filter_selects_only_matches(env, postgres_dsn):
     # Arrange
     # Act — only the deferred card should match.
     result = _find_card_filtered_by_status()
@@ -490,7 +494,7 @@ def _find_then_emit(env):
     return resolve, card_id, emit, alice
 
 
-def test_find_card_resolves_the_expected_id(env):
+def test_find_card_resolves_the_expected_id(env, postgres_dsn):
     # Arrange
     # Act
     resolve, card_id, _emit, _alice = _find_then_emit(env)
@@ -498,7 +502,7 @@ def test_find_card_resolves_the_expected_id(env):
     assert resolve.exit_code == 0 and card_id == "c-rel"
 
 
-def test_emit_with_a_resolved_id_exits_zero(env):
+def test_emit_with_a_resolved_id_exits_zero(env, postgres_dsn):
     # Arrange
     # Act
     _resolve, _card_id, emit, _alice = _find_then_emit(env)
@@ -506,7 +510,7 @@ def test_emit_with_a_resolved_id_exits_zero(env):
     assert emit.exit_code == 0, emit.output
 
 
-def test_find_card_then_emit_with_resolved_id(env):
+def test_find_card_then_emit_with_resolved_id(env, postgres_dsn):
     # Arrange
     # Act
     _resolve, _card_id, _emit, alice = _find_then_emit(env)

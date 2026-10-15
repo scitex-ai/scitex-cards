@@ -525,7 +525,7 @@ class TestP8MovePickerAllProjects:
 
     def test_new_project_button_text_present(self, board_js):
         # The legacy "+ New project…" fallback button (used when the
-        # scitex-ui Combobox is unavailable). Either spelling acceptable.
+        # SDK Combobox is unavailable). Either spelling acceptable.
         # The button is emitted from a JS template literal, not template
         # markup, so it travels with the move-picker's renderer.
         # Arrange

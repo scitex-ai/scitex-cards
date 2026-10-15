@@ -11,6 +11,10 @@ reach the people who delegated. Leaving the loop is an explicit
 ``set_subscriber`` remove, never a side effect of handing off.
 
 Real store files, AAA, no mocks (STX-NM).
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every seed below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -24,12 +28,17 @@ from scitex_cards._store import add_task, reassign_all, reassign_task
 
 
 @pytest.fixture()
-def store():
+def store(postgres_dsn):
     # Post-cutover: the store is the canonical DB that the conftest
     # bootstraps empty per-test. Pass the pinned STORE identity path (==
     # resolve_tasks_path(None)) to the verbs so read-after-write round-trips;
     # the verbs read+write the DB and IGNORE this path except as the
     # provenance stamp, which must equal the resolved store.
+    #
+    # ``postgres_dsn`` is requested but is not the seed target. With no
+    # writable PostgreSQL the harness pins the refused placeholder, so the
+    # seeding below would raise — the fixture fails first, LOUDLY, with the
+    # reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
     return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 

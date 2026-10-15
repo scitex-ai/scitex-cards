@@ -211,14 +211,14 @@ def test_favicon_view_body_is_scitex_s_svg():
 
 
 def test_standalone_template_declares_no_favicon_of_its_own(store):
-    """SINGLE SOURCE: the brand mark is scitex-ui's, and only scitex-ui's.
+    """SINGLE SOURCE: the brand mark is the SDK's, and only the SDK's.
 
     This inverts an earlier pin (operator 3683) that required our own
-    ``<link rel="icon">`` here. The shell template gained a default favicon in
-    scitex-ui 0.7.1, so declaring a second one meant two copies of one mark,
+    ``<link rel="icon">`` here. The shell template gained a default favicon,
+    so declaring a second one meant two copies of one mark,
     free to drift apart — with ours winning by document order, which made
-    scitex-ui's copy the one that silently went stale. If the icon is wrong,
-    fix it in scitex-ui; do not re-add a link here.
+    the SDK's copy the one that silently went stale. If the icon is wrong,
+    fix it in scitex-sdk; do not re-add a link here.
     """
     # Arrange
     request = RequestFactory().get(f"/?store={store}")
@@ -230,7 +230,7 @@ def test_standalone_template_declares_no_favicon_of_its_own(store):
 
 @pytest.mark.parametrize(
     "forbidden",
-    [b"{#", b"#}", b"One source, not two copies", b"fix it in scitex-ui"],
+    [b"{#", b"#}", b"One source, not two copies", b"fix it in scitex-sdk"],
 )
 def test_standalone_template_does_not_leak_django_comment(store, forbidden):
     """The favicon comment must NOT render as visible page text.
@@ -251,11 +251,14 @@ def test_standalone_template_does_not_leak_django_comment(store, forbidden):
 
 
 _NESTED_STORE_TEXT = (
+    # `pending` was abolished 2026-07-10 — `deferred` is the successor
+    # default. The parent-field assertions never touch status, so these
+    # fixtures must stay live (not tolerated-legacy).
     "tasks:\n"
     "  - {id: hub, title: Hub, status: goal}\n"
-    "  - {id: child-a, title: Child A, status: pending, parent: hub}\n"
+    "  - {id: child-a, title: Child A, status: deferred, parent: hub}\n"
     "  - {id: child-b, title: Child B, status: in_progress, parent: hub}\n"
-    "  - {id: solo, title: Solo top-level, status: pending}\n"
+    "  - {id: solo, title: Solo top-level, status: deferred}\n"
 )
 
 
@@ -384,7 +387,7 @@ _ALL_STATUSES = (
     "done",
     "in_progress",
     "blocked",
-    "pending",
+    "cancelled",
     "deferred",
     "failed",
 )

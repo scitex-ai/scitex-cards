@@ -342,8 +342,9 @@ def test_archive_survives_concurrent_write(store):
     )
     # Act
     tasks = _load(store)
-    # Assert
-    assert tasks["north"]["status"] == "deferred" and "concurrent" in tasks
+    # Assert — the archived row lands terminal (cancelled, like the CLI
+    # ``close --reason`` twin), not OPEN, alongside the concurrent write.
+    assert tasks["north"]["status"] == "cancelled" and "concurrent" in tasks
 
 
 # ── 2a. handle_update delegates to the locked update_task verb ────────────
@@ -712,6 +713,31 @@ def test_restore_reapplies_the_scrubbed_edge_exactly(store):
     # Assert
     # the FE Undo replay puts the edge back.
     assert "build" in _load(store)["gate"]["depends_on"]
+
+
+def test_restore_rejects_abolished_status_with_400(store):
+    # Arrange — pending was abolished 2026-07-10: the Delete→Undo
+    # affordance must refuse to mint it, like create/update and reopen do.
+    deleted = json.loads(_post("delete", store, {"id": "build"}).content)
+    task = dict(deleted["removed"])
+    task["status"] = "pending"
+    # Act
+    resp = _post("restore", store, {"task": task, "refs": deleted["refs"]})
+    # Assert
+    assert resp.status_code == 400
+
+
+def test_restore_rejected_restore_leaves_the_row_deleted(store):
+    # Arrange — same crafted restore, observing the stored rows instead of
+    # the response: the 400 fires before the store lock, so nothing is
+    # re-inserted.
+    deleted = json.loads(_post("delete", store, {"id": "build"}).content)
+    task = dict(deleted["removed"])
+    task["status"] = "pending"
+    # Act
+    _post("restore", store, {"task": task, "refs": deleted["refs"]})
+    # Assert
+    assert "build" not in _load(store)
 
 
 # EOF

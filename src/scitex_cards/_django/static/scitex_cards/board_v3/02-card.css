@@ -59,8 +59,8 @@
 .card[data-status="blocked"]::before {
   background: var(--status-fill-blocked);
 }
-.card[data-status="pending"]::before {
-  background: var(--status-fill-pending);
+.card[data-status="cancelled"]::before {
+  background: var(--status-fill-cancelled);
 }
 .card[data-status="deferred"]::before {
   background: var(--status-fill-deferred);
@@ -101,8 +101,8 @@
 .card[data-status="blocked"] .card-status {
   color: var(--status-stroke-blocked);
 }
-.card[data-status="pending"] .card-status {
-  color: var(--status-stroke-pending);
+.card[data-status="cancelled"] .card-status {
+  color: var(--status-stroke-cancelled);
 }
 .card[data-status="deferred"] .card-status {
   color: var(--status-stroke-deferred);

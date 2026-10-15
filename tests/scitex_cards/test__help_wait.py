@@ -24,7 +24,7 @@ from scitex_cards import _help_wait, _store
 class TestHelpWaitCreate:
     """A fresh card matches the byte-for-byte contract."""
 
-    def test_creates_card_with_canonical_id(self, tmp_path):
+    def test_creates_card_with_canonical_id(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act
@@ -32,7 +32,7 @@ class TestHelpWaitCreate:
         # Assert
         assert card["id"] == "help-alice-waiting"
 
-    def test_card_title_names_the_waiting_agent(self, tmp_path):
+    def test_card_title_names_the_waiting_agent(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act
@@ -40,7 +40,7 @@ class TestHelpWaitCreate:
         # Assert
         assert card["title"] == "[help] alice waiting on operator decision"
 
-    def test_card_status_is_blocked(self, tmp_path):
+    def test_card_status_is_blocked(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act
@@ -48,7 +48,7 @@ class TestHelpWaitCreate:
         # Assert
         assert card["status"] == "blocked"
 
-    def test_card_blocker_is_operator_decision(self, tmp_path):
+    def test_card_blocker_is_operator_decision(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act
@@ -56,7 +56,7 @@ class TestHelpWaitCreate:
         # Assert
         assert card["blocker"] == "operator-decision"
 
-    def test_card_assignee_is_the_agent(self, tmp_path):
+    def test_card_assignee_is_the_agent(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act
@@ -64,7 +64,7 @@ class TestHelpWaitCreate:
         # Assert
         assert card["assignee"] == "alice"
 
-    def test_card_scope_is_the_agent_slice(self, tmp_path):
+    def test_card_scope_is_the_agent_slice(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act
@@ -72,7 +72,7 @@ class TestHelpWaitCreate:
         # Assert
         assert card["scope"] == "agent:alice"
 
-    def test_question_stored_in_note(self, tmp_path):
+    def test_question_stored_in_note(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act
@@ -80,7 +80,7 @@ class TestHelpWaitCreate:
         # Assert
         assert card["note"] == "merge or wait?"
 
-    def test_empty_question_uses_placeholder(self, tmp_path):
+    def test_empty_question_uses_placeholder(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act
@@ -88,7 +88,7 @@ class TestHelpWaitCreate:
         # Assert
         assert card["note"] == _help_wait.HELP_WAIT_PLACEHOLDER
 
-    def test_explicit_host_used(self, tmp_path):
+    def test_explicit_host_used(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act
@@ -96,7 +96,7 @@ class TestHelpWaitCreate:
         # Assert
         assert card["host"] == "spartan"
 
-    def test_host_defaults_to_a_nonempty_hostname(self, tmp_path):
+    def test_host_defaults_to_a_nonempty_hostname(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act
@@ -104,7 +104,7 @@ class TestHelpWaitCreate:
         # Assert
         assert card["host"] and isinstance(card["host"], str)
 
-    def test_last_activity_is_utc_iso_z(self, tmp_path):
+    def test_last_activity_is_utc_iso_z(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act
@@ -112,7 +112,7 @@ class TestHelpWaitCreate:
         # Assert
         assert card["last_activity"].endswith("Z")
 
-    def test_card_is_persisted_to_store(self, tmp_path):
+    def test_card_is_persisted_to_store(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act
@@ -121,7 +121,7 @@ class TestHelpWaitCreate:
         # Assert
         assert {r["id"] for r in rows} == {"help-alice-waiting"}
 
-    def test_blank_agent_raises_on_help_wait(self, tmp_path):
+    def test_blank_agent_raises_on_help_wait(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         blank_agent = "   "
@@ -135,7 +135,7 @@ class TestHelpWaitCreate:
 class TestHelpWaitUpsert:
     """A re-run refreshes in place — exactly one card per agent."""
 
-    def test_rerun_does_not_duplicate(self, tmp_path):
+    def test_rerun_does_not_duplicate(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _help_wait.help_wait(store, "alice", question="q1")
@@ -149,7 +149,7 @@ class TestHelpWaitUpsert:
         # Assert
         assert len(rows) == 1
 
-    def test_rerun_refreshes_note_in_place(self, tmp_path):
+    def test_rerun_refreshes_note_in_place(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _help_wait.help_wait(store, "alice", question="q1")
@@ -158,7 +158,7 @@ class TestHelpWaitUpsert:
         # Assert
         assert card["note"] == "q2"
 
-    def test_rerun_preserves_created_at(self, tmp_path):
+    def test_rerun_preserves_created_at(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         first = _help_wait.help_wait(store, "alice", question="q1")
@@ -167,7 +167,7 @@ class TestHelpWaitUpsert:
         # Assert
         assert second.get("created_at") == first.get("created_at")
 
-    def test_distinct_agents_get_distinct_cards(self, tmp_path):
+    def test_distinct_agents_get_distinct_cards(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act
@@ -185,7 +185,7 @@ class TestHelpWaitUpsert:
 class TestHelpClear:
     """Resolving the card sets done + clears the blocker; absent => no-op."""
 
-    def test_clear_reports_the_card_as_cleared(self, tmp_path):
+    def test_clear_reports_the_card_as_cleared(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _help_wait.help_wait(store, "alice", question="q1")
@@ -194,7 +194,7 @@ class TestHelpClear:
         # Assert
         assert payload["cleared"] is True
 
-    def test_clear_marks_the_card_done(self, tmp_path):
+    def test_clear_marks_the_card_done(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _help_wait.help_wait(store, "alice", question="q1")
@@ -203,7 +203,7 @@ class TestHelpClear:
         # Assert
         assert payload["task"]["status"] == "done"
 
-    def test_clear_drops_the_blocker(self, tmp_path):
+    def test_clear_drops_the_blocker(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _help_wait.help_wait(store, "alice", question="q1")
@@ -213,7 +213,7 @@ class TestHelpClear:
         # Assert
         assert "blocker" not in card
 
-    def test_clear_is_noop_when_card_absent(self, tmp_path):
+    def test_clear_is_noop_when_card_absent(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _help_wait.help_wait(store, "alice")  # different agent present
@@ -222,7 +222,7 @@ class TestHelpClear:
         # Assert
         assert payload == {"task_id": "help-bob-waiting", "cleared": False}
 
-    def test_clear_is_noop_when_store_absent(self, tmp_path):
+    def test_clear_is_noop_when_store_absent(self, tmp_path, postgres_dsn):
         # Arrange — an empty canonical store (no card seeded) is the database
         # equivalent of the old "store file absent": clearing finds nothing.
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
@@ -231,7 +231,7 @@ class TestHelpClear:
         # Assert
         assert payload["cleared"] is False
 
-    def test_blank_agent_raises_on_help_clear(self, tmp_path):
+    def test_blank_agent_raises_on_help_clear(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         blank_agent = ""
@@ -250,7 +250,7 @@ class TestHelpWaitCli:
 
         return CliRunner()
 
-    def test_help_wait_cli_exits_zero(self, tmp_path):
+    def test_help_wait_cli_exits_zero(self, tmp_path, postgres_dsn):
         # Arrange
         from scitex_cards._cli import main
 
@@ -263,7 +263,7 @@ class TestHelpWaitCli:
         # Assert
         assert result.exit_code == 0
 
-    def test_help_wait_cli_stores_the_question_in_note(self, tmp_path):
+    def test_help_wait_cli_stores_the_question_in_note(self, tmp_path, postgres_dsn):
         # Arrange
         from scitex_cards._cli import main
 
@@ -277,7 +277,7 @@ class TestHelpWaitCli:
         # Assert
         assert card["note"] == "merge?"
 
-    def test_help_wait_cli_sets_the_operator_decision_blocker(self, tmp_path):
+    def test_help_wait_cli_sets_the_operator_decision_blocker(self, tmp_path, postgres_dsn):
         # Arrange
         from scitex_cards._cli import main
 
@@ -291,7 +291,7 @@ class TestHelpWaitCli:
         # Assert
         assert card["blocker"] == "operator-decision"
 
-    def test_help_wait_cli_json_exits_zero(self, tmp_path):
+    def test_help_wait_cli_json_exits_zero(self, tmp_path, postgres_dsn):
         # Arrange
         from scitex_cards._cli import main
 
@@ -304,7 +304,7 @@ class TestHelpWaitCli:
         # Assert
         assert result.exit_code == 0
 
-    def test_help_wait_cli_json_prints_the_card_id(self, tmp_path):
+    def test_help_wait_cli_json_prints_the_card_id(self, tmp_path, postgres_dsn):
         # Arrange
         import json
 
@@ -319,7 +319,7 @@ class TestHelpWaitCli:
         # Assert
         assert json.loads(result.output)["id"] == "help-alice-waiting"
 
-    def test_help_clear_cli_exits_zero(self, tmp_path):
+    def test_help_clear_cli_exits_zero(self, tmp_path, postgres_dsn):
         # Arrange
         from scitex_cards._cli import main
 
@@ -330,7 +330,7 @@ class TestHelpWaitCli:
         # Assert
         assert result.exit_code == 0
 
-    def test_help_clear_cli_marks_the_card_done(self, tmp_path):
+    def test_help_clear_cli_marks_the_card_done(self, tmp_path, postgres_dsn):
         # Arrange
         from scitex_cards._cli import main
 
@@ -342,7 +342,7 @@ class TestHelpWaitCli:
         # Assert
         assert card["status"] == "done"
 
-    def test_help_clear_cli_noop_exit_zero_when_absent(self, tmp_path):
+    def test_help_clear_cli_noop_exit_zero_when_absent(self, tmp_path, postgres_dsn):
         # Arrange
         from scitex_cards._cli import main
 
@@ -366,7 +366,7 @@ class TestHelpWaitMcp:
         # Assert
         assert "help_wait" in TOOL_NAMES and "help_clear" in TOOL_NAMES
 
-    def test_help_wait_tool_upserts(self, tmp_path):
+    def test_help_wait_tool_upserts(self, tmp_path, postgres_dsn):
         # Arrange
         import asyncio
         import json
@@ -382,7 +382,7 @@ class TestHelpWaitMcp:
         # Assert
         assert json.loads(out)["id"] == "help-alice-waiting"
 
-    def test_help_clear_tool_resolves(self, tmp_path):
+    def test_help_clear_tool_resolves(self, tmp_path, postgres_dsn):
         # Arrange
         import asyncio
         import json
@@ -399,6 +399,39 @@ class TestHelpWaitMcp:
         out = asyncio.run(cfn(agent="alice", tasks_path=store))
         # Assert
         assert json.loads(out)["cleared"] is True
+
+
+class TestHelpWaitRewaitClearsCompletionStamp:
+    """Store-backed round-trip twins for the re-wait stamp clear (CI-with-PG).
+
+    PG-free pins live in ``test__help_wait_clears_completion_stamp.py``;
+    these two drive the real cycle — wait -> ``complete_task`` (stamps)
+    -> re-wait — against the throwaway store. They refuse via the
+    designed fail-LOUD guard where no writable PostgreSQL opens.
+    """
+
+    def test_rewait_returns_a_completed_card_to_blocked(self, tmp_path, postgres_dsn):
+        # Arrange
+        store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+        card = _help_wait.help_wait(store, "alice", question="merge or wait?")
+        _store.complete_task(store, card["id"])
+        # Act
+        reopened = _help_wait.help_wait(store, "alice", question="still waiting?")
+        # Assert
+        assert reopened["status"] == "blocked"
+
+    def test_rewait_drops_the_completion_stamp(self, tmp_path, postgres_dsn):
+        # Arrange
+        store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+        card = _help_wait.help_wait(store, "alice", question="merge or wait?")
+        stamped = _store.complete_task(store, card["id"])
+        assert stamped["_log_meta"]["completed_at"]
+        # Act
+        reopened = _help_wait.help_wait(store, "alice", question="still waiting?")
+        # Assert: no phantom-delivery row — the aggregates believe
+        # `completed_at` alone, so it must be gone from a live row.
+        assert "completed_at" not in reopened.get("_log_meta", {})
+        assert "completed_by" not in reopened.get("_log_meta", {})
 
 
 # EOF

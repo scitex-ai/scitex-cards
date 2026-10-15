@@ -23,7 +23,7 @@
  *     `SCITEX_CARDS_AGENT` value read from the page-load env (rendered
  *     into the bundle by the Django template) with operator-typed
  *     override. The hash-to-color helper is a stable, content-agnostic
- *     mapping from a string to a scitex-ui token.
+ *     mapping from a string to an SDK token.
  *
  * Out of scope (deferred, flagged with CARDs):
  *   - RW-perm gating (operator-write, agents-read).
@@ -43,7 +43,7 @@ const AUTHOR_KEY = "stx-cards-comment-author";
  *  cognitive load uniform. */
 export const CHAT_POLL_INTERVAL_MS = 30_000;
 
-/** Closed palette of scitex-ui accent tokens the author-color hash maps
+/** Closed palette of SDK accent tokens the author-color hash maps
  *  into. Six entries balances "distinct enough to track speakers" with
  *  "small enough that two authors rarely re-roll the same slot". No raw
  *  hex / rgb here — the tokens flip with the light/dark theme via
@@ -57,7 +57,7 @@ export const AUTHOR_COLOR_TOKENS: readonly string[] = [
   "var(--stx-text-faint)",
 ];
 
-/** Map an author string to a stable scitex-ui token color.
+/** Map an author string to a stable SDK token color.
  *
  *  The hash is a tiny djb2 variant — content-agnostic, deterministic,
  *  zero-deps. `null` / empty input lands in the "unknown" slot (the

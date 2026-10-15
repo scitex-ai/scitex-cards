@@ -19,6 +19,15 @@ Covers the spec's required cases:
 * terminal re-report: seed a ``failed_terminal`` ledger entry, run enough ticks
   to cross ``terminal_report_every``, assert ``report_terminal_misses`` returns
   it + the re-report WARNING fires AND is THROTTLED (not every tick).
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the seeding below enqueues into the PG-backed inbox
+(:mod:`scitex_cards._inbox_postgres`), which resolves the ambient per-test
+store — refused without a writable cluster. ``tmp_path`` stays load-bearing:
+recipients.json + the delivery ledger + the pidfile resolve next to it. The
+eight heartbeat tests stay unguarded by design: with no recipients and no
+inbox rows the loop never opens the store (pidfile-only), so they pass
+clusterless.
 """
 
 from __future__ import annotations
@@ -129,7 +138,7 @@ def _run_three_ticks(tmp_path):
     return result, recorder, sleeps, note_id, store
 
 
-def test_daemon_runs_the_requested_iterations(tmp_path):
+def test_daemon_runs_the_requested_iterations(tmp_path, postgres_dsn):
     # Arrange
     # Act
     result, _recorder, _sleeps, _note_id, _store_path = _run_three_ticks(tmp_path)
@@ -137,7 +146,7 @@ def test_daemon_runs_the_requested_iterations(tmp_path):
     assert result["iterations"] == 3
 
 
-def test_daemon_reports_max_iterations_as_the_stop_cause(tmp_path):
+def test_daemon_reports_max_iterations_as_the_stop_cause(tmp_path, postgres_dsn):
     # Arrange
     # Act
     result, _recorder, _sleeps, _note_id, _store_path = _run_three_ticks(tmp_path)
@@ -145,7 +154,7 @@ def test_daemon_reports_max_iterations_as_the_stop_cause(tmp_path):
     assert result["stopped_by"] == "max_iterations"
 
 
-def test_daemon_sends_each_notification_exactly_once(tmp_path):
+def test_daemon_sends_each_notification_exactly_once(tmp_path, postgres_dsn):
     # Arrange
     # Act
     result, _recorder, _sleeps, _note_id, _store_path = _run_three_ticks(tmp_path)
@@ -154,7 +163,7 @@ def test_daemon_sends_each_notification_exactly_once(tmp_path):
     assert result["totals"]["sent"] == 1
 
 
-def test_the_channel_is_invoked_once_across_the_ticks(tmp_path):
+def test_the_channel_is_invoked_once_across_the_ticks(tmp_path, postgres_dsn):
     # Arrange
     # Act
     _result, recorder, _sleeps, _note_id, _store_path = _run_three_ticks(tmp_path)
@@ -162,7 +171,7 @@ def test_the_channel_is_invoked_once_across_the_ticks(tmp_path):
     assert len(recorder.calls) == 1
 
 
-def test_the_channel_receives_the_seeded_notification(tmp_path):
+def test_the_channel_receives_the_seeded_notification(tmp_path, postgres_dsn):
     # Arrange
     # Act
     _result, recorder, _sleeps, note_id, _store_path = _run_three_ticks(tmp_path)
@@ -170,7 +179,7 @@ def test_the_channel_receives_the_seeded_notification(tmp_path):
     assert recorder.calls[0]["notification"]["id"] == note_id
 
 
-def test_the_daemon_sleeps_for_the_configured_interval(tmp_path):
+def test_the_daemon_sleeps_for_the_configured_interval(tmp_path, postgres_dsn):
     # Arrange
     # Act
     _result, _recorder, sleeps, _note_id, _store_path = _run_three_ticks(tmp_path)
@@ -180,7 +189,7 @@ def test_the_daemon_sleeps_for_the_configured_interval(tmp_path):
     assert all(s == 120.0 for s in sleeps)
 
 
-def test_the_pidfile_is_removed_on_normal_exit(tmp_path):
+def test_the_pidfile_is_removed_on_normal_exit(tmp_path, postgres_dsn):
     # Arrange
     # Act
     _result, _recorder, _sleeps, _note_id, store = _run_three_ticks(tmp_path)
@@ -212,7 +221,7 @@ def _run_until_stop_event(tmp_path):
     return result, store
 
 
-def test_daemon_stops_on_event_after_k_ticks(tmp_path):
+def test_daemon_stops_on_event_after_k_ticks(tmp_path, postgres_dsn):
     """A stop event tripped from inside (via sleep seam) ends the loop cleanly."""
     # Arrange
     # Act
@@ -221,7 +230,7 @@ def test_daemon_stops_on_event_after_k_ticks(tmp_path):
     assert result["stopped_by"] == "stop_event"
 
 
-def test_a_stop_event_ends_the_loop_on_the_expected_tick(tmp_path):
+def test_a_stop_event_ends_the_loop_on_the_expected_tick(tmp_path, postgres_dsn):
     # Arrange
     # Act
     result, _store_path = _run_until_stop_event(tmp_path)
@@ -229,7 +238,7 @@ def test_a_stop_event_ends_the_loop_on_the_expected_tick(tmp_path):
     assert result["iterations"] == 2
 
 
-def test_the_pidfile_is_removed_after_a_stop_event(tmp_path):
+def test_the_pidfile_is_removed_after_a_stop_event(tmp_path, postgres_dsn):
     # Arrange
     # Act
     _result, store = _run_until_stop_event(tmp_path)
@@ -266,7 +275,7 @@ def _run_second_daemon_while_locked(tmp_path):
     return caught, recorder, store
 
 
-def test_single_instance_second_daemon_fails_fast(tmp_path):
+def test_single_instance_second_daemon_fails_fast(tmp_path, postgres_dsn):
     # Arrange
     # Act
     caught, _recorder, _store_path = _run_second_daemon_while_locked(tmp_path)
@@ -274,7 +283,7 @@ def test_single_instance_second_daemon_fails_fast(tmp_path):
     assert isinstance(caught, DaemonAlreadyRunning)
 
 
-def test_the_already_running_error_says_it_is_already_running(tmp_path):
+def test_the_already_running_error_says_it_is_already_running(tmp_path, postgres_dsn):
     # Arrange
     # Act
     caught, _recorder, _store_path = _run_second_daemon_while_locked(tmp_path)
@@ -282,7 +291,7 @@ def test_the_already_running_error_says_it_is_already_running(tmp_path):
     assert "already" in str(caught).lower()
 
 
-def test_a_blocked_second_daemon_delivers_nothing(tmp_path):
+def test_a_blocked_second_daemon_delivers_nothing(tmp_path, postgres_dsn):
     # Arrange
     # Act
     _caught, recorder, _store_path = _run_second_daemon_while_locked(tmp_path)
@@ -290,7 +299,7 @@ def test_a_blocked_second_daemon_delivers_nothing(tmp_path):
     assert recorder.calls == []
 
 
-def test_the_pidfile_is_gone_once_the_first_daemon_releases(tmp_path):
+def test_the_pidfile_is_gone_once_the_first_daemon_releases(tmp_path, postgres_dsn):
     # Arrange
     # Act
     _caught, _recorder, store = _run_second_daemon_while_locked(tmp_path)
@@ -298,7 +307,7 @@ def test_the_pidfile_is_gone_once_the_first_daemon_releases(tmp_path):
     assert not pidfile_path(store).exists()
 
 
-def test_the_lock_slot_is_reusable_after_release(tmp_path):
+def test_the_lock_slot_is_reusable_after_release(tmp_path, postgres_dsn):
     # Arrange
     _caught, _recorder, store = _run_second_daemon_while_locked(tmp_path)
     second = _SingleInstanceLock(pidfile_path(store))
@@ -312,7 +321,7 @@ def test_the_lock_slot_is_reusable_after_release(tmp_path):
 # --------------------------------------------------------------------------- #
 # (3) flock release on BOTH exit paths (normal stop + exception mid-loop)     #
 # --------------------------------------------------------------------------- #
-def test_flock_released_after_normal_stop(tmp_path):
+def test_flock_released_after_normal_stop(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _seeded_store(tmp_path, "u_dave")
     # Act
@@ -327,7 +336,7 @@ def test_flock_released_after_normal_stop(tmp_path):
     assert not pidfile_path(store).exists()
 
 
-def test_the_lock_is_reacquirable_after_a_normal_stop(tmp_path):
+def test_the_lock_is_reacquirable_after_a_normal_stop(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _seeded_store(tmp_path, "u_dave")
     run_notifyd(
@@ -371,7 +380,7 @@ def _run_with_exploding_sleep(tmp_path):
     return caught, boom, store
 
 
-def test_an_exception_outside_the_tick_guard_propagates(tmp_path):
+def test_an_exception_outside_the_tick_guard_propagates(tmp_path, postgres_dsn):
     # Arrange
     # Act
     caught, boom, _store_path = _run_with_exploding_sleep(tmp_path)
@@ -379,7 +388,7 @@ def test_an_exception_outside_the_tick_guard_propagates(tmp_path):
     assert caught is boom
 
 
-def test_flock_released_after_exception_midloop(tmp_path):
+def test_flock_released_after_exception_midloop(tmp_path, postgres_dsn):
     """An exception OUTSIDE the per-tick guard still releases the lock."""
     # Arrange
     # Act
@@ -389,7 +398,7 @@ def test_flock_released_after_exception_midloop(tmp_path):
     assert not pidfile_path(store).exists()
 
 
-def test_the_lock_is_reacquirable_after_a_midloop_exception(tmp_path):
+def test_the_lock_is_reacquirable_after_a_midloop_exception(tmp_path, postgres_dsn):
     # Arrange
     _caught, _boom, store = _run_with_exploding_sleep(tmp_path)
     again = _SingleInstanceLock(pidfile_path(store))
@@ -425,7 +434,7 @@ def _run_with_exploding_tick(tmp_path, caplog):
     return result, store
 
 
-def test_tick_exception_self_heals_and_continues(tmp_path, caplog):
+def test_tick_exception_self_heals_and_continues(tmp_path, caplog, postgres_dsn):
     """A raising tick does not kill the daemon — it finishes all its ticks."""
     # Arrange
     # Act
@@ -434,7 +443,7 @@ def test_tick_exception_self_heals_and_continues(tmp_path, caplog):
     assert result["iterations"] == 3
 
 
-def test_a_self_healed_daemon_still_stops_cleanly(tmp_path, caplog):
+def test_a_self_healed_daemon_still_stops_cleanly(tmp_path, caplog, postgres_dsn):
     # Arrange
     # Act
     result, _store_path = _run_with_exploding_tick(tmp_path, caplog)
@@ -442,7 +451,7 @@ def test_a_self_healed_daemon_still_stops_cleanly(tmp_path, caplog):
     assert result["stopped_by"] == "max_iterations"
 
 
-def test_each_failing_tick_is_logged_with_a_traceback(tmp_path, caplog):
+def test_each_failing_tick_is_logged_with_a_traceback(tmp_path, caplog, postgres_dsn):
     # Arrange
     # Act
     _result, _store_path = _run_with_exploding_tick(tmp_path, caplog)
@@ -453,7 +462,7 @@ def test_each_failing_tick_is_logged_with_a_traceback(tmp_path, caplog):
     assert len(tick_errors) == 3
 
 
-def test_the_lock_is_cleaned_up_despite_failing_ticks(tmp_path, caplog):
+def test_the_lock_is_cleaned_up_despite_failing_ticks(tmp_path, caplog, postgres_dsn):
     # Arrange
     # Act
     _result, store = _run_with_exploding_tick(tmp_path, caplog)
@@ -472,7 +481,7 @@ def _seeded_terminal_miss(tmp_path):
     return report_terminal_misses(store)
 
 
-def test_report_terminal_misses_returns_seeded_entry(tmp_path):
+def test_report_terminal_misses_returns_seeded_entry(tmp_path, postgres_dsn):
     # Arrange
     # Act
     misses = _seeded_terminal_miss(tmp_path)
@@ -480,7 +489,7 @@ def test_report_terminal_misses_returns_seeded_entry(tmp_path):
     assert len(misses) == 1
 
 
-def test_a_reported_miss_names_its_recipient(tmp_path):
+def test_a_reported_miss_names_its_recipient(tmp_path, postgres_dsn):
     # Arrange
     # Act
     misses = _seeded_terminal_miss(tmp_path)
@@ -488,7 +497,7 @@ def test_a_reported_miss_names_its_recipient(tmp_path):
     assert misses[0]["recipient"] == "u_frank"
 
 
-def test_a_reported_miss_names_its_note_id(tmp_path):
+def test_a_reported_miss_names_its_note_id(tmp_path, postgres_dsn):
     # Arrange
     # Act
     misses = _seeded_terminal_miss(tmp_path)
@@ -496,7 +505,7 @@ def test_a_reported_miss_names_its_note_id(tmp_path):
     assert misses[0]["note_id"] == "n_deadbeef"
 
 
-def test_a_reported_miss_names_its_channel(tmp_path):
+def test_a_reported_miss_names_its_channel(tmp_path, postgres_dsn):
     # Arrange
     # Act
     misses = _seeded_terminal_miss(tmp_path)
@@ -504,7 +513,7 @@ def test_a_reported_miss_names_its_channel(tmp_path):
     assert misses[0]["channel"] == "telegram"
 
 
-def test_a_reported_miss_carries_its_attempt_count(tmp_path):
+def test_a_reported_miss_carries_its_attempt_count(tmp_path, postgres_dsn):
     # Arrange
     # Act
     misses = _seeded_terminal_miss(tmp_path)
@@ -512,7 +521,7 @@ def test_a_reported_miss_carries_its_attempt_count(tmp_path):
     assert misses[0]["attempts"] == 5
 
 
-def test_a_reported_miss_carries_the_failure_detail(tmp_path):
+def test_a_reported_miss_carries_the_failure_detail(tmp_path, postgres_dsn):
     # Arrange
     # Act
     misses = _seeded_terminal_miss(tmp_path)
@@ -538,7 +547,7 @@ def _run_with_terminal_report(tmp_path, caplog, *, every, iterations, recipient)
     return [r for r in caplog.records if "OUTSTANDING terminal comm-miss" in r.message]
 
 
-def test_terminal_re_report_fires_and_is_throttled(tmp_path, caplog):
+def test_terminal_re_report_fires_and_is_throttled(tmp_path, caplog, postgres_dsn):
     # Arrange
     # Act
     headers = _run_with_terminal_report(
@@ -549,7 +558,7 @@ def test_terminal_re_report_fires_and_is_throttled(tmp_path, caplog):
     assert len(headers) == 2, f"expected 2 throttled re-reports, got {len(headers)}"
 
 
-def test_the_re_report_names_the_undelivered_note(tmp_path, caplog):
+def test_the_re_report_names_the_undelivered_note(tmp_path, caplog, postgres_dsn):
     # Arrange
     # Act
     _run_with_terminal_report(
@@ -560,7 +569,7 @@ def test_the_re_report_names_the_undelivered_note(tmp_path, caplog):
     assert detail_lines, "the outstanding comm-miss note id must be re-surfaced"
 
 
-def test_terminal_report_every_zero_disables(tmp_path, caplog):
+def test_terminal_report_every_zero_disables(tmp_path, caplog, postgres_dsn):
     # Arrange
     # Act
     headers = _run_with_terminal_report(
@@ -573,7 +582,7 @@ def test_terminal_report_every_zero_disables(tmp_path, caplog):
 # --------------------------------------------------------------------------- #
 # (5) the daemon NEVER flips the inbox seen cursor (read-only contract)        #
 # --------------------------------------------------------------------------- #
-def test_a_seeded_notification_starts_unseen(tmp_path):
+def test_a_seeded_notification_starts_unseen(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _seeded_store(tmp_path, "u_ivan")
     # Act
@@ -582,7 +591,7 @@ def test_a_seeded_notification_starts_unseen(tmp_path):
     assert len(before) == 1
 
 
-def test_daemon_never_flips_inbox_seen(tmp_path):
+def test_daemon_never_flips_inbox_seen(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _seeded_store(tmp_path, "u_ivan")
     # Act

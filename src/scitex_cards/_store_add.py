@@ -65,18 +65,53 @@ def add_task(
     + compute metadata ``job_id`` / ``command`` / ``started_at`` /
     ``finished_at``) without an explosion of named parameters. ``None``
     values are dropped; non-``None`` values flow into the new task dict
-    and the writer's validator gates closed enums (``status`` / ``kind``
-    / ``blocker``) — typos raise ``TaskValidationError`` with the bad
-    value and the valid set. Unknown keys are accepted at this layer
+    and the writer's validator checks closed enums (``status`` / ``kind`` /
+    ``blocker``) — but a bad VALUE only warns, never refuses, per the
+    2026-07-10 ruling (a status value must never cost someone their
+    card): the write lands and the warning is returned in
+    ``result["warnings"]`` (see :mod:`scitex_cards._validate` and
+    ``test__tolerated_warnings_reach_the_writer.py``). That warn-only
+    contract belongs to the STORE layer (shared-store writes, where the
+    bad row may be another, newer agent's). This verb is a SOURCE, so it
+    stays strict like ``update_task`` / ``upsert_task`` and the board
+    create handler: a caller-supplied ``status`` outside
+    ``VALID_STATUSES`` — including the abolished ``"pending"`` — raises
+    ``TaskValidationError`` BEFORE the store guard. Only STRUCTURAL
+    faults (duplicate id, missing id/title, ...) raise
+    ``TaskValidationError`` at save time. Unknown keys are accepted at this layer
     (forward-compat); the validator decides whether they're shape-valid.
+
+    An explicit ``status=None`` is refused: ``None`` is the store's delete
+    signal, and a status-less card has no lane on the board, so it would
+    HIDE the card rather than create it. Omit ``status`` for the
+    ``'deferred'`` default, or set one of ``VALID_STATUSES``.
 
     Raises
     ------
     TaskValidationError
         On duplicate id or any other structural fault — `save_tasks`
-        re-runs the full validation gate before touching disk.
+        re-runs the full validation gate before touching disk — on an
+        explicit ``status=None`` (a card cannot be born status-less), or
+        on a ``status`` outside ``VALID_STATUSES`` (including abolished
+        ``"pending"``, which carries the abolition hint naming what to
+        pick instead).
     """
+    from . import _task
     from ._store import _read_write_doc, _resolve_creator_or_raise, _utc_now_iso
+
+    # An EXPLICIT ``status=None`` must not reach the insert: None is the
+    # store's delete signal, and writing it would mint a status-less row
+    # with no lane on the board — the exact state this verb's contract
+    # forbids ("a card cannot be born status-less"). The board handler
+    # defaults the same payload to 'deferred'; the verb refuses it here so
+    # direct Python callers get a loud answer. BEFORE the store guard so a
+    # doomed insert never touches the store.
+    if status is None:
+        raise TaskValidationError(
+            "add_task: status cannot be None — every card is born carrying "
+            "a decision. Omit 'status' for the 'deferred' default, or set "
+            f"one of {_task.VALID_STATUSES}."
+        )
 
     # Same ONE rule as `update_task` (the sibling write path): a `""` on a
     # closed-enum field is a clear, so the key is simply NOT written on
@@ -85,6 +120,30 @@ def add_task(
     _enum_in = _resolve_enum_clears({"status": status, **extras}, source="add_task")
     status = _enum_in.pop("status")
     extras = _enum_in
+    # A caller-supplied ``status`` outside VALID_STATUSES must not reach the
+    # warn-only save path: the saver only WARNS on bad values (operator
+    # ruling 2026-07-10 — a status value must never cost someone their card
+    # ON THE SHARED STORE, where the bad row may be another, newer agent's),
+    # so without this a direct Python/MCP caller passing
+    # ``status="pending"`` would mint a row in an abolished status no live
+    # view serves (measured 2026-10-14: the probe row reached the live
+    # board, warning only). Same source-strict class as the
+    # update/upsert/reopen/restore gates: a SOURCE must never mint a value
+    # the enum doesn't know. Refusing the CREATE costs nobody their card —
+    # no card exists yet, and the caller retries with a legal status — so
+    # the ruling still holds where it applies (reads tolerate legacy rows;
+    # save_tasks never destroys another writer's row). BEFORE the store
+    # guard so a doomed insert never touches the store; ``""``/whitespace
+    # sentinels never reach here (refused above by ``_resolve_enum_clears``)
+    # and ``None`` neither (refused above as status-less).
+    if status not in _task.VALID_STATUSES:
+        _hint = _task.ABOLISHED_STATUSES.get(status)
+        if _hint is not None:
+            raise _task.TaskValidationError(f"add_task: {_hint}")
+        raise _task.TaskValidationError(
+            f"add_task: invalid status {status!r}; "
+            f"must be one of {_task.VALID_STATUSES}"
+        )
     refuse_ineffective_store(store, verb="add_task")
     resolved = _resolved_store(store)
     # A write against a store that does not exist must not INVENT one when

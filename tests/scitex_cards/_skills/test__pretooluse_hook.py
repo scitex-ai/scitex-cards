@@ -12,10 +12,12 @@ would.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
 from scitex_cards._cli._skills import _skills_root
+from scitex_cards._task import ABOLISHED_STATUSES, VALID_STATUSES
 
 #: Derived, never spelled: the bundled skills directory was renamed
 #: ``scitex-cards`` -> ``scitex-cards`` on 2026-07-20 and every hardcoded copy of
@@ -115,3 +117,48 @@ def test_opt_out_env_var_lets_taskcreate_through():
     result = _run(payload, env_extra={"CC_ALLOW_CLAUDE_TASKLIST": "1"})
     # Assert
     assert result.returncode == 0
+
+
+def _suggested_statuses(stderr: str) -> list[str]:
+    # Arrange-free helper: every `--status <value>` the block message
+    # suggests an agent type. `list-tasks --status` is free text, so a
+    # suggestion naming an abolished status fails SILENTLY (matches only
+    # legacy rows) rather than loudly — pin the values, not the exit code.
+    return re.findall(r"--status\s+(\S+)", stderr)
+
+
+def test_block_message_suggests_at_least_one_status_filter():
+    # Arrange
+    payload = '{"tool_name": "TaskList"}'
+    # Act
+    result = _run(payload)
+    # Assert
+    assert _suggested_statuses(result.stderr) != []
+
+
+def test_block_message_status_filters_are_all_live_statuses():
+    # Arrange
+    payload = '{"tool_name": "TaskList"}'
+    # Act
+    result = _run(payload)
+    # Assert
+    assert all(s in VALID_STATUSES for s in _suggested_statuses(result.stderr))
+
+
+def test_block_message_status_filters_name_no_abolished_status():
+    # Arrange
+    payload = '{"tool_name": "TaskList"}'
+    # Act
+    result = _run(payload)
+    # Assert
+    assert not any(s in ABOLISHED_STATUSES for s in _suggested_statuses(result.stderr))
+
+
+def test_block_message_list_tasks_suggests_deferred_backlog():
+    # Arrange: `deferred` replaced `pending` as the not-yet-started state
+    # when pending was abolished 2026-07-10.
+    payload = '{"tool_name": "TaskList"}'
+    # Act
+    result = _run(payload)
+    # Assert
+    assert "--status deferred" in result.stderr

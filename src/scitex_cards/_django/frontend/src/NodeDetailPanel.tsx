@@ -60,7 +60,7 @@ function DetailEditor({
   const mutating = useBoardStore((s) => s.mutating);
 
   const [title, setTitle] = useState(node?.title ?? "");
-  const [status, setStatus] = useState(node?.status ?? "pending");
+  const [status, setStatus] = useState(node?.status ?? "deferred");
   const [priority, setPriority] = useState(
     node?.priority != null ? String(node.priority) : "",
   );

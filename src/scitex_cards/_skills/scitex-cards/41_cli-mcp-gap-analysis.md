@@ -25,7 +25,7 @@ and MCP catch up.
 | Verb | Why | Today |
 |---|---|---|
 | `comment` | Append to `comments[]`, the append-only activity log | **SHIPPED** — `scitex-cards comment ID TEXT [--author X]` wraps `_store.comment_task` |
-| `reopen` | Undo a `done` row; HTTP `/reopen` exists, no CLI parity | `_store.update_task(p, id, status="pending")` |
+| `reopen` | Undo a `done` row; HTTP `/reopen` exists, no CLI parity | `_store.reopen_task(p, id)` (done → `blocked` + `operator-decision`, stamp cleared; CLI bridge: `update <id> --status blocked --blocker operator-decision`) |
 | `body init` | Seed `tasks/<id>/README.md` + `adr.md` from templates | `mkdir` + copy templates by hand |
 | `validate` | Run `_validate_tasks` on demand, without writing | `_model._validate_tasks(load_tasks(p))` |
 
@@ -39,16 +39,16 @@ the next touch — the explicit verb is the canonical path.
 
 ### `scitex-cards add`
 
-Has today: `--status` · `--scope` · `--assignee` · `--priority` · `--parent` · `--note` · `--depends-on` (rpt) · `--blocks` (rpt) · `--repo` · `--json` · `--dry-run` · `-y` · `--tasks`.
+Has today (all shipped; verified 2026-10-12 against `add --help`): `--status` · `--task` · `--project` · `--host` · `--agent` · `--group` · `--goal` · `--last-activity` · `--blocker` (closed enum) · `--pr-url` · `--issue-url` · `--kind` (closed enum, incl. `status`) · `--job-id` · `--command` · `--started-at` · `--finished-at` · `--scope` · `--assignee` · `--priority` · `--parent` · `--note` · `--depends-on` (rpt) · `--blocks` (rpt) · `--repo` · `--created-by` · `--json` · `--dry-run` · `-y` / `--yes`. `--tasks` never landed (no such flag in `add --help`).
 
-Missing (Task dataclass fields — operator-co-designed surface TG 9667):
+Shipped (was Missing — Task dataclass fields, operator-co-designed surface TG 9667; every row landed):
 
 | Flag | Type | Notes |
 |---|---|---|
 | `--task` | str | The BIG board-card text (distinct from `--title`'s short scannable label). |
 | `--project` | str | Project / repo basename. Matches the canonical id prefix. |
 | `--host` | str | Where the work happens. |
-| `--agent` | str | Owning agent — forward-compat alias for `--assignee`. `assignee` STAYS the primary linking field today (lead empirical 2026-06-07: `list-tasks --assignee <agent-id>` filters correctly). `--agent` lands as a CLI alias once the dataclass migration completes. |
+| `--agent` | str | Owning agent — forward-compat alias for `--assignee` (SHIPPED). `assignee` STAYS the primary linking field (lead empirical 2026-06-07: `list-tasks --assignee <agent-id>` filters correctly). |
 | `--goal` | str | WHY (parent-goal text); rendered as 🎯 line. |
 | `--last-activity` | ISO-8601 | Drives card recency color. |
 | `--blocker` | closed enum | One of VALID_BLOCKERS; CLI must reject unknowns (fail-loud parity with `_model`). |
@@ -63,24 +63,19 @@ Missing (Task dataclass fields — operator-co-designed surface TG 9667):
 ### `scitex-cards update`
 
 Same field set as `add` (replace-or-clear semantics — pass `''` to
-clear). Plus: `--depends-on` / `--blocks` are missing from `update`
-entirely (currently only on `add`). Update's `--depends-on` /
-`--blocks` need ADD/REMOVE/REPLACE semantics — proposed shape:
-
-```
---depends-on +X      add X (idempotent)
---depends-on -X      remove X (no-op if absent)
---depends-on =X,Y,Z  replace whole list
-```
+clear). `--depends-on` / `--blocks` SHIPPED on `update` with REPLACE
+semantics (repeat the flag per id; pass once with `''` to clear;
+verified 2026-10-12 against `update --help`). `+/-` delta semantics
+remain the follow-up.
 
 Also: `--comments` is intentionally OMITTED from `update` (use the
 new `comment` verb; append-only contract is clearer that way).
 
 ### `scitex-cards list-tasks`
 
-Has today: `--scope` · `--assignee` · `--status` (exact match each).
+Has today (all shipped; verified 2026-10-12 against `list-tasks --help`): `--scope` · `--assignee` · `--agent` (alias) · `--project` · `--host` · `--blocker` (`__none` for no blocker) · `--kind` (incl. `status`, PR #146) · `--id-prefix` · `--blocking-me` · `--blocking-operator` · `--overdue` · `--status` (repeatable, e.g. `--status deferred --status in_progress`) · `--json`.
 
-Missing filters:
+Shipped filters (was Missing — every row landed):
 
 | Flag | Semantics |
 |---|---|
@@ -89,9 +84,9 @@ Missing filters:
 | `--blocker` | Match `blocker` exactly; `__none` for "no blocker". |
 | `--kind` | Match `kind` exactly; absent ⇒ "task" for filter purposes. Now includes `status` (PR #146) for non-actionable status-tracking rows (q-* quality flags etc.). |
 | `--blocking-me` | Predicate: `status == "blocked" AND blocker == "operator-decision"` (BLOCKING YOU). |
-| `--status` (repeat) | Multi-status filter (e.g. `--status pending --status in_progress`). |
+| `--status` (repeat) | Multi-status filter (e.g. `--status deferred --status in_progress`). |
 | `--id-prefix` | Substring/prefix match on `id` (cheap "find my project's rows"). |
-| `--agent` | Forward-compat alias for `--assignee` once the dataclass migration completes. NOT a gap today — `--assignee` is already primary + works (lead empirical 2026-06-07). |
+| `--agent` | Forward-compat alias for `--assignee` (SHIPPED). `--assignee` stays primary + works (lead empirical 2026-06-07). |
 
 ### `scitex-cards done`
 
@@ -99,41 +94,33 @@ Today: `--by`. No additions needed.
 
 ### `scitex-cards summary`
 
-Today: `--scope`, `--assignee`. Should mirror `list-tasks`' filter
-expansion (same flags) once `list-tasks` lands.
+Today: `--scope`, `--assignee` (verified 2026-10-12 against `summary --help`). Mirroring `list-tasks`' wider filters remains the follow-up now that `list-tasks` has landed.
 
-## C. MCP parity gaps
+## C. MCP parity gaps — CLOSED
 
-MCP `add_task` / `update_task` mirror only the legacy CLI fields (scope,
-assignee, priority, parent, note, repo). As the CLI gains the flags above,
-the MCP tools must mirror them — Convention A (`tool_name ==
-python_api_name`) makes the Python kwargs the single source. New tools track
-the new verbs: `comment_task(task_id, text, author=None, ts=None,
-tasks_path=None)` and `reopen_task(task_id, by=None, tasks_path=None)`.
-`list_tasks` takes the same filter set as the CLI.
+SHIPPED (verified 2026-10-14 against `_mcp_write.py` / `_mcp_server.py`):
+MCP `add_task` / `update_task` carry the full field surface, not the
+legacy six — `status` · `blocker` (closed enums) · `kind` · `project` ·
+`host` · `agent` · `task` · `goal` · `pr_url` · `issue_url` ·
+`depends_on` · `blocks` · `deadline` / `deadlines` / `scheduled` ·
+compute metadata (`job_id` · `command` · `started_at` · `finished_at`) ·
+`parked` · `created_by`, over the legacy `scope` · `assignee` ·
+`priority` · `parent` · `note` · `repo`. Convention A holds
+(`tool_name == python_api_name`): the Python kwargs are the single
+source. The verb tools are live too: `comment_task(task_id, text,
+by=None)`, `reopen_task(task_id, by=None)`, and `list_tasks` with the
+CLI's filter set plus cursor pagination (`blocking_me`, `overdue`,
+`statuses` multi).
 
-## D. Python API parity gaps
+## D. Python API parity gaps — CLOSED bar one
 
-`scitex_cards.__all__` today:
-
-```
-__version__, ENV_AGENT, ENV_SCOPE, TaskNotFoundError, TaskValidationError,
-add_task, complete_task, list_tasks, resolve_store, summarize_tasks,
-update_task
-```
-
-`_store.update_task` already accepts every Task field via **kwargs
-(needs audit — confirm in implementation). What's missing as PUBLIC
-API:
-
-- `add_comment(tasks_path, task_id, text, author=None, ts=None)` —
-  Python helper that owns the read-modify-write of the append (vs
-  forcing every caller to do load → mutate → save_tasks). Add to
-  `__all__`.
-- `reopen_task(tasks_path, task_id, by=None)` — mirrors complete_task
-  semantics.
-- `validate_store(tasks_path)` — run `_validate_tasks(load_tasks(p))`
-  and return `{ok: bool, errors: [...]}` for the CLI `validate` verb.
+SHIPPED: `scitex_cards.__all__` now exports `comment_task` and
+`reopen_task` (plus `delete_task`, `restore_task`, `reassign_task` and
+the DM/notify verbs), and `_store.update_task` accepts every Task field
+via `**fields` (confirmed in implementation). The one genuine
+follow-up: `validate_store(tasks_path)` — run
+`_validate_tasks(load_tasks(p))` returning `{ok, errors}` for a future
+CLI `validate` verb (today only `validate-health` exists).
 
 ## E. Schema / validator gaps (informational)
 

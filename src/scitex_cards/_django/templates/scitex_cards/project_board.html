@@ -1,4 +1,4 @@
-{% extends "scitex_app/app_shell.html" %}
+{% extends "scitex_sdk/app/app_shell.html" %}
 {% load static scitex_paths %}
 {% comment %}
   project_board.html — the PROJECT-SCOPED board (Hub PR #923, section 5 "Cards":
@@ -25,7 +25,7 @@
 <link rel="stylesheet" href="{% static 'scitex_cards/project_board.css' %}">
 {% endblock %}
 
-{% block scitex_app_content %}
+{% block app_content %}
 <main class="stx-cards-project"
       data-stx-page="project-board"
       data-stx-state="{{ board.state }}"

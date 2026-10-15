@@ -5,7 +5,7 @@
  * 3, plus the unscored tray.
  *
  * THEME CONTRACT: every colour is a var(--…) token — the dark/light flip
- * rides entirely on the scitex-ui tokens, no hardcoded literals (same rule
+ * rides entirely on the SDK tokens, no hardcoded literals (same rule
  * the other board_v3 CSS files are pinned to; dark mode is the default the
  * operator reads in).
  *
@@ -61,7 +61,7 @@
  * SHARE of the scored set, so the strip answers "what fraction is in I+II over
  * time". I+II (the important pair the operator maximizes) carry hue; III+IV
  * recede to neutral, so the important share reads at a glance. All theme
- * tokens — the dark/light flip rides the scitex-ui palette. */
+ * tokens — the dark/light flip rides the SDK palette. */
 .mx-trend {
   display: flex;
   flex-direction: column;

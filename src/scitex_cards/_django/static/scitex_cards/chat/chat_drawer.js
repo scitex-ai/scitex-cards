@@ -4,7 +4,7 @@
  * THE PANEL IS NOT ALWAYS A DRAWER. Read DEFECT 3 before touching render().
  *
  * Extracted from chat.js (which was over its 512-line budget) while fixing two
- * live defects that scitex-ui found on 2026-07-28 harvesting this into a shared
+ * live defects found on 2026-07-28 while harvesting this into a shared
  * component. Both were operator-facing on the phone surface they are migrating
  * onto, and both were invisible to a screenshot, which is why they survived.
  *
@@ -46,7 +46,7 @@
  *   moved: the hamburger is `display: none` above the breakpoint, so its
  *   COMPUTED display already answers "am I a drawer right now".
  *
- * This is a stopgap in the same sense chat_menu.js is: scitex-ui has the drawer
+ * This is a stopgap in the same sense chat_menu.js is: the SDK has the drawer
  * as a shared component (their PR #106) with focus trapping, focus restore and
  * body-scroll lock, which this does not do. When it ships in a release we can
  * install, delete this and mount theirs — the element ids do not change.

@@ -80,9 +80,18 @@ async def add_task(
 ) -> str:
     """Append a new task to the store. Returns the inserted task as JSON.
 
-    Closed-enum fields (``status`` / ``kind`` / ``blocker``) are gated by
-    the writer's validator — typos raise ``TaskValidationError`` with the
-    bad value and the valid set.
+    Closed-enum fields (``status`` / ``kind`` / ``blocker``) are checked
+    by the writer's validator — but a bad VALUE only warns, never refuses,
+    per the 2026-07-10 ruling (a status value must never cost someone their
+    card): the write lands and the warning is returned in the JSON payload's
+    ``warnings`` list when non-empty (see :mod:`scitex_cards._validate` and
+    ``test__tolerated_warnings_reach_the_writer.py``). That warn-only
+    contract belongs to the STORE layer. This tool is a SOURCE and
+    delegates to the ``add_task`` verb, which stays strict: a
+    caller-supplied ``status`` outside ``VALID_STATUSES`` — including the
+    abolished ``"pending"`` — raises ``TaskValidationError`` before the
+    store is touched. Only STRUCTURAL faults (duplicate id, missing
+    id/title, ...) raise ``TaskValidationError`` at save time.
 
     ``deadline`` accepts the P4 schema: a bare ISO date / ISO datetime,
     optionally followed by a recurring repeater suffix

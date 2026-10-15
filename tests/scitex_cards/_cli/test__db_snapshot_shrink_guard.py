@@ -7,6 +7,12 @@ exactly as told: committed ``snapshot: 53 tasks`` as HEAD, one commit after
 ``snapshot: 2138 tasks``, silently. The rail was WORKING — that is the point. A
 backup that faithfully records a catastrophe with no alarm stops being a safety
 net and becomes a propagation mechanism.
+
+CliRunner against the ambient per-test store. No mocks.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every seed below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -45,7 +51,7 @@ def _seed(n: int) -> None:
 
 
 @pytest.fixture()
-def rail(tmp_path):
+def rail(tmp_path, postgres_dsn):
     """A snapshot repo with one healthy 100-card snapshot already committed."""
     snaps = tmp_path / "snapshots"
     _seed(100)

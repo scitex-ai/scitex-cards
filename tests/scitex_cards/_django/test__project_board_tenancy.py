@@ -54,7 +54,7 @@ class _Provider:
         self.remembered = []
 
     def list_projects(self, request=None):
-        from scitex_ui.project_scope import ProjectEntry
+        from scitex_sdk.ui.project_scope import ProjectEntry
 
         return [ProjectEntry(id=pid, name=pid) for pid in self._ids]
 
@@ -176,7 +176,7 @@ def test_alice_is_denied_when_she_names_bobs_project():
 
 
 def test_a_denied_project_never_falls_back_to_the_last_visited_one():
-    """scitex-ui resolves an inaccessible explicit project to None — and the
+    """The SDK resolves an inaccessible explicit project to None — and the
     page must not quietly show a DIFFERENT project instead, which would read as
     "here is your board" while the reader asked for someone else's."""
     # Arrange

@@ -11,6 +11,13 @@ idle-at-prompt re-drive injects.
 
 Real store files, AAA, no mocks. The CLI is driven through click's
 CliRunner (real argv → real exit codes).
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): all 19 checks below target the ambient per-test
+store — directly via ``add_task``/``enqueue`` or transitively via
+``may_stop``/the CLI, which read it — and the store is refused without
+a writable cluster. The 4 seeding fixtures carry the guard to every
+test that inherits them.
 """
 
 from __future__ import annotations
@@ -32,14 +39,14 @@ def _drain(agent):
 
 
 @pytest.fixture()
-def in_progress_store():
+def in_progress_store(postgres_dsn):
     """One in_progress card owned by worker-a, its created-event drained."""
     add_task(id="w1", title="w1", status="in_progress", agent="worker-a")
     _drain("worker-a")
 
 
 @pytest.fixture()
-def ungated_blocked_store():
+def ungated_blocked_store(postgres_dsn):
     """A blocked card whose blocker 'none' names nothing — the agent must act."""
     add_task(
         id="w3",
@@ -52,7 +59,7 @@ def ungated_blocked_store():
 
 
 @pytest.fixture()
-def unread_inbox_store():
+def unread_inbox_store(postgres_dsn):
     """One unread DM notification for worker-a, no cards at all."""
     enqueue(
         "worker-a",
@@ -64,7 +71,7 @@ def unread_inbox_store():
 
 
 @pytest.fixture()
-def cli_runnable_store():
+def cli_runnable_store(postgres_dsn):
     """One in_progress card (w7) for the CLI exit-2 contract."""
     add_task(id="w7", title="w7", status="in_progress", agent="worker-a")
     _drain("worker-a")
@@ -73,7 +80,7 @@ def cli_runnable_store():
 # === the verdict ===========================================================
 
 
-def test_empty_board_means_the_agent_may_stop():
+def test_empty_board_means_the_agent_may_stop(postgres_dsn):
     # Arrange
     agent = "worker-a"
     # Act
@@ -82,7 +89,7 @@ def test_empty_board_means_the_agent_may_stop():
     assert verdict["runnable"] is False
 
 
-def test_empty_board_verdict_lists_no_items():
+def test_empty_board_verdict_lists_no_items(postgres_dsn):
     # Arrange
     agent = "worker-a"
     # Act
@@ -91,7 +98,7 @@ def test_empty_board_verdict_lists_no_items():
     assert verdict["items"] == []
 
 
-def test_empty_board_verdict_has_no_idle_seconds():
+def test_empty_board_verdict_has_no_idle_seconds(postgres_dsn):
     # Arrange
     agent = "worker-a"
     # Act
@@ -127,7 +134,7 @@ def test_an_in_progress_card_reports_idle_seconds(in_progress_store):
     assert verdict["idle_seconds"] is not None and verdict["idle_seconds"] >= 0
 
 
-def test_a_blocked_card_with_a_named_gate_is_the_one_legitimate_wait():
+def test_a_blocked_card_with_a_named_gate_is_the_one_legitimate_wait(postgres_dsn):
     # Arrange: blocked WITH a named external gate — not runnable.
     add_task(
         id="w2",
@@ -161,7 +168,7 @@ def test_a_blocked_card_with_no_named_gate_names_the_reason(ungated_blocked_stor
     assert verdict["items"][0]["reason"] == "blocked with no named gate"
 
 
-def test_a_deferred_card_whose_schedule_arrived_is_runnable():
+def test_a_deferred_card_whose_schedule_arrived_is_runnable(postgres_dsn):
     # Arrange: one past-scheduled, one future-scheduled.
     add_task(
         id="w4",
@@ -202,7 +209,7 @@ def test_unread_inbox_item_is_labelled_inbox(unread_inbox_store):
     assert verdict["items"][0]["card_id"] == "(inbox)"
 
 
-def test_other_agents_cards_do_not_bind_this_agent():
+def test_other_agents_cards_do_not_bind_this_agent(postgres_dsn):
     # Arrange
     add_task(id="w6", title="w6", status="in_progress", agent="worker-b")
     # Act
@@ -214,7 +221,7 @@ def test_other_agents_cards_do_not_bind_this_agent():
 # === the CLI contract (exit codes + hints) =================================
 
 
-def test_cli_exit_zero_and_json_on_an_empty_board():
+def test_cli_exit_zero_and_json_on_an_empty_board(postgres_dsn):
     # Arrange
     argv = ["--agent", "worker-a"]
     # Act
@@ -223,7 +230,7 @@ def test_cli_exit_zero_and_json_on_an_empty_board():
     assert result.exit_code == 0
 
 
-def test_cli_json_verdict_on_an_empty_board_is_not_runnable():
+def test_cli_json_verdict_on_an_empty_board_is_not_runnable(postgres_dsn):
     # Arrange
     argv = ["--agent", "worker-a"]
     # Act

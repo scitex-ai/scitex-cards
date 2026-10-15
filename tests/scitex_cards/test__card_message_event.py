@@ -9,6 +9,11 @@ landing via `comment_task` (whether from the chat panel, the
 event on the `scitex_cards.hooks` bus so SAC can a2a-fan it.
 
 No mocks (STX-NM/PA-306). AAA pattern.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every seed below targets the ambient per-test
+store, which is refused without a writable cluster. Pure validator
+tests stay untouched.
 """
 
 from __future__ import annotations
@@ -159,7 +164,7 @@ def bus():
     return _Bus()
 
 
-def test_comment_task_emits_card_message_event(tmp_path: Path, bus):
+def test_comment_task_emits_card_message_event(tmp_path: Path, bus, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", assignee="agent:test-suite")
@@ -178,6 +183,7 @@ def test_comment_task_emits_card_message_event(tmp_path: Path, bus):
 def test_card_message_event_carries_card_id_body_author(
     tmp_path: Path,
     bus,
+    postgres_dsn,
 ):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
@@ -198,6 +204,7 @@ def test_card_message_event_carries_card_id_body_author(
 def test_card_message_owner_comes_from_agent_field(
     tmp_path: Path,
     bus,
+    postgres_dsn,
 ):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
@@ -218,6 +225,7 @@ def test_card_message_owner_comes_from_agent_field(
 def test_card_message_owner_falls_back_to_assignee(
     tmp_path: Path,
     bus,
+    postgres_dsn,
 ):
     # Arrange — no `agent` field; legacy `assignee` is the fallback.
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
@@ -238,6 +246,7 @@ def test_card_message_owner_falls_back_to_assignee(
 def test_card_message_owner_is_none_when_card_has_neither(
     tmp_path: Path,
     bus,
+    postgres_dsn,
 ):
     # Arrange — naked card with no agent/assignee. add_task now REQUIRES an
     # owner (fail-loud), so seed a raw owner-less row straight into the
@@ -266,6 +275,7 @@ def test_card_message_owner_is_none_when_card_has_neither(
 def test_card_message_collaborators_excludes_owner(
     tmp_path: Path,
     bus,
+    postgres_dsn,
 ):
     # Arrange — owner already in the conversation; the event should
     # NOT echo them in collaborators (SAC routes to owner directly).
@@ -295,6 +305,7 @@ def test_card_message_collaborators_excludes_owner(
 def test_card_message_collaborators_excludes_new_author(
     tmp_path: Path,
     bus,
+    postgres_dsn,
 ):
     # Arrange — the new commenter should NOT appear in their own
     # event's collaborators (SAC would echo the message back at them).
@@ -324,6 +335,7 @@ def test_card_message_collaborators_excludes_new_author(
 def test_card_message_collaborators_lists_prior_commenters(
     tmp_path: Path,
     bus,
+    postgres_dsn,
 ):
     # Arrange — three earlier authors, current author is different.
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
@@ -351,7 +363,7 @@ def test_card_message_collaborators_lists_prior_commenters(
     assert e["collaborators"] == ["alice", "bob"]
 
 
-def test_comment_task_save_succeeds_even_when_bus_raises(tmp_path: Path):
+def test_comment_task_save_succeeds_even_when_bus_raises(tmp_path: Path, postgres_dsn):
     # Arrange — a real fake handler that raises, injected via the
     # `entry_points=` seam (no monkeypatch). The comment must still land
     # on disk because comment_task swallows bus errors.
@@ -381,6 +393,7 @@ def test_comment_task_save_succeeds_even_when_bus_raises(tmp_path: Path):
 def test_card_message_created_at_matches_comment_ts(
     tmp_path: Path,
     bus,
+    postgres_dsn,
 ):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]

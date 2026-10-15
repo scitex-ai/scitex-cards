@@ -9,16 +9,17 @@ STX-NM / PA-306). Verifies:
 
   GET /stale
     - returns 200 + the criteria + total + by_project rollup
-    - flags pending rows with created_at > N days as stale
+    - flags deferred rows with created_at > N days as stale
     - flags rows with no created_at AND no last_activity
     - flags vague/orphaned rows (no title/owner)
     - the ``include_no_timestamp=false`` filter HIDES no-timestamp rows
     - the ``days`` knob narrows the cutoff
-    - non-pending rows are NEVER flagged
+    - non-deferred rows are NEVER flagged
 
   POST /archive
-    - flips status to deferred + appends a [CLOSED] comment
-    - stamps _log_meta.closed_{at,by}
+    - flips status to cancelled (terminal, like the CLI twin) + appends a [CLOSED] comment
+    - stamps _log_meta.closed_{at,by} + clears _log_meta.completed_{at,by}
+    - pops the blocker gate when archiving a blocked card (validator rule (b))
     - 400 on empty reason; 404 on unknown id
     - reason flows into the comment text verbatim
 """
@@ -55,31 +56,39 @@ _RECENT = _iso(
 
 _STORE_TEXT = f"""\
 tasks:
-  - id: old-pending-card
-    title: '[P2] long stale pending card'
-    status: pending
+  - id: old-deferred-card
+    title: '[P2] long stale deferred card'
+    status: deferred
     created_at: '{_OLD}'
     project: scitex-dev
     assignee: proj-scitex-dev
-  - id: recent-pending-card
-    title: '[P2] recently created pending card'
-    status: pending
+  - id: recent-deferred-card
+    title: '[P2] recently created deferred card'
+    status: deferred
     created_at: '{_RECENT}'
     project: scitex-dev
     assignee: proj-scitex-dev
   - id: no-timestamp-card
-    title: 'undated pending card'
-    status: pending
+    title: 'undated deferred card'
+    status: deferred
     project: business
     assignee: proj-scitex-lead
   - id: vague-card
     title: 'tbd'
-    status: pending
+    status: deferred
   - id: done-card
     title: 'completed card should never be flagged'
     status: done
     created_at: '{_OLD}'
     project: scitex-dev
+    _log_meta: {{completed_at: '{_OLD}', completed_by: 'scitex-cards'}}
+  - id: blocked-card
+    title: 'gated card under operator decision'
+    status: blocked
+    blocker: operator-decision
+    created_at: '{_OLD}'
+    project: scitex-dev
+    assignee: proj-scitex-dev
 """
 
 
@@ -134,22 +143,22 @@ def test_stale_returns_200(store):
     assert resp.status_code == 200
 
 
-def test_stale_includes_old_pending_card(store):
+def test_stale_includes_old_deferred_card(store):
     # Arrange
     payload = json.loads(_get("stale", store).content)
     # Act
     ids = [r["id"] for r in payload["stale"]]
     # Assert
-    assert "old-pending-card" in ids
+    assert "old-deferred-card" in ids
 
 
-def test_stale_excludes_recent_pending_card(store):
+def test_stale_excludes_recent_deferred_card(store):
     # Arrange
     payload = json.loads(_get("stale", store).content)
     # Act
     ids = [r["id"] for r in payload["stale"]]
     # Assert
-    assert "recent-pending-card" not in ids
+    assert "recent-deferred-card" not in ids
 
 
 def test_stale_excludes_done_card(store):
@@ -234,57 +243,94 @@ def test_stale_rejects_post(store):
 
 def test_archive_returns_200(store):
     # Arrange
-    body = {"id": "old-pending-card", "reason": "superseded by PR #999"}
+    body = {"id": "old-deferred-card", "reason": "superseded by PR #999"}
     # Act
     resp = _post("archive", store, body)
     # Assert
     assert resp.status_code == 200
 
 
-def test_archive_flips_status_to_deferred(store):
-    # Arrange
-    body = {"id": "old-pending-card", "reason": "superseded by PR #999"}
+def test_archive_flips_status_to_cancelled(store):
+    # Arrange — the CLI ``close --reason`` twin writes ``cancelled``
+    # (terminal); ``deferred`` is OPEN (operator ruling 2026-07-10), so a
+    # [CLOSED]-stamped deferred row is CLOSED-and-OPEN at once.
+    body = {"id": "old-deferred-card", "reason": "superseded by PR #999"}
     # Act
     _post("archive", store, body)
     # Assert
     tasks = _load(store)
-    assert tasks["old-pending-card"]["status"] == "deferred"
+    assert tasks["old-deferred-card"]["status"] == "cancelled"
 
 
 def test_archive_appends_closed_comment(store):
     # Arrange
-    body = {"id": "old-pending-card", "reason": "superseded by PR #999"}
+    body = {"id": "old-deferred-card", "reason": "superseded by PR #999"}
     # Act
     _post("archive", store, body)
     # Assert
     tasks = _load(store)
-    comments = tasks["old-pending-card"].get("comments") or []
+    comments = tasks["old-deferred-card"].get("comments") or []
     assert any("[CLOSED] superseded by PR #999" in c.get("text", "") for c in comments)
 
 
 def test_archive_stamps_log_meta_closed_at(store):
     # Arrange
-    body = {"id": "old-pending-card", "reason": "obsolete"}
+    body = {"id": "old-deferred-card", "reason": "obsolete"}
     # Act
     _post("archive", store, body)
     # Assert
     tasks = _load(store)
-    assert "closed_at" in (tasks["old-pending-card"].get("_log_meta") or {})
+    assert "closed_at" in (tasks["old-deferred-card"].get("_log_meta") or {})
 
 
 def test_archive_stamps_log_meta_closed_by(store):
     # Arrange
-    body = {"id": "old-pending-card", "reason": "obsolete", "by": "operator"}
+    body = {"id": "old-deferred-card", "reason": "obsolete", "by": "operator"}
     # Act
     _post("archive", store, body)
     # Assert
     tasks = _load(store)
-    assert tasks["old-pending-card"]["_log_meta"]["closed_by"] == "operator"
+    assert tasks["old-deferred-card"]["_log_meta"]["closed_by"] == "operator"
+
+
+def test_archive_clears_completion_stamp(store):
+    # Arrange — done-card seeds WITH its completion stamp (see _STORE_TEXT):
+    # archiving it must not mint a cancelled row throughput still counts
+    # as delivered (fleet/timing.py + timeline.py read completed_at alone).
+    body = {"id": "done-card", "reason": "superseded after all"}
+    # Act
+    resp = _post("archive", store, body)
+    # Assert
+    assert resp.status_code == 200
+    tasks = _load(store)
+    row = tasks["done-card"]
+    assert row["status"] == "cancelled"
+    meta = row.get("_log_meta") or {}
+    assert "completed_at" not in meta
+    assert "completed_by" not in meta
+    assert "closed_at" in meta
+
+
+def test_archive_clears_blocker_gate_on_leaving_blocked(store):
+    # Arrange — blocked-card seeds WITH its gate: archiving it must not
+    # 400 on its own blocker (the validator rejects a real blocker
+    # variant on a non-`blocked` row, `_validate.py` rule (b)), so the
+    # handler pops the gate with the flip — same invariant the project
+    # board and `handle_reopen` keep.
+    body = {"id": "blocked-card", "reason": "no longer needed"}
+    # Act
+    resp = _post("archive", store, body)
+    # Assert
+    assert resp.status_code == 200
+    tasks = _load(store)
+    row = tasks["blocked-card"]
+    assert row["status"] == "cancelled"
+    assert "blocker" not in row
 
 
 def test_archive_rejects_empty_reason(store):
     # Arrange
-    body = {"id": "old-pending-card", "reason": ""}
+    body = {"id": "old-deferred-card", "reason": ""}
     # Act
     resp = _post("archive", store, body)
     # Assert
@@ -293,7 +339,7 @@ def test_archive_rejects_empty_reason(store):
 
 def test_archive_rejects_missing_reason(store):
     # Arrange
-    body = {"id": "old-pending-card"}
+    body = {"id": "old-deferred-card"}
     # Act
     resp = _post("archive", store, body)
     # Assert
@@ -315,6 +361,74 @@ def test_archive_rejects_get(store):
     resp = _get("archive", store)
     # Assert
     assert resp.status_code == 405
+
+
+# === Status-mirror pins (no store: stub board, runs without PostgreSQL) ======
+#
+# ``pending`` was abolished 2026-07-10, but this handler kept filtering on it —
+# matching no card in any live store, so the /stale panel served zero rows
+# while the CLI ``list-stale`` twin (``_backlog_triage.BACKLOG_STATUS``)
+# reviewed the deferred backlog. These pins hold the HTTP twin to the same
+# single source without touching a database.
+
+
+class _StubBoard:
+    def __init__(self, tasks):
+        self.tasks = tasks
+        self.store_path = "stub-board (no store)"
+
+
+def _stale_ids(tasks, query=""):
+    from scitex_cards._django.handlers import stale as stale_handler
+
+    request = RequestFactory().get(f"/stale{query}")
+    board = _StubBoard(tasks)
+    payload = json.loads(stale_handler.handle_stale(request, board).content)
+    return [r["id"] for r in payload["stale"]]
+
+
+def _old(status):
+    return {
+        "id": f"old-{status}",
+        "title": f"[P2] long stale {status} card",
+        "status": status,
+        "created_at": _OLD,
+        "project": "scitex-dev",
+        "assignee": "proj-scitex-dev",
+    }
+
+
+def test_stale_panel_flags_the_backlog_status_without_a_database():
+    # Arrange
+    # Act
+    ids = _stale_ids([_old("deferred")])
+    # Assert
+    assert ids == ["old-deferred"]
+
+
+def test_stale_panel_ignores_a_legacy_pending_row():
+    # A ``pending`` row can still arrive as a tolerated read (abolished, not
+    # unreadable) — but the review panel must not offer it: the store refuses
+    # ``pending`` on write and the CLI twin never lists it.
+    # Arrange
+    # Act
+    ids = _stale_ids([_old("pending")])
+    # Assert
+    assert ids == []
+
+
+def test_stale_panel_status_mirror_equals_the_live_enum():
+    # Arrange
+    from scitex_cards._backlog_triage import BACKLOG_STATUS
+    from scitex_cards._django.handlers import stale as stale_handler
+    from scitex_cards._task import ABOLISHED_STATUSES, VALID_STATUSES
+
+    # Act
+    mirrored = stale_handler.BACKLOG_STATUS
+    # Assert
+    assert mirrored == BACKLOG_STATUS
+    assert mirrored in VALID_STATUSES
+    assert mirrored not in ABOLISHED_STATUSES
 
 
 # EOF
