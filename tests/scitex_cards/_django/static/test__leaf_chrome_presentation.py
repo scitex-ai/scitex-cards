@@ -265,8 +265,14 @@ def test_load_error_keeps_identity_failure_lead_and_real_retry():
 
 def test_load_error_gate_preserves_other_board_states_and_declarations():
     # Arrange
+    # Baseline is the post-merge tree, not the gate commit: the ONLY
+    # other-declaration delta since the old pin is the deliberate Progress
+    # chip-order correction to the canonical 7-set ('pending' abolished
+    # 2026-07-10; 'cancelled' was missing). Verified by three-way diff:
+    # develop-vs-old-pin is all-True, branch-vs-develop is that one line.
+    # The gate still guards every declaration against future change.
     original = subprocess.check_output(
-        ["git", "-C", str(_ROOT), "show", f"1a3815aac3b4162cf3adea29344deea280d3aab8:{_REL_BOARD}"],
+        ["git", "-C", str(_ROOT), "show", f"3eea8318d625cee8535d9951c1fa24142d8b37c9:{_REL_BOARD}"],
         text=True, timeout=7, env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
     )
     payload = {
