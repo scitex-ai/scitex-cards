@@ -42,6 +42,7 @@ def store(env, postgres_dsn):
         title="fingerprint seed",
         status="deferred",
         created_by="fp-tester",
+        assignee="fp-tester",
     )
     return path
 
@@ -90,6 +91,7 @@ class TestInvalidation:
             title="second card",
             status="deferred",
             created_by="fp-tester",
+            assignee="fp-tester",
         )
         # Assert
         assert _fp(store) != before
