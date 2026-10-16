@@ -34,6 +34,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 import scitex_cards
 from scitex_cards._django import views
 
@@ -50,35 +52,49 @@ def _without_comments(text: str) -> str:
     return re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
 
 
+def _rule_body(css: str, selector: str) -> str:
+    """The declaration block for one CSS rule (fails LOUD on reshape)."""
+    assert selector in css, f"filterbar CSS lost its {selector} rule"
+    return css.split(selector, 1)[1].split("}", 1)[0]
+
+
 # ── (1) light-mode filter contrast ──────────────────────────────────────────
 
 
-def test_filter_controls_take_their_fill_from_the_theme_palette():
-    """``.filt``/``.filt option`` must not pin a dark ``background`` literal."""
+@pytest.mark.parametrize("selector", [".filt {", ".filt option {"])
+def test_filter_controls_pin_no_dark_fill(selector: str):
+    """No ``.filt`` rule may pin the dark ``background`` literal again."""
+    # Arrange
     css = _without_comments(_FILTERBAR.read_text(encoding="utf-8"))
-    for selector in (".filt {", ".filt option {"):
-        body = css.split(selector, 1)[1].split("}", 1)[0]
-        # A bare `background: #232a36` strands dark-on-dark in the light theme;
-        # the same hex as a `var(--card-bg, …)` FALLBACK is fine (a bare mount
-        # with no palette keeps the dark look, and the variable wins whenever
-        # the board palette is present — which is what flips with the theme).
-        assert not re.search(r"background:\s*#232a36", body, re.IGNORECASE), (
-            f"{selector} pins a dark fill while its text follows var(--text) — "
-            "dark-on-dark in the light theme (the reported invisible text)"
-        )
-        assert "var(--card-bg" in body, (
-            f"{selector} must read its fill from the theme-flipping palette"
-        )
+    # Act
+    body = _rule_body(css, selector)
+    # Assert — a bare `background: #232a36` strands dark-on-dark in the
+    # light theme; the same hex as a `var(--card-bg, …)` FALLBACK is fine
+    # (a bare mount with no palette keeps the dark look, and the variable
+    # wins whenever the board palette is present).
+    assert not re.search(r"background:\s*#232a36", body, re.IGNORECASE)
 
 
-def test_filterbar_title_and_column_names_follow_the_theme():
+@pytest.mark.parametrize("selector", [".filt {", ".filt option {"])
+def test_filter_controls_read_fill_from_the_theme_palette(selector: str):
+    """``.filt`` fills must come from the theme-flipping board palette."""
+    # Arrange
+    css = _without_comments(_FILTERBAR.read_text(encoding="utf-8"))
+    # Act
+    body = _rule_body(css, selector)
+    # Assert
+    assert "var(--card-bg" in body
+
+
+@pytest.mark.parametrize("selector", [".filterbar h1 {", ".col-name {"])
+def test_filterbar_title_and_column_names_follow_the_theme(selector: str):
     """``.filterbar h1`` / ``.col-name`` must not pin ``color: #fff``."""
+    # Arrange
     css = _without_comments(_FILTERBAR.read_text(encoding="utf-8"))
-    for selector in (".filterbar h1 {", ".col-name {"):
-        body = css.split(selector, 1)[1].split("}", 1)[0]
-        assert not re.search(r"color:\s*#fff\s*;", body, re.IGNORECASE), (
-            f"{selector} pins white text — white-on-light in the light theme"
-        )
+    # Act
+    body = _rule_body(css, selector)
+    # Assert
+    assert not re.search(r"color:\s*#fff\s*;", body, re.IGNORECASE)
 
 
 # ── (2) JA board chrome ─────────────────────────────────────────────────────
@@ -98,26 +114,47 @@ def _po_entries(po_text: str) -> dict[str, str]:
     return entries
 
 
-def test_ja_catalog_exists_compiled_and_fully_translated():
-    """The JA catalog must exist, be compiled, and leave no msgid empty."""
-    assert _JA_PO.exists(), "locale/ja/LC_MESSAGES/django.po is missing"
-    assert _JA_PO.with_suffix(".mo").exists(), (
-        "django.mo is missing beside django.po — the running app would "
-        "render English (presence-only: checkouts do not preserve mtimes)"
-    )
+def test_ja_catalog_po_file_exists():
+    """The JA catalog source must be tracked beside the app."""
+    # Arrange — none; the pin inspects the tracked locale tree.
+    # Act
+    found = _JA_PO.exists()
+    # Assert
+    assert found, "locale/ja/LC_MESSAGES/django.po is missing"
+
+
+def test_ja_catalog_is_compiled_to_mo():
+    """The running app reads ``.mo`` — an uncompiled catalog renders English."""
+    # Arrange — none; presence-only (checkouts do not preserve mtimes).
+    # Act
+    found = _JA_PO.with_suffix(".mo").exists()
+    # Assert
+    assert found, "django.mo is missing beside django.po"
+
+
+def test_ja_catalog_has_the_full_chrome_set():
+    """The catalog must cover filterbar + Details + switcher chrome."""
+    # Arrange
     entries = _po_entries(_JA_PO.read_text(encoding="utf-8"))
-    assert len(entries) >= 20, (
-        f"only {len(entries)} entries — the filterbar/Details/switcher "
-        "chrome set is larger than that"
-    )
+    # Act
+    count = len(entries)
+    # Assert
+    assert count >= 20, f"only {count} entries — the chrome set is larger"
+
+
+def test_ja_catalog_leaves_no_msgid_untranslated():
+    """Every catalogued msgid must carry its JA string."""
+    # Arrange
+    entries = _po_entries(_JA_PO.read_text(encoding="utf-8"))
+    # Act
     missing = [msgid for msgid, msgstr in entries.items() if not msgstr]
+    # Assert
     assert not missing, f"untranslated msgids: {missing}"
 
 
-def test_ja_catalog_covers_the_filter_chrome():
-    """Spot-check the msgids the operator actually reads."""
-    entries = _po_entries(_JA_PO.read_text(encoding="utf-8"))
-    for msgid in (
+@pytest.mark.parametrize(
+    "msgid",
+    [
         "Layout",
         "+ Add Task",
         "Legend",
@@ -127,15 +164,30 @@ def test_ja_catalog_covers_the_filter_chrome():
         "Clear all filters",
         "Board",
         "Direct messages",
-    ):
-        assert entries.get(msgid), f"no JA translation for {msgid!r}"
+    ],
+)
+def test_ja_catalog_covers_the_filter_chrome(msgid: str):
+    """Spot-check the msgids the operator actually reads."""
+    # Arrange
+    entries = _po_entries(_JA_PO.read_text(encoding="utf-8"))
+    # Act
+    translated = entries.get(msgid)
+    # Assert
+    assert translated, f"no JA translation for {msgid!r}"
 
 
-def test_board_template_wraps_its_chrome_in_translate():
-    """The served board must mark its chrome for translation (incl. the JS dict)."""
+def test_board_template_loads_the_i18n_library():
+    """``board_v3.html`` cannot translate chrome without the i18n library."""
+    # Arrange
     source = _BOARD_V3.read_text(encoding="utf-8")
+    # Act — none; the pin inspects the served template text.
+    # Assert
     assert "{% load static i18n %}" in source
-    for snippet in (
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
         '{% translate "+ Add Task" %}',
         '{% translate "Legend" %}',
         '{% translate "Filters" %}',
@@ -143,19 +195,40 @@ def test_board_template_wraps_its_chrome_in_translate():
         'allProjects: "{% translate',
         "T.allStatuses",
         "blockingMeLabel",
-    ):
-        assert snippet in source, f"board_v3.html lost {snippet!r}"
+    ],
+)
+def test_board_template_marks_chrome_snippets_for_translation(snippet: str):
+    """Chrome — incl. the JS option dict — must go through translate."""
+    # Arrange
+    source = _BOARD_V3.read_text(encoding="utf-8")
+    # Act — none; the pin inspects the served template text.
+    # Assert
+    assert snippet in source, f"board_v3.html lost {snippet!r}"
 
 
-def test_switcher_marks_its_labels_for_translation():
-    """The Board|DM switcher is shared chrome — it must translate too."""
+def test_switcher_loads_the_i18n_library():
+    """The Board|DM switcher is shared chrome — it needs i18n too."""
+    # Arrange
     source = _SWITCHER.read_text(encoding="utf-8")
+    # Act — none; the pin inspects the served template text.
+    # Assert
     assert "{% load i18n %}" in source
-    for snippet in (
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
         '{% translate "Board" %}',
         '{% translate "Direct messages" %}',
-    ):
-        assert snippet in source, f"_page_switcher.html lost {snippet!r}"
+    ],
+)
+def test_switcher_marks_shared_labels_for_translation(snippet: str):
+    """The switcher labels must translate with the active language."""
+    # Arrange
+    source = _SWITCHER.read_text(encoding="utf-8")
+    # Act — none; the pin inspects the served template text.
+    # Assert
+    assert snippet in source, f"_page_switcher.html lost {snippet!r}"
 
 
 # EOF
