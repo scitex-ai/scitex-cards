@@ -507,7 +507,7 @@ def export_json(
 
     _atomic_write(out_path, json.dumps(doc, indent=2, ensure_ascii=False))
     # The sidecar contract is a top-level ``threads:`` mapping
-    # (scitex_cards._threads._load_threads reads exactly that key) — an
+    # (scitex_cards._dm.threads._load_threads reads exactly that key) — an
     # export must be loadable by the same reader as the live sidecar.
     _atomic_write(
         threads_path, json.dumps({"threads": threads}, indent=2, ensure_ascii=False)

@@ -253,7 +253,7 @@ class RpcHandler(BaseHTTPRequestHandler):
         store_kwarg = "store" if verb in _STORE_KWARG_IS_STORE else "tasks_path"
         kwargs[store_kwarg] = self.server.store
 
-        from scitex_cards._dm_exchange import DmExchangeError
+        from scitex_cards._dm.exchange import DmExchangeError
         from scitex_cards._store import TaskNotFoundError
 
         try:
@@ -282,7 +282,7 @@ class RpcHandler(BaseHTTPRequestHandler):
             return
         except (TaskValidationError, ValueError, TypeError) as exc:
             if verb == "dm_send":
-                from scitex_cards._dm_exchange import failure_status
+                from scitex_cards._dm.exchange import failure_status
 
                 status = failure_status(
                     exc, None, persistence_known_absent=True
@@ -304,7 +304,7 @@ class RpcHandler(BaseHTTPRequestHandler):
             return
         except Exception as exc:  # noqa: BLE001 — no tracebacks over the wire
             if verb == "dm_send":
-                from scitex_cards._dm_exchange import failure_status
+                from scitex_cards._dm.exchange import failure_status
 
                 status = failure_status(exc, None)
                 code = int(status.code)

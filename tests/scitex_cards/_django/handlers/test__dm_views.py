@@ -39,8 +39,8 @@ from scitex_cards._django.handlers.dm import (
     dm_threads_view,
 )
 from scitex_cards._dm import read as dm_read
+from scitex_cards._dm.threads import append_message
 from scitex_cards._inbox_postgres import poll_inbox
-from scitex_cards._threads import append_message
 
 
 @pytest.fixture()

@@ -154,7 +154,11 @@ a {
   margin: 0 4px 0 0;
   font-size: 1.05rem;
   font-weight: 700;
-  color: #fff;
+  /* Theme-aware (operator light-mode screenshot: white title stranded on a
+   * light bar). The shared page-header.css rule sets `.stx-cards-header h1`
+   * from `--stx-cards-header-fg`, which flips in the light block — read the
+   * same variable so the two cannot disagree. */
+  color: var(--stx-cards-header-fg, #fff);
   white-space: nowrap;
 }
 .filterbar .small {
@@ -163,7 +167,12 @@ a {
   color: var(--text-muted);
 }
 .filt {
-  background: #232a36;
+  /* Theme-aware fill (operator light-mode screenshot: invisible filter
+   * text — `color: var(--text)` turns dark `#1f2328` while a `#232a36`
+   * fill stayed dark). `--card-bg` flips with the theme (`#161b22` dark /
+   * `#ffffff` light), so the control reads as an input surface against
+   * the `--col-bg` filterbar in BOTH themes. */
+  background: var(--card-bg, #232a36);
   border: 1px solid var(--border);
   color: var(--text);
   padding: 5px 10px;
@@ -175,7 +184,7 @@ a {
   border-color: var(--purple);
 }
 .filt option {
-  background: #232a36;
+  background: var(--card-bg, #232a36);
   color: var(--text);
 }
 .toggle-block {
@@ -424,7 +433,11 @@ a {
 .col-name {
   font-weight: 700;
   font-size: 0.92rem;
-  color: #fff;
+  /* Theme-aware (operator light-mode screenshot: white column titles stranded
+   * on the light `#f6f8fa` column surface). Column text follows `--text` in
+   * both themes; the `#fff` fallback preserves the dark look where the board
+   * palette is absent. */
+  color: var(--text, #fff);
 }
 .col-count {
   background: rgba(109, 76, 173, 0.25);

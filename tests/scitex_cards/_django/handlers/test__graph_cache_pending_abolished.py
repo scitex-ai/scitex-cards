@@ -48,61 +48,101 @@ def test_no_fixture_seeds_the_abolished_status():
     assert seeds == []
 
 
-def test_the_successor_default_seed_is_present():
+def test_the_successor_default_seed_status_is_present():
     # Arrange
     source = _SUBJECT.read_text()
-    # Act + Assert — non-vacuity: the YAML store fixture still seeds a
-    # status, and the file under test is the graph-cache suite.
-    assert "status: deferred" in source
-    assert "_STORE_TEXT" in source
+    # Act
+    has_seed = "status: deferred" in source
+    # Assert
+    assert has_seed
 
 
-def test_pending_seed_warns_while_deferred_is_silent():
-    """Guard the non-interchangeability itself: the seeds differ on load.
+def test_the_successor_default_seed_store_text_is_present():
+    # Arrange
+    source = _SUBJECT.read_text()
+    # Act
+    has_fixture = "_STORE_TEXT" in source
+    # Assert — non-vacuity: the file under test is the graph-cache suite.
+    assert has_fixture
 
-    ``_validate_tasks`` tolerates a ``pending`` row with an abolished-status
-    warning but passes ``deferred`` silently — so a ``pending`` fixture
-    exercises the tolerated-legacy path, not the live-status path the
-    cache assertions claim to pin. This is why the fixture must stay
-    ``deferred``.
-    """
+
+def test_pending_seed_warns_on_load():
+    """A ``pending`` row exercises the tolerated-legacy path, not the live one."""
     # Arrange
     pending = [{"id": "a", "title": "A", "status": "pending"}]
-    live = [{"id": "a", "title": "A", "status": "deferred"}]
     # Act
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         _validate_tasks(pending, source="/some/store.db")
     pending_warnings = [str(x.message) for x in caught]
+    # Assert
+    assert any("abolished" in text for text in pending_warnings)
+
+
+def test_deferred_seed_is_silent_on_load():
+    """A ``deferred`` row passes silently — the live-status path the cache pins."""
+    # Arrange
+    live = [{"id": "a", "title": "A", "status": "deferred"}]
+    # Act
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         _validate_tasks(live, source="/some/store.db")
     live_warnings = [str(x.message) for x in caught]
     # Assert
-    assert any("abolished" in text for text in pending_warnings)
     assert live_warnings == []
 
 
-def test_graph_cache_key_is_status_blind():
+def test_graph_cache_key_is_the_exact_triple():
     # Arrange — the cache-hit decision must derive from the store
     # identity, never from a task status field.
     source = inspect.getsource(_graph_mod.handle_graph)
-    # Act + Assert — key is exactly (store_path, mtime, sig); the only
-    # "status" word in the function is the docstring's "status colors"
-    # (the payload product, not a read).
-    assert "key = (str(board.store_path), board.mtime, board.sig)" in source
+    # Act
+    has_key = "key = (str(board.store_path), board.mtime, board.sig)" in source
+    # Assert
+    assert has_key
+
+
+def test_graph_cache_key_code_reads_no_status():
+    # Arrange — the only "status" word allowed is the docstring's
+    # "status colors" (the payload product, not a read).
+    source = inspect.getsource(_graph_mod.handle_graph)
+    # Act
     code_lines = [
         line
         for line in source.splitlines()
-        if "status colors" not in line and '"""' not in line
+        if "status colors" not in line
+        and '"""' not in line
+        # 304 is the HTTP conditional-response status, not a task-status
+        # read: the hit decision still derives from the key alone.
+        and "status=304" not in line
     ]
     code = "\n".join(code_lines)
+    # Assert
     assert "status" not in code
 
 
-def test_status_enum_mirror_holds():
-    # Arrange + Act + Assert — the abolition itself, so a future
-    # re-introduction of `pending` into either set fails loudly here.
-    assert "pending" in ABOLISHED_STATUSES
-    assert "pending" not in VALID_STATUSES
-    assert "deferred" in VALID_STATUSES
+def test_pending_is_in_abolished_statuses():
+    # Arrange
+    abolished = ABOLISHED_STATUSES
+    # Act
+    present = "pending" in abolished
+    # Assert — a future re-introduction of `pending` fails loudly here.
+    assert present
+
+
+def test_pending_is_absent_from_valid_statuses():
+    # Arrange
+    valid = VALID_STATUSES
+    # Act
+    absent = "pending" not in valid
+    # Assert
+    assert absent
+
+
+def test_deferred_is_in_valid_statuses():
+    # Arrange
+    valid = VALID_STATUSES
+    # Act
+    present = "deferred" in valid
+    # Assert
+    assert present

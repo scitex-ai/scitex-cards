@@ -35,7 +35,7 @@ pytest.importorskip("django")
 from django.test import RequestFactory  # noqa: E402
 
 from scitex_cards._django import views  # noqa: E402
-from scitex_cards._reactions import QUICK_REACTION_EMOJI, REACTION_EMOJI  # noqa: E402
+from scitex_cards._dm.reactions import QUICK_REACTION_EMOJI, REACTION_EMOJI  # noqa: E402
 
 _CHAT_JS_DIR = (
     Path(__file__).resolve().parents[3]

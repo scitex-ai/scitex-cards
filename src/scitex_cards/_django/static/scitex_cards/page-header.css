@@ -165,6 +165,13 @@ body:has(.site-dock) .stx-cards-header--mounted {
   content: "Signed in as ";
 }
 
+/* JA chrome (operator: board chrome entirely English) — the shell renders
+ * `<html lang="ja">` when the JA catalog is active, so the CSS-generated
+ * prefix follows without touching the template. */
+html[lang="ja"] .stx-cards-header__scope::before {
+  content: "ログイン: ";
+}
+
 /* THE PROJECT SLOT — the canonical SDK picker, last in the band and pushed to
  * the right edge. `margin-left: auto` is correct HERE and would be wrong on the
  * switcher: the switcher's left edge is the operator's standing instruction and

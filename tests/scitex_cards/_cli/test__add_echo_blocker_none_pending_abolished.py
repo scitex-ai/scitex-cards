@@ -47,42 +47,130 @@ def _bug2_section() -> str:
     return _FIXTURE.split("Bug 2 at the model layer")[1]
 
 
-def test_bug2_fixtures_seed_no_abolished_status():
+def _status_choices() -> list[str]:
+    out = CliRunner().invoke(main, ["add", "--help"]).output
+    m = re.search(r"--status \[([^\]]+)\]", out)
+    assert m, "--status closed choice missing from add --help"
+    return m.group(1).split("|")
+
+
+def test_bug2_fixtures_seed_no_double_quoted_pending():
+    # Arrange
     section = _bug2_section()
+    # Act — none; the pin inspects fixture text loaded at import.
+    # Assert
     assert '"status": "pending"' not in section
+
+
+def test_bug2_fixtures_seed_no_single_quoted_pending():
+    # Arrange
+    section = _bug2_section()
+    # Act — none; the pin inspects fixture text loaded at import.
+    # Assert
     assert "'status': 'pending'" not in section
 
 
 def test_bug2_fixtures_seed_the_successor_default():
-    assert '"status": "deferred"' in _bug2_section()
+    # Arrange
+    section = _bug2_section()
+    # Act — none; the pin inspects fixture text loaded at import.
+    # Assert
+    assert '"status": "deferred"' in section
 
 
-def test_cli_rejection_pins_still_guard_the_boundary():
+def test_cli_rejection_pin_names_add_rejects_pending():
+    # Arrange — none; the pin inspects the companion test file text.
+    # Act — none; loaded at import.
+    # Assert
     assert "test_add_rejects_abolished_pending_at_the_cli_boundary" in _FIXTURE
+
+
+def test_cli_rejection_pin_names_pending_hint():
+    # Arrange — none; the pin inspects the companion test file text.
+    # Act — none; loaded at import.
+    # Assert
     assert "test_add_rejecting_pending_names_the_bad_status" in _FIXTURE
 
 
 def test_add_default_is_the_successor():
-    assert inspect.signature(add_task).parameters["status"].default == "deferred"
+    # Arrange
+    params = inspect.signature(add_task).parameters
+    # Act
+    default = params["status"].default
+    # Assert
+    assert default == "deferred"
+
+
+def test_cli_add_status_choice_lists_closed_enum():
+    # Arrange
+    out = CliRunner().invoke(main, ["add", "--help"]).output
+    # Act
+    m = re.search(r"--status \[([^\]]+)\]", out)
+    # Assert
+    assert m, "--status closed choice missing from add --help"
 
 
 def test_cli_add_status_choice_rejects_pending():
-    out = CliRunner().invoke(main, ["add", "--help"]).output
-    m = re.search(r"--status \[([^\]]+)\]", out)
-    assert m, "--status closed choice missing from add --help"
-    choices = m.group(1).split("|")
+    # Arrange — none; help text is rendered on demand.
+    # Act
+    choices = _status_choices()
+    # Assert
     assert "pending" not in choices
+
+
+def test_cli_add_status_choice_offers_deferred():
+    # Arrange — none; help text is rendered on demand.
+    # Act
+    choices = _status_choices()
+    # Assert
     assert "deferred" in choices
+
+
+def test_cli_add_status_choice_matches_valid_statuses():
+    # Arrange — none; help text is rendered on demand.
+    # Act
+    choices = _status_choices()
+    # Assert
     assert set(choices) == set(VALID_STATUSES)
 
 
-def test_pending_stays_abolished():
+def test_pending_is_abolished():
+    # Arrange — none; the pin inspects the canonical enum.
+    # Act — none; imported.
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_pending_is_absent_from_valid_statuses():
+    # Arrange — none; the pin inspects the canonical enum.
+    # Act — none; imported.
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_deferred_is_a_valid_status():
+    # Arrange — none; the pin inspects the canonical enum.
+    # Act — none; imported.
+    # Assert
     assert "deferred" in VALID_STATUSES
 
 
-def test_pins_are_nonvacuous():
+def test_nonvacuous_pin_covers_dropped_blocker_reload():
+    # Arrange — none; the pin inspects the companion test file text.
+    # Act — none; loaded at import.
+    # Assert
     assert "test_save_tasks_drops_none_blocker_from_the_reloaded_row" in _FIXTURE
+
+
+def test_nonvacuous_pin_covers_real_blocker_rejection():
+    # Arrange — none; the pin inspects the companion test file text.
+    # Act — none; loaded at import.
+    # Assert
     assert "test_save_tasks_real_blocker_on_deferred_still_raises" in _FIXTURE
+
+
+def test_nonvacuous_pin_covers_add_task_surface():
+    # Arrange — none; the pin inspects the imported writer.
+    # Act — none; imported.
+    # Assert
     assert callable(add_task)

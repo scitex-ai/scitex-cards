@@ -342,6 +342,82 @@ def _open_at(path: str | Path) -> "StoreConnection":
 from ._db_verify import verify  # noqa: E402  (re-export, after the definitions)
 
 
+def tasks_content_fingerprint() -> str | None:
+    """A millisecond-scale content fingerprint of the ``tasks`` table.
+
+    ``"<count>:<md5>"`` over the ordered ``(id, revision)`` pairs, computed
+    INSIDE the database — one small row comes back, not 8,537 cards.
+    Measured intent: :func:`scitex_cards._store_write.store_generation`
+    hashes the full exported document (``load_doc`` + ``json.dumps`` over
+    100+ MB incl. ``users``/``inboxes``), ~2.5 s per call, just to answer
+    "did the board change". This answers the same question for the board's
+    actual content in ~25 ms. A TOAST-walking content hash was measured and
+    rejected: reading every ``card_json`` costs 450–900 ms server-side, so
+    hashing content directly buys little over the full read it replaces.
+
+    TASKS ONLY, ON PURPOSE. The board renders ``tasks`` rows (plus the YAML
+    sidecar's ``groups:``, fingerprinted separately by the caller). ``users``
+    heartbeats (``last_seen`` ticks every few seconds fleet-wide) and inbox
+    traffic churn the whole-doc hash constantly while moving nothing the
+    board displays — that churn is what kept the board caches at a ~0% hit
+    rate. Excluding them is not ignoring change, it is scoping the question
+    to the content the answer protects.
+
+    EVERY ROW WRITE MOVES IT — by the same invariant the package's own
+    optimistic lock relies on, not a new one. ``revision`` is bumped on every
+    UPDATE by the DB-enforced ``tasks_bump_revision`` trigger (schema v7;
+    verified present and enabled on the live store): an upsert that leaves
+    ``revision`` alone fires the trigger (``NEW.revision = OLD.revision``) and
+    advances it; one that sets it to the current value fires it the same
+    way; one that sets any other value moves the pair directly. Inserts add
+    a pair, deletes remove one (and move the count). Equal fingerprints
+    therefore mean equal board content, short of an md5 collision — the same
+    hash-key acceptance the ``/tasks`` ETag already makes with sha256. A
+    write path that could change content while holding ``(id, revision)``
+    fixed would first defeat ``update_task(expected_revision=...)``; no such
+    path exists inside the trigger's enforcement.
+
+    FAIL-SOFT BY CONTRACT. Returns None on ANY failure (no ``tasks`` table,
+    pre-v6 store without ``revision``, standby that cannot reach the
+    catalogue, driver absent) — the caller falls back to the slow
+    ``store_generation`` path, which is never stale, just slow. A
+    fingerprint that raised into a board read would trade a slow board for
+    no board. SELECT-only via :func:`open_read_db`: valid on replicas and
+    SELECT-only roles, writes nothing, holds no lock.
+    """
+    try:
+        conn = open_read_db(None)
+    except Exception:
+        return None
+    try:
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n, "
+                "COALESCE(md5(string_agg(t.id || '#' || t.revision::text, "
+                "',' ORDER BY t.id)), 'empty') AS h "
+                "FROM tasks AS t"
+            ).fetchone()
+        except Exception:
+            return None
+        if row is None:
+            return None
+        # Rows are name-addressable by the connect() contract
+        # (rows_by_name=True); read by column name only. A driver that
+        # cannot do that fails soft into the slow path below.
+        try:
+            n, h = row["n"], row["h"]
+        except (KeyError, IndexError, TypeError):
+            return None
+        if n is None or h is None:
+            return None
+        return f"{n}:{h}"
+    finally:
+        try:
+            conn.rollback()
+        finally:
+            conn.close()
+
+
 def _utc_now_iso() -> str:
     """ISO-8601 UTC timestamp with the canonical ``Z`` suffix.
 
@@ -370,6 +446,7 @@ __all__ = [
     "open_read_db",
     "resolve_db_path",
     "table_columns",
+    "tasks_content_fingerprint",
     "verify",
 ]
 

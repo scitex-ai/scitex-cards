@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the operator↔agent DM thread store (:mod:`scitex_cards._threads`).
+"""Tests for the operator↔agent DM thread store (:mod:`scitex_cards._dm.threads`).
 
 Covers the scitex-dev DM convention v1 contract:
 
@@ -25,9 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from scitex_cards import _threads
-from scitex_cards._inbox import poll_inbox
-from scitex_cards._threads import (
+from scitex_cards._dm import threads as _threads
+from scitex_cards._dm.threads import (
     append_message,
     get_thread,
     list_threads,
@@ -35,6 +34,7 @@ from scitex_cards._threads import (
     thread_key,
     threads_path,
 )
+from scitex_cards._inbox import poll_inbox
 from scitex_cards._yaml import safe_load
 
 

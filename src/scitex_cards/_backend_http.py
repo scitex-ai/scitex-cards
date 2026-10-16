@@ -188,7 +188,7 @@ class HubBackend:
         if kind == "DmExchangeError" and isinstance(payload.get("status"), dict):
             from scitex_dev.status import StatusCode
 
-            from ._dm_exchange import DmExchangeError
+            from ._dm.exchange import DmExchangeError
 
             raise DmExchangeError(
                 payload.get("exchange_id"),
@@ -430,7 +430,7 @@ class HubBackend:
     ) -> dict:
         self._forbid_store(store)
         if client_request_id is None:
-            from ._dm_exchange import new_client_request_id
+            from ._dm.exchange import new_client_request_id
 
             client_request_id = new_client_request_id()
         return self._call(

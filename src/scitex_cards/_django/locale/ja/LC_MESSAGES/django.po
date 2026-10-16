@@ -1,0 +1,200 @@
+# Japanese translations for scitex-cards board chrome.
+# Copyright (C) Yusuke Watanabe
+# This file is distributed under the same license as the scitex-cards package.
+msgid ""
+msgstr ""
+"Project-Id-Version: scitex-cards 0.53.8\n"
+"Report-Msgid-Bugs-To: agent@scitex.ai\n"
+"POT-Creation-Date: 2026-10-16 00:00+0000\n"
+"PO-Revision-Date: 2026-10-16 00:00+0000\n"
+"Last-Translator: scitex-cards <agent@scitex.ai>\n"
+"Language-Team: Japanese\n"
+"Language: ja\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: templates/scitex_cards/board_v3.html:353
+msgid "Layout"
+msgstr "レイアウト"
+
+#: templates/scitex_cards/board_v3.html:359
+msgid "⏱ Timeline"
+msgstr "⏱ タイムライン"
+
+#: templates/scitex_cards/board_v3.html:363
+msgid "🗒 Wall"
+msgstr "🗒 ウォール"
+
+#: templates/scitex_cards/board_v3.html:367
+msgid "📊 Graph"
+msgstr "📊 グラフ"
+
+#: templates/scitex_cards/board_v3.html:379
+msgid "🎯 Matrix"
+msgstr "🎯 マトリクス"
+
+#: templates/scitex_cards/board_v3.html:394
+msgid "+ Add Task"
+msgstr "+ タスクを追加"
+
+#: templates/scitex_cards/board_v3.html:431
+msgid "Legend"
+msgstr "凡例"
+
+#: templates/scitex_cards/board_v3.html:469
+msgid "0 matches."
+msgstr "0 件"
+
+#: templates/scitex_cards/board_v3.html:472 templates/scitex_cards/board_v3.html:619
+msgid "Clear all filters"
+msgstr "すべてのフィルターをクリア"
+
+#: templates/scitex_cards/board_v3.html:486
+msgid "Loading board"
+msgstr "ボードを読み込み中"
+
+#: templates/scitex_cards/board_v3.html:486
+msgid "Loading board…"
+msgstr "ボードを読み込み中…"
+
+#: templates/scitex_cards/board_v3.html:515 templates/scitex_cards/board_v3.html:529
+msgid "Details"
+msgstr "詳細"
+
+#: templates/scitex_cards/board_v3.html:542
+msgid "Stats"
+msgstr "統計"
+
+#: templates/scitex_cards/board_v3.html:570
+msgid "Filters"
+msgstr "フィルター"
+
+#: templates/scitex_cards/board_v3.html:626
+msgid "Hidden cards"
+msgstr "非表示のカード"
+
+#: templates/scitex_cards/board_v3.html:576
+msgid "Project"
+msgstr "プロジェクト"
+
+#: templates/scitex_cards/board_v3.html:580
+msgid "Assignee"
+msgstr "担当者"
+
+#: templates/scitex_cards/board_v3.html:584
+msgid "Status"
+msgstr "ステータス"
+
+#: templates/scitex_cards/board_v3.html:588
+msgid "Blocked by"
+msgstr "ブロック要因"
+
+#: templates/scitex_cards/board_v3.html:592
+msgid "Host"
+msgstr "ホスト"
+
+#: templates/scitex_cards/board_v3.html:596
+msgid "Date"
+msgstr "日付"
+
+#: templates/scitex_cards/board_v3.html:577
+msgid "All projects"
+msgstr "すべてのプロジェクト"
+
+#: templates/scitex_cards/board_v3.html:581
+msgid "All assignees"
+msgstr "すべての担当者"
+
+#: templates/scitex_cards/board_v3.html:585
+msgid "All statuses"
+msgstr "すべてのステータス"
+
+#: templates/scitex_cards/board_v3.html:589
+msgid "All blockers"
+msgstr "すべてのブロック要因"
+
+#: templates/scitex_cards/board_v3.html:593
+msgid "All hosts"
+msgstr "すべてのホスト"
+
+#: templates/scitex_cards/board_v3.html:599
+msgid "All dates"
+msgstr "すべての日付"
+
+#: templates/scitex_cards/board_v3.html:611
+msgid "🚧 awaiting your decision"
+msgstr "🚧 あなたの判断待ち"
+
+#: templates/scitex_cards/board_v3.html (filt-chip strip, JS-rendered)
+msgid "blocking me"
+msgstr "ブロック中"
+
+#: templates/scitex_cards/board_v3.html:632
+msgid "No hidden cards."
+msgstr "非表示のカードはありません。"
+
+#: templates/scitex_cards/board_v3.html:408
+msgid "Recognized search qualifiers"
+msgstr "認識された検索修飾子"
+
+#: templates/scitex_cards/board_v3.html:410
+msgid "Active filters"
+msgstr "有効なフィルター"
+
+#: templates/scitex_cards/board_v3.html:433
+msgid "Status color legend"
+msgstr "ステータス色の凡例"
+
+#: templates/scitex_cards/board_v3.html:600
+msgid "📅 overdue"
+msgstr "📅 期限切れ"
+
+#: templates/scitex_cards/board_v3.html:601
+msgid "📅 today"
+msgstr "📅 今日"
+
+#: templates/scitex_cards/board_v3.html:602
+msgid "📅 within 7 days"
+msgstr "📅 7日以内"
+
+#: templates/scitex_cards/board_v3.html:603
+msgid "📅 within 30 days"
+msgstr "📅 30日以内"
+
+#: templates/scitex_cards/board_v3.html:604
+msgid "no date in title"
+msgstr "タイトルに日付なし"
+
+#: templates/scitex_cards/board_v3.html:296
+msgid "🔎 Search… ( / to focus, Esc to blur) — try project:paper-scitex-clew, status:blocked, kind:compute, …"
+msgstr "🔎 検索…（/ でフォーカス、Esc で解除） — 例: project:paper-scitex-clew, status:blocked, kind:compute, …"
+
+#: templates/scitex_cards/board_v3.html (search autocomplete dropdown)
+msgid "Search suggestions"
+msgstr "検索候補"
+
+#: templates/scitex_cards/board_v3.html (primary-action group aria-label)
+msgid "Primary action — add a new task"
+msgstr "主要アクション — 新しいタスクを追加"
+
+#: templates/scitex_cards/_page_switcher.html
+msgid "Board"
+msgstr "ボード"
+
+#: templates/scitex_cards/_page_switcher.html
+msgid "Direct messages"
+msgstr "ダイレクトメッセージ"
+
+#: templates/scitex_cards/_page_switcher.html
+msgid "Cards sections"
+msgstr "カードのセクション"
+
+#: templates/scitex_cards/_page_switcher.html
+msgid "Board — every card in the fleet"
+msgstr "ボード — フリートのすべてのカード"
+
+#: templates/scitex_cards/_page_switcher.html
+msgid "Direct messages with the agents"
+msgstr "エージェントとのダイレクトメッセージ"

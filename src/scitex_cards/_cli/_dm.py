@@ -116,7 +116,7 @@ def send_cmd(
     The task-scope spelling ``agent:worker`` is accepted at this boundary and
     canonicalized to the live inbox identity ``worker`` before persistence.
     """
-    from .. import _dm_exchange
+    from .._dm import exchange as _dm_exchange
 
     if client_request_id is None:
         client_request_id = _dm_exchange.new_client_request_id()
@@ -270,7 +270,7 @@ def get_status_cmd(exchange_id: str, sender: str | None, as_json: bool) -> None:
     acknowledgement must update the same exchange separately before this
     command can report a final status.
     """
-    from .._dm_exchange import StatusCode, get_exchange
+    from .._dm.exchange import StatusCode, get_exchange
     from .._messaging import resolve_sender
 
     try:
@@ -302,7 +302,7 @@ def get_status_cmd(exchange_id: str, sender: str | None, as_json: bool) -> None:
 
 
 def _default_sidecar(store: str | None) -> str:
-    from .._threads import threads_path
+    from .._dm.threads import threads_path
 
     return str(threads_path(store))
 
