@@ -148,92 +148,153 @@ def _version_from_tree(package_file=None) -> str | None:
 # Public surface stays identical: every name in ``__all__`` resolves on
 # ``scitex_cards.NAME`` access via :func:`__getattr__`, and gets cached in
 # ``globals()`` for O(1) repeat lookups.
-_LAZY_IMPORTS = {
-    "TaskValidationError": ("._model", "TaskValidationError"),
-    # Agent career — host@name identity join key + agent-directory port
-    # (ADR-0009). Library seams; exposed here so consumers can wire a
-    # provider / canonicalise ids without reaching into the private module.
-    "AGENT_DIRECTORY_GROUP": ("._ports", "AGENT_DIRECTORY_GROUP"),
-    "AgentDirectoryPort": ("._ports", "AgentDirectoryPort"),
-    "AgentIdentityError": ("._ports", "AgentIdentityError"),
-    "AgentInfo": ("._ports", "AgentInfo"),
-    "EmptyAgentDirectory": ("._ports", "EmptyAgentDirectory"),
-    "canonical_agent_id": ("._ports", "canonical_agent_id"),
-    "dedup_agents": ("._ports", "dedup_agents"),
-    "parse_agent_id": ("._ports", "parse_agent_id"),
-    "resolve_agent_directory": ("._ports", "resolve_agent_directory"),
-    "ENV_AGENT": ("._store", "ENV_AGENT"),
-    "ENV_SCOPE": ("._store", "ENV_SCOPE"),
-    "TaskNotFoundError": ("._store", "TaskNotFoundError"),
-    "add_task": ("._store", "add_task"),
-    "comment_task": ("._store", "comment_task"),
-    "complete_task": ("._store", "complete_task"),
-    "delete_task": ("._store", "delete_task"),
-    "get_task": ("._store", "get_task"),
-    "list_tasks": ("._store", "list_tasks"),
-    "reassign_task": ("._store", "reassign_task"),
-    "reopen_task": ("._store", "reopen_task"),
-    "resolve_store": ("._store", "resolve_store"),
-    "resolve_task": ("._store", "resolve_task"),
-    "restore_task": ("._store", "restore_task"),
-    "set_collaborator": ("._store", "set_collaborator"),
-    "set_edge": ("._store", "set_edge"),
-    "set_subscriber": ("._store", "set_subscriber"),
-    "summarize_tasks": ("._store", "summarize_tasks"),
-    "update_task": ("._store", "update_task"),
-    # MCP tools whose Python function already existed at module level under
-    # exactly this name and was simply never exported (audit §6 parity). An
-    # MCP tool with no Python API is a capability only an AGENT can reach:
-    # not callable from a script, a cron job, or another package, and not
-    # testable without standing up a transport. These four cost nothing to
-    # publish because the function is already there.
-    "health": ("._health", "health"),
-    "help_clear": ("._help_wait", "help_clear"),
-    "help_wait": ("._help_wait", "help_wait"),
-    "rescore_task": ("._store_rescore", "rescore_task"),
-    # The messaging rail. These five DID NOT have a function to publish — they
-    # existed only as async MCP tool bodies, so the logic was welded to the
-    # transport and no script could reach it. `_messaging` is that extraction:
-    # the MCP tools now delegate to these and keep their JSON contract.
-    "ack_notifications": ("._messaging", "ack_notifications"),
-    "dm_list": ("._messaging", "dm_list"),
-    "dm_send": ("._messaging", "dm_send"),
-    "dm_send_document": ("._messaging", "dm_send_document"),
-    "DmExchangeError": ("._dm.exchange", "DmExchangeError"),
-    "NotificationWatchUnavailable": (
-        "._notification_watch",
-        "NotificationWatchUnavailable",
-    ),
-    "poll_notifications": ("._messaging", "poll_notifications"),
-    "watch_notifications": ("._messaging", "watch_notifications"),
-}
-
-
 def __getattr__(name: str):
     """PEP 562 lazy loader — resolve public-API names on first access.
 
-    Imports the source submodule, fetches the attribute, caches it
-    into module ``globals()`` so subsequent accesses skip the lookup.
+    One static branch per name, deliberately verbose: the hub static
+    reader enumerates ``__getattr__`` for bare single-arg-literal
+    ``import_module()`` assigns and rejects indirection (``.get`` /
+    ``getattr()`` / tuple-unpack), so a table-driven loader is
+    metadata-invisible on dev and every plugin skips. Runtime cost is
+    unchanged: each branch imports once, then the globals() cache
+    below serves all later accesses without re-entering here.
+
     Unknown names raise ``AttributeError`` per the PEP.
     """
-    if name == "__version__":
-        value = _resolve_version()
-        globals()["__version__"] = value
-        return value
-    target = _LAZY_IMPORTS.get(name)
-    if target is None:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    import importlib
+    from importlib import import_module
 
-    mod_path, attr = target
-    # Single-arg absolute path, never the two-arg (name, package) form:
-    # ``__name__ + "._store"`` IS ``"scitex_cards._store"`` — identical
-    # runtime resolution — but the hub static reader only accepts the
-    # single-arg call shape (dev-service dossier 2026-10-16: the two-arg
-    # form fails static-metadata and kills all 7 plugin mounts on dev).
-    value = getattr(importlib.import_module(__name__ + mod_path), attr)
-    globals()[name] = value
-    return value
+    if name == "__version__":
+        _v = _resolve_version()
+    elif name == 'TaskValidationError':
+        _m = import_module("scitex_cards._model")
+        _v = _m.TaskValidationError
+    # Agent career — host@name identity join key + agent-directory port (ADR-0009).
+    elif name == 'AGENT_DIRECTORY_GROUP':
+        _m = import_module("scitex_cards._ports")
+        _v = _m.AGENT_DIRECTORY_GROUP
+    elif name == 'AgentDirectoryPort':
+        _m = import_module("scitex_cards._ports")
+        _v = _m.AgentDirectoryPort
+    elif name == 'AgentIdentityError':
+        _m = import_module("scitex_cards._ports")
+        _v = _m.AgentIdentityError
+    elif name == 'AgentInfo':
+        _m = import_module("scitex_cards._ports")
+        _v = _m.AgentInfo
+    elif name == 'EmptyAgentDirectory':
+        _m = import_module("scitex_cards._ports")
+        _v = _m.EmptyAgentDirectory
+    elif name == 'canonical_agent_id':
+        _m = import_module("scitex_cards._ports")
+        _v = _m.canonical_agent_id
+    elif name == 'dedup_agents':
+        _m = import_module("scitex_cards._ports")
+        _v = _m.dedup_agents
+    elif name == 'parse_agent_id':
+        _m = import_module("scitex_cards._ports")
+        _v = _m.parse_agent_id
+    elif name == 'resolve_agent_directory':
+        _m = import_module("scitex_cards._ports")
+        _v = _m.resolve_agent_directory
+    elif name == 'ENV_AGENT':
+        _m = import_module("scitex_cards._store")
+        _v = _m.ENV_AGENT
+    elif name == 'ENV_SCOPE':
+        _m = import_module("scitex_cards._store")
+        _v = _m.ENV_SCOPE
+    elif name == 'TaskNotFoundError':
+        _m = import_module("scitex_cards._store")
+        _v = _m.TaskNotFoundError
+    elif name == 'add_task':
+        _m = import_module("scitex_cards._store")
+        _v = _m.add_task
+    elif name == 'comment_task':
+        _m = import_module("scitex_cards._store")
+        _v = _m.comment_task
+    elif name == 'complete_task':
+        _m = import_module("scitex_cards._store")
+        _v = _m.complete_task
+    elif name == 'delete_task':
+        _m = import_module("scitex_cards._store")
+        _v = _m.delete_task
+    elif name == 'get_task':
+        _m = import_module("scitex_cards._store")
+        _v = _m.get_task
+    elif name == 'list_tasks':
+        _m = import_module("scitex_cards._store")
+        _v = _m.list_tasks
+    elif name == 'reassign_task':
+        _m = import_module("scitex_cards._store")
+        _v = _m.reassign_task
+    elif name == 'reopen_task':
+        _m = import_module("scitex_cards._store")
+        _v = _m.reopen_task
+    elif name == 'resolve_store':
+        _m = import_module("scitex_cards._store")
+        _v = _m.resolve_store
+    elif name == 'resolve_task':
+        _m = import_module("scitex_cards._store")
+        _v = _m.resolve_task
+    elif name == 'restore_task':
+        _m = import_module("scitex_cards._store")
+        _v = _m.restore_task
+    elif name == 'set_collaborator':
+        _m = import_module("scitex_cards._store")
+        _v = _m.set_collaborator
+    elif name == 'set_edge':
+        _m = import_module("scitex_cards._store")
+        _v = _m.set_edge
+    elif name == 'set_subscriber':
+        _m = import_module("scitex_cards._store")
+        _v = _m.set_subscriber
+    elif name == 'summarize_tasks':
+        _m = import_module("scitex_cards._store")
+        _v = _m.summarize_tasks
+    elif name == 'update_task':
+        _m = import_module("scitex_cards._store")
+        _v = _m.update_task
+    # MCP tools whose Python function already existed at module level (audit §6 parity).
+    elif name == 'health':
+        _m = import_module("scitex_cards._health")
+        _v = _m.health
+    elif name == 'help_clear':
+        _m = import_module("scitex_cards._help_wait")
+        _v = _m.help_clear
+    elif name == 'help_wait':
+        _m = import_module("scitex_cards._help_wait")
+        _v = _m.help_wait
+    elif name == 'rescore_task':
+        _m = import_module("scitex_cards._store_rescore")
+        _v = _m.rescore_task
+    # The messaging rail — extracted from async MCP tool bodies so scripts can reach it.
+    elif name == 'ack_notifications':
+        _m = import_module("scitex_cards._messaging")
+        _v = _m.ack_notifications
+    elif name == 'dm_list':
+        _m = import_module("scitex_cards._messaging")
+        _v = _m.dm_list
+    elif name == 'dm_send':
+        _m = import_module("scitex_cards._messaging")
+        _v = _m.dm_send
+    elif name == 'dm_send_document':
+        _m = import_module("scitex_cards._messaging")
+        _v = _m.dm_send_document
+    elif name == 'DmExchangeError':
+        _m = import_module("scitex_cards._dm.exchange")
+        _v = _m.DmExchangeError
+    elif name == 'NotificationWatchUnavailable':
+        _m = import_module("scitex_cards._notification_watch")
+        _v = _m.NotificationWatchUnavailable
+    elif name == 'poll_notifications':
+        _m = import_module("scitex_cards._messaging")
+        _v = _m.poll_notifications
+    elif name == 'watch_notifications':
+        _m = import_module("scitex_cards._messaging")
+        _v = _m.watch_notifications
+    else:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    globals()[name] = _v
+    return _v
 
 
 def __dir__():
