@@ -94,7 +94,11 @@ def test_graph_cache_key_is_status_blind():
     code_lines = [
         line
         for line in source.splitlines()
-        if "status colors" not in line and '"""' not in line
+        if "status colors" not in line
+        and '"""' not in line
+        # 304 is the HTTP conditional-response status, not a task-status
+        # read: the hit decision still derives from the key alone.
+        and "status=304" not in line
     ]
     code = "\n".join(code_lines)
     assert "status" not in code
