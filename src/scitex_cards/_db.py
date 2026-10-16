@@ -401,10 +401,13 @@ def tasks_content_fingerprint() -> str | None:
             return None
         if row is None:
             return None
-        if isinstance(row, dict):
-            n, h = row.get("n"), row.get("h")
-        else:
-            n, h = row[0], row[1]
+        # Rows are name-addressable by the connect() contract
+        # (rows_by_name=True); read by column name only. A driver that
+        # cannot do that fails soft into the slow path below.
+        try:
+            n, h = row["n"], row["h"]
+        except (KeyError, IndexError, TypeError):
+            return None
         if n is None or h is None:
             return None
         return f"{n}:{h}"
