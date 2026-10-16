@@ -7,7 +7,7 @@ scitex-dev DM convention v1; card
 ``fleet-agent-direct-message-board-pane-20260707``). Distinct from
 ``handlers/chat.py`` — that is the per-CARD comment thread; this is the
 per-AGENT direct-message thread stored in the ``threads.json`` sidecar
-(:mod:`scitex_cards._threads`).
+(:mod:`scitex_cards._dm.threads`).
 
 Endpoints::
 
@@ -40,11 +40,11 @@ Endpoints::
     POST /dm/thread/<peer>/reaction
          body = {"message_id": "m_…", "emoji": "👍", "action": "add"|"remove"}
       -> 200 + {"event": <stored event>, "reactions": {emoji: [actors]}}
-         Appends one APPEND-ONLY reaction event (:mod:`scitex_cards._reactions`)
+         Appends one APPEND-ONLY reaction event (:mod:`scitex_cards._dm.reactions`)
          and answers with the message's refolded state. 400 on a missing
          message_id/emoji or an unknown action.
 
-The operator's reserved peer name is ``scitex_cards._threads.OPERATOR_NAME``
+The operator's reserved peer name is ``scitex_cards._dm.threads.OPERATOR_NAME``
 (``"operator"``). All endpoints honour the ``?store=`` query param the rest
 of the board uses, so tests drive a real tmp store.
 """
@@ -57,10 +57,8 @@ import scitex_logging as slogging
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from scitex_cards import (
-    _reactions,
-    _threads,
-)
+from scitex_cards._dm import reactions as _reactions
+from scitex_cards._dm import threads as _threads
 from scitex_cards._django._request_store import (  # noqa: F401  (re-export)
     STORE_REQUEST_ATTR as STORE_REQUEST_ATTR,
 )
@@ -68,7 +66,7 @@ from scitex_cards._django._request_store import read_store
 from scitex_cards._dm import read as _dm_read
 from scitex_cards._dm import receipt_state as _dm_receipt_state
 from scitex_cards._dm import write as _dm_write
-from scitex_cards._threads import OPERATOR_NAME
+from scitex_cards._dm.threads import OPERATOR_NAME
 
 logger = slogging.getLogger(__name__)
 

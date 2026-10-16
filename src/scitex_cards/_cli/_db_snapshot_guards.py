@@ -141,8 +141,8 @@ def _live_dm_count(db_path: str | None) -> int:
     """
     import json
 
+    from .._dm.threads import THREADS_FILENAME
     from .._paths import resolve_tasks_path
-    from .._threads import THREADS_FILENAME
 
     # THE SIDECAR IS LOCAL STATE, NOT THE STORE'S IDENTITY -- the same
     # distinction, and the same repair, as the snapshot dir in ``_db.py``.

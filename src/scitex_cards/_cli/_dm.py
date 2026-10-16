@@ -302,7 +302,7 @@ def get_status_cmd(exchange_id: str, sender: str | None, as_json: bool) -> None:
 
 
 def _default_sidecar(store: str | None) -> str:
-    from .._threads import threads_path
+    from .._dm.threads import threads_path
 
     return str(threads_path(store))
 

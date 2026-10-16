@@ -29,7 +29,7 @@ from click.testing import CliRunner
 
 from scitex_cards._cli._dm import dm_group
 from scitex_cards._cli._inbox import inbox_group
-from scitex_cards._threads import append_message
+from scitex_cards._dm.threads import append_message
 
 
 # --- the verbs exist and are wired into their noun groups -------------------

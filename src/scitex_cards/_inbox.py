@@ -28,7 +28,7 @@ store, keyed by recipient id: ``{"inboxes": {"u_3f9a1c0b7e42": [{"id":
 migrates into ``inboxes.json`` ONCE on first access — see
 :func:`_migrate_legacy_yaml_once`; no permanent YAML fallback. The
 write path uses its own atomic tmp+fsync+reparse-verify dance and its
-own lock (mirrors :mod:`scitex_cards._threads`'s ``threads.json``).
+own lock (mirrors :mod:`scitex_cards._dm.threads`'s ``threads.json``).
 
 Hard standalone constraint
 ---------------------------

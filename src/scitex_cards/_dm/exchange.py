@@ -396,7 +396,7 @@ def persist_dm(
     client_request_id: str,
 ) -> dict:
     """Persist one DM, its notification exchange, and the canonical HTTP 202."""
-    from .. import _threads
+    from . import threads as _threads
 
     if not isinstance(client_request_id, str) or not client_request_id.strip():
         raise ValueError("dm_send requires a non-empty client_request_id")

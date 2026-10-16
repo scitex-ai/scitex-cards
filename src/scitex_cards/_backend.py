@@ -44,9 +44,10 @@ from __future__ import annotations
 import os
 from typing import Any, Mapping
 
-from . import _help_wait, _inbox, _store, _threads
+from . import _help_wait, _inbox, _store
 from ._currency import warn_if_stale_once
 from ._dm import read as _dm_read
+from ._dm import threads as _threads
 from ._inbox_confirm import confirm_notifications, warn_ack_on_read
 
 _HUB_URL_ENV = "SCITEX_CARDS_HUB_URL"
