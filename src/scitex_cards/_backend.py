@@ -327,7 +327,7 @@ class LocalBackend:
         # new immutable attempt. Reusing the failed xch would ask the consumer
         # to rewrite history; rotating here keeps the durable delivery id while
         # every poller observes the same successor exchange.
-        from ._dm_exchange import rotate_failed_notification_exchange
+        from ._dm.exchange import rotate_failed_notification_exchange
         from ._inbox_receipt import (
             outstanding_records_off_page,
             receipts,
@@ -472,7 +472,7 @@ class LocalBackend:
         # from the incident. Non-raising and warn-once by contract, so the DM
         # still goes out even when the currency check itself is unhappy.
         self._warn_currency()
-        from ._dm_exchange import new_client_request_id, persist_dm
+        from ._dm.exchange import new_client_request_id, persist_dm
 
         return persist_dm(
             sender,

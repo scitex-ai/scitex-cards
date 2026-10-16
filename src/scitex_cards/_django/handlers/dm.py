@@ -491,7 +491,7 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
         )
 
     from scitex_cards import _messaging
-    from scitex_cards._dm_exchange import DmExchangeError
+    from scitex_cards._dm.exchange import DmExchangeError
 
     try:
         record = _messaging.dm_send(
@@ -534,7 +534,7 @@ def dm_exchange_view(request: HttpRequest, exchange_id: str) -> HttpResponse:
             {"error": "method-not-allowed", "method": request.method}, status=405
         )
 
-    from scitex_cards._dm_exchange import get_exchange
+    from scitex_cards._dm.exchange import get_exchange
 
     reader = _author_of(request)
     try:

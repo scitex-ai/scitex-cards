@@ -199,7 +199,7 @@ _LAZY_IMPORTS = {
     "dm_list": ("._messaging", "dm_list"),
     "dm_send": ("._messaging", "dm_send"),
     "dm_send_document": ("._messaging", "dm_send_document"),
-    "DmExchangeError": ("._dm_exchange", "DmExchangeError"),
+    "DmExchangeError": ("._dm.exchange", "DmExchangeError"),
     "NotificationWatchUnavailable": (
         "._notification_watch",
         "NotificationWatchUnavailable",
