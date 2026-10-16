@@ -226,7 +226,12 @@ def __getattr__(name: str):
     import importlib
 
     mod_path, attr = target
-    value = getattr(importlib.import_module(mod_path, __name__), attr)
+    # Single-arg absolute path, never the two-arg (name, package) form:
+    # ``__name__ + "._store"`` IS ``"scitex_cards._store"`` — identical
+    # runtime resolution — but the hub static reader only accepts the
+    # single-arg call shape (dev-service dossier 2026-10-16: the two-arg
+    # form fails static-metadata and kills all 7 plugin mounts on dev).
+    value = getattr(importlib.import_module(__name__ + mod_path), attr)
     globals()[name] = value
     return value
 
