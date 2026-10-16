@@ -55,15 +55,26 @@ def _fp(store_path: str) -> str:
 class TestShape:
     """The token is ``<count>:<md5>`` (or the empty-store token)."""
 
-    def test_shape(self, store):
-        assert _FP_RE.match(_fp(store))
+    def test_shape_is_count_colon_md5_token(self, store):
+        # Arrange
+        path = store
+        # Act
+        token = _fp(path)
+        # Assert
+        assert _FP_RE.match(token)
 
 
 class TestStability:
     """Back-to-back reads agree — heartbeats excluded by construction."""
 
     def test_stable_across_reads(self, store):
-        assert _fp(store) == _fp(store)
+        # Arrange
+        path = store
+        # Act
+        first = _fp(path)
+        second = _fp(path)
+        # Assert
+        assert first == second
 
 
 class TestInvalidation:

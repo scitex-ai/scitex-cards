@@ -59,14 +59,21 @@ def _get(**extra):
 class TestBytesHit:
     """A second GET serves the cached bytes without rebuilding."""
 
-    def test_second_request_does_not_rebuild(self, builds):
+    def test_second_request_builds_only_once(self, builds):
         # Arrange — prime the cache with one request.
         _graph_mod.handle_graph(_get(), _board())
         # Act — second request against the same board identity.
-        resp = _graph_mod.handle_graph(_get(), _board())
-        # Assert — one build, valid JSON body.
+        _graph_mod.handle_graph(_get(), _board())
+        # Assert
         assert len(builds) == 1
-        assert json.loads(resp.content) == {"nodes": [], "hello": "world"}
+
+    def test_hit_body_matches_original_payload(self, builds):
+        # Arrange
+        first = _graph_mod.handle_graph(_get(), _board())
+        # Act
+        second = _graph_mod.handle_graph(_get(), _board())
+        # Assert
+        assert json.loads(second.content) == {"nodes": [], "hello": "world"}
 
     def test_hit_body_is_byte_identical(self, builds):
         # Arrange
@@ -76,18 +83,27 @@ class TestBytesHit:
         # Assert
         assert second.content == first.content
 
-    def test_response_stays_json_with_etag(self, builds):
-        # Arrange / Act
-        resp = _graph_mod.handle_graph(_get(), _board())
+    def test_response_content_type_is_json(self, builds):
+        # Arrange
+        request = _get()
+        # Act
+        resp = _graph_mod.handle_graph(request, _board())
         # Assert — same wire contract as the JsonResponse this replaced.
         assert resp["Content-Type"] == "application/json"
+
+    def test_response_etag_is_a_weak_validator(self, builds):
+        # Arrange
+        request = _get()
+        # Act
+        resp = _graph_mod.handle_graph(request, _board())
+        # Assert
         assert resp["ETag"].startswith('W/"')
 
 
 class TestConditionalGet:
     """A matching If-None-Match answers 304 with no body."""
 
-    def test_matching_etag_is_304(self, builds):
+    def test_matching_etag_status_is_304(self, builds):
         # Arrange
         first = _graph_mod.handle_graph(_get(), _board())
         etag = first["ETag"]
@@ -95,10 +111,26 @@ class TestConditionalGet:
         resp = _graph_mod.handle_graph(_get(HTTP_IF_NONE_MATCH=etag), _board())
         # Assert
         assert resp.status_code == 304
+
+    def test_matching_etag_body_is_empty(self, builds):
+        # Arrange
+        first = _graph_mod.handle_graph(_get(), _board())
+        etag = first["ETag"]
+        # Act
+        resp = _graph_mod.handle_graph(_get(HTTP_IF_NONE_MATCH=etag), _board())
+        # Assert
         assert resp.content == b""
+
+    def test_matching_etag_echoes_the_validator(self, builds):
+        # Arrange
+        first = _graph_mod.handle_graph(_get(), _board())
+        etag = first["ETag"]
+        # Act
+        resp = _graph_mod.handle_graph(_get(HTTP_IF_NONE_MATCH=etag), _board())
+        # Assert
         assert resp["ETag"] == etag
 
-    def test_stale_etag_serves_body(self, builds):
+    def test_stale_etag_status_is_200(self, builds):
         # Arrange
         _graph_mod.handle_graph(_get(), _board())
         # Act — an ETag from some other content version.
@@ -107,17 +139,33 @@ class TestConditionalGet:
         )
         # Assert
         assert resp.status_code == 200
+
+    def test_stale_etag_body_is_nonempty(self, builds):
+        # Arrange
+        _graph_mod.handle_graph(_get(), _board())
+        # Act — an ETag from some other content version.
+        resp = _graph_mod.handle_graph(
+            _get(HTTP_IF_NONE_MATCH='W/"deadbeef"'), _board()
+        )
+        # Assert
         assert len(resp.content) > 0
 
 
 class TestInvalidation:
     """A moved board identity rebuilds exactly once."""
 
-    def test_changed_sig_rebuilds(self, builds):
+    def test_changed_sig_rebuilds_exactly_once(self, builds):
+        # Arrange — prime under one identity.
+        _graph_mod.handle_graph(_get(), _board())
+        # Act — same path, new generation.
+        _graph_mod.handle_graph(_get(), _board(sig=("gen2", "stat")))
+        # Assert
+        assert len(builds) == 2
+
+    def test_changed_sig_rebuilt_body_matches_payload(self, builds):
         # Arrange — prime under one identity.
         _graph_mod.handle_graph(_get(), _board())
         # Act — same path, new generation.
         resp = _graph_mod.handle_graph(_get(), _board(sig=("gen2", "stat")))
         # Assert
-        assert len(builds) == 2
         assert json.loads(resp.content) == {"nodes": [], "hello": "world"}
