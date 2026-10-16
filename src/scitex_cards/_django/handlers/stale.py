@@ -15,7 +15,10 @@ Two endpoints:
   POST /archive  -> body ``{id, reason, by?}``; closes one card WITH
                    the reason recorded (mirrors the CLI ``close``
                    verb shipped in PR #151): appends a ``[CLOSED]``
-                   comment, flips status to ``deferred`` (sentinel),
+                   comment, flips status to ``cancelled`` (terminal,
+                   twin-parity with ``close --reason`` + ``project_board``
+                   ``ARCHIVE_STATUS``; ``deferred`` is OPEN per the
+                   2026-07-10 ruling so it must not carry ``closed_at``),
                    stamps ``_log_meta.closed_{at,by}``. The operator
                    clicks "archive" on a stale-panel row -> the
                    front-end POSTs here with a confirmed reason.
@@ -38,6 +41,7 @@ from collections import defaultdict
 
 from django.http import JsonResponse
 
+from ..._backlog_triage import BACKLOG_STATUS
 from ..._comment_ids import stamp_comment_id
 
 logger = slogging.getLogger(__name__)
@@ -81,15 +85,24 @@ def _is_unclear(task: dict) -> bool:
 
 
 def _stale_reasons(task: dict, now, cut) -> list[str]:
-    """Return the list of "why-flagged" reasons; empty list = not stale."""
+    """Return the list of "why-flagged" reasons; empty list = not stale.
+
+    The age window named in the reason strings is the LIVE cutoff
+    (``(now - cut).days``) — the same expression the CLI ``list-stale``
+    twin uses — never a hardcoded number: the default moved 14 -> 7 on
+    the operator's 2026-08-19 instruction and the endpoint accepts
+    ``?days=``. A hardcoded window disagrees with the CLI twin silently
+    (this module is a SECOND COPY of the CLI number — see _DEFAULT_DAYS).
+    """
     reasons: list[str] = []
+    window = (now - cut).days
     created = _parse_iso(task.get("created_at"))
     last_act = _parse_iso(task.get("last_activity"))
 
     if created is not None and created < cut:
-        reasons.append(f"created_at>14d ({created.date()})")
+        reasons.append(f"created_at>{window}d ({created.date()})")
     elif last_act is not None and last_act < cut:
-        reasons.append(f"last_activity>14d ({last_act.date()})")
+        reasons.append(f"last_activity>{window}d ({last_act.date()})")
     if created is None and last_act is None:
         reasons.append("no created_at + no last_activity")
     if _is_unclear(task):
@@ -155,7 +168,13 @@ def handle_stale(request, board):
     by_project: dict[str, int] = defaultdict(int)
 
     for t in board.tasks:
-        if t.get("status") != "pending":
+        # ``deferred`` is the backlog status since ``pending`` was abolished
+        # (2026-07-10): the same single source the CLI ``list-stale`` verb
+        # reads (``_backlog_triage.BACKLOG_STATUS``). The hardcoded
+        # ``"pending"`` this replaced matched no card in any live store, so
+        # the /stale panel served zero rows — the HTTP twin disagreeing with
+        # its CLI twin. See BACKLOG_STATUSES in ``_stale/active.py``.
+        if t.get("status") != BACKLOG_STATUS:
             continue
         reasons = _stale_reasons(t, now, cut)
         if not reasons:
@@ -211,8 +230,30 @@ def handle_archive(request, board):
       1. Look up the task. Unknown id -> 404.
       2. Append a ``[CLOSED] <reason>`` comment to ``comments[]``
          (same shape as the CLI verb + ``handle_comment``).
-      3. Flip ``status`` to ``"deferred"`` (sentinel — no new enum
-         value cascading into FE / tests today).
+      3. Flip ``status`` to ``"cancelled"`` — the terminal "closed as not
+         planned" state, matching the CLI ``close --reason`` twin
+         (``_cli/_close.py``) and ``project_board.ARCHIVE_STATUS``.
+         Leaving ``blocked`` MUST clear the gate: the endpoint takes ANY
+         id (no status precondition), so it can archive a ``blocked``
+         card, and the schema validator REJECTS a real blocker variant
+         on a non-``blocked`` row (``_validate.py`` rule (b)) — without
+         this the close of a gated card 400s on its own gate.
+         Operator ruling 2026-07-10: "deferred は終了ではない" —
+         ``deferred`` is OPEN, so stamping ``closed_at`` on it mints a
+         CLOSED-and-OPEN row the ``terminal_state_honest`` health check
+         FAILs on. ``close`` writes ``cancelled``; so does this twin.
+         The flip ALSO clears ``_log_meta.completed_{at,by}`` via
+         :func:`scitex_cards._store_lifecycle.clear_completion_stamp`:
+         the endpoint takes ANY id (no status precondition), so it can
+         archive a ``done`` card, and throughput
+         (``fleet/timing.py`` + ``timeline.py``) aggregates SOLELY on
+         ``completed_at`` — a cancelled row keeping the stamp counts as
+         delivered work forever, the same lie ``reopen_task`` was fixed
+         for. The CLI twin is safe without this line (it composes
+         ``update_task``, whose ``_clear_completion_stamp_on_leaving_done``
+         clock fires on every exit from ``done``); this handler writes
+         via ``_save_doc_unlocked`` directly and bypasses that clock,
+         so it calls the helper itself.
       4. Stamp ``_log_meta.closed_{at,by}`` (UTC ISO-8601 + author
          precedence chain: body ``by`` -> ``$SCITEX_CARDS_AGENT_ID`` ->
          ``$USER`` -> ``"user"``).
@@ -275,7 +316,25 @@ def handle_archive(request, board):
         task["comments"] = ([*existing] if isinstance(existing, list) else []) + [
             comment
         ]
-        task["status"] = "deferred"
+        task["status"] = "cancelled"
+        # Leaving `blocked` MUST clear the gate: the endpoint takes ANY id,
+        # so it can archive a `blocked` card, and the schema validator
+        # REJECTS a real blocker variant on a non-`blocked` row
+        # (`_validate.py` rule (b)) — without this pop the close of a gated
+        # card 400s on its own gate. Same invariant the project board keeps
+        # (`changes["blocker"] = ""`) and `handle_reopen` keeps
+        # (`task.pop("blocker", None)` on every non-`blocked` restore).
+        task.pop("blocker", None)
+        # Leaving `done` must drop the completion stamp: throughput
+        # (fleet/timing.py + timeline.py) believes `completed_at` alone and
+        # never consults `status`, so a cancelled row keeping the stamp is
+        # counted as delivered work forever — the same lie `reopen_task`
+        # clears via this same helper. This handler bypasses `update_task`
+        # (and its `_clear_completion_stamp_on_leaving_done` clock), so it
+        # calls the helper itself. No-op on stamp-less rows.
+        from ..._store_lifecycle import clear_completion_stamp
+
+        clear_completion_stamp(task)
 
         log_meta = task.get("_log_meta")
         if not isinstance(log_meta, dict):

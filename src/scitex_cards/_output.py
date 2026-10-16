@@ -3,22 +3,19 @@
 """The PS-220 content-rendering contract — verbatim product lines on stdout.
 
 PS-220 (``source-uses-print-not-scitex-logging``) forbids a bare ``print`` in
-shippable SciTeX source, because library code that writes unconditionally to
-stdout cannot be silenced, redirected or captured by a caller. It spares
-exactly three *mechanically provable* transports:
+shippable SciTeX source, with no configuration or comment bypass — including
+for JSON and protocol payloads. The prescribed transport for output that IS
+the product is ``scitex_logging.getPlainConsole(__name__).emit(payload)``,
+which writes the message verbatim to stdout (plus newline) with no level
+prefix, so byte contracts hold while sharing the logging discovery pattern.
 
-* a recognized serializer call (``json.dumps(...)``, ``.to_json()``,
-  ``.model_dump_json()``) — machine-readable data transport;
-* a caller-owned REQUIRED stream (``print(text, file=<required param>)``);
-* an explicit content-rendering API: a function whose whole job is to emit
-  its caller-supplied content verbatim.
-
-This module is the third. It exists for the card-id line the git hooks read:
+This module is that transport, centralized: it exists for the card-id line
+the git hooks read:
 the hook does ``card_id=$(… card-id <branch> <msg>)`` and treats the bytes on
-stdout as the card id, so routing that line through the logger would break it
-twice over — scitex-logging writes console records to STDERR, and it prepends
-an ``INFO: ``/``WARN: `` level prefix. The payload IS the product, so the
-transport must not decorate it.
+stdout as the card id, so routing that line through the LEVELLED logger
+(``getLogger`` / ``getConsole``) would break it twice over — those write
+console records to STDERR, and they prepend an ``INFO: ``/``WARN: `` level
+prefix. The payload IS the product, so the transport must not decorate it.
 
 It is deliberately NOT a general ``print`` hatch. Human-facing status and
 diagnostics belong on ``scitex_logging.getLogger`` / ``getConsole``, which
@@ -28,6 +25,8 @@ contract with a consumer.
 """
 
 from __future__ import annotations
+
+import scitex_logging as slogging
 
 __all__ = ["write_content"]
 
@@ -46,4 +45,4 @@ def write_content(content: str) -> None:
     -------
     None
     """
-    print(content)
+    slogging.getPlainConsole(__name__).emit(content)

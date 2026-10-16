@@ -107,7 +107,7 @@ class _Recorder:
 # fixtures — shared setup for the split tests below                            #
 # --------------------------------------------------------------------------- #
 @pytest.fixture()
-def two_record_inbox(tmp_path):
+def two_record_inbox(tmp_path, postgres_dsn):
     """Two completed notices for one recipient, both unseen."""
     store = _store(tmp_path)
     r1 = _enqueue_completed(store, card_id="c1", body="a", ts="2026-06-26T00:00:01Z")
@@ -116,7 +116,7 @@ def two_record_inbox(tmp_path):
 
 
 @pytest.fixture()
-def reassigned_dispatch(tmp_path):
+def reassigned_dispatch(tmp_path, postgres_dsn):
     """A REASSIGNED event dispatched for a REGISTERED owner (alice)."""
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
@@ -133,7 +133,7 @@ def reassigned_dispatch(tmp_path):
 
 
 @pytest.fixture()
-def completed_dispatch(tmp_path):
+def completed_dispatch(tmp_path, postgres_dsn):
     """A COMPLETED event dispatched for an owner (alice) + subscriber (eve)."""
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
@@ -155,7 +155,7 @@ def completed_dispatch(tmp_path):
 
 
 @pytest.fixture()
-def self_actor_dispatch(tmp_path):
+def self_actor_dispatch(tmp_path, postgres_dsn):
     """A REASSIGNED event whose ACTOR is also the card's owner."""
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
@@ -171,7 +171,7 @@ def self_actor_dispatch(tmp_path):
 
 
 @pytest.fixture()
-def unregistered_owner_dispatch(tmp_path):
+def unregistered_owner_dispatch(tmp_path, postgres_dsn):
     """A REASSIGNED event for an owner who was never registered."""
     store = _store(tmp_path)
     add_task(store=store, id="c1", title="x", agent="dave", created_by="dave")
@@ -184,7 +184,7 @@ def unregistered_owner_dispatch(tmp_path):
 
 
 @pytest.fixture()
-def redispatched(tmp_path):
+def redispatched(tmp_path, postgres_dsn):
     """The SAME completed event dispatched twice (identical ts)."""
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
@@ -199,7 +199,7 @@ def redispatched(tmp_path):
 
 
 @pytest.fixture()
-def bus_dispatch(tmp_path, env):
+def bus_dispatch(tmp_path, env, postgres_dsn):
     """A card-event pushed through the REAL hook bus.
 
     No mocks — the real default push wire runs in dry-run mode so there is
@@ -230,7 +230,7 @@ def store_with_task_user_and_inbox(new_store):
 # --------------------------------------------------------------------------- #
 # enqueue → poll_inbox → mark_seen / ack                                      #
 # --------------------------------------------------------------------------- #
-def test_enqueue_returns_a_record(tmp_path):
+def test_enqueue_returns_a_record(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     # Act
@@ -239,7 +239,7 @@ def test_enqueue_returns_a_record(tmp_path):
     assert rec is not None
 
 
-def test_enqueue_record_starts_unseen(tmp_path):
+def test_enqueue_record_starts_unseen(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     # Act
@@ -248,7 +248,7 @@ def test_enqueue_record_starts_unseen(tmp_path):
     assert rec["seen"] is False
 
 
-def test_enqueue_record_carries_the_card_id(tmp_path):
+def test_enqueue_record_carries_the_card_id(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     # Act
@@ -257,7 +257,7 @@ def test_enqueue_record_carries_the_card_id(tmp_path):
     assert rec["card_id"] == "c1"
 
 
-def test_enqueue_record_id_uses_the_n_prefix(tmp_path):
+def test_enqueue_record_id_uses_the_n_prefix(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     # Act
@@ -266,7 +266,7 @@ def test_enqueue_record_id_uses_the_n_prefix(tmp_path):
     assert rec["id"].startswith("n_")
 
 
-def test_enqueue_then_poll_returns_unseen_record(tmp_path):
+def test_enqueue_then_poll_returns_unseen_record(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     _enqueue_reassigned(store)
@@ -276,7 +276,7 @@ def test_enqueue_then_poll_returns_unseen_record(tmp_path):
     assert len(got) == 1
 
 
-def test_polled_record_carries_the_card_id(tmp_path):
+def test_polled_record_carries_the_card_id(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     _enqueue_reassigned(store)
@@ -286,7 +286,7 @@ def test_polled_record_carries_the_card_id(tmp_path):
     assert got[0]["card_id"] == "c1"
 
 
-def test_polled_record_carries_the_body(tmp_path):
+def test_polled_record_carries_the_body(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     _enqueue_reassigned(store)
@@ -296,7 +296,7 @@ def test_polled_record_carries_the_body(tmp_path):
     assert got[0]["body"] == "Card c1 reassigned to you"
 
 
-def test_polled_record_is_still_unseen(tmp_path):
+def test_polled_record_is_still_unseen(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     _enqueue_reassigned(store)
@@ -306,7 +306,7 @@ def test_polled_record_is_still_unseen(tmp_path):
     assert got[0]["seen"] is False
 
 
-def test_first_drain_returns_the_record(tmp_path):
+def test_first_drain_returns_the_record(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     _enqueue_completed(store)
@@ -316,7 +316,7 @@ def test_first_drain_returns_the_record(tmp_path):
     assert [r["card_id"] for r in first] == ["c1"]
 
 
-def test_first_drain_marks_the_record_seen(tmp_path):
+def test_first_drain_marks_the_record_seen(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     _enqueue_completed(store)
@@ -326,7 +326,7 @@ def test_first_drain_marks_the_record_seen(tmp_path):
     assert first[0]["seen"] is True
 
 
-def test_mark_seen_advances_cursor(tmp_path):
+def test_mark_seen_advances_cursor(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     _enqueue_completed(store)
@@ -337,7 +337,7 @@ def test_mark_seen_advances_cursor(tmp_path):
     assert second == []
 
 
-def test_full_history_still_holds_the_record(tmp_path):
+def test_full_history_still_holds_the_record(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     _enqueue_completed(store)
@@ -348,7 +348,7 @@ def test_full_history_still_holds_the_record(tmp_path):
     assert [r["card_id"] for r in history] == ["c1"]
 
 
-def test_full_history_shows_the_record_as_seen(tmp_path):
+def test_full_history_shows_the_record_as_seen(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     _enqueue_completed(store)
@@ -400,7 +400,7 @@ def test_ack_unknown_id_is_a_noop(two_record_inbox):
     assert flipped == []
 
 
-def test_dedup_first_enqueue_returns_a_record(tmp_path):
+def test_dedup_first_enqueue_returns_a_record(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     # Act
@@ -409,7 +409,7 @@ def test_dedup_first_enqueue_returns_a_record(tmp_path):
     assert first is not None
 
 
-def test_dedup_exact_reemit_returns_none(tmp_path):
+def test_dedup_exact_reemit_returns_none(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     _enqueue_reassigned(store)
@@ -419,7 +419,7 @@ def test_dedup_exact_reemit_returns_none(tmp_path):
     assert second is None
 
 
-def test_dedup_keeps_only_one_record(tmp_path):
+def test_dedup_keeps_only_one_record(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     _enqueue_reassigned(store)
@@ -430,7 +430,7 @@ def test_dedup_keeps_only_one_record(tmp_path):
     assert len(everything) == 1
 
 
-def test_dedup_distinct_ts_is_kept_separately(tmp_path):
+def test_dedup_distinct_ts_is_kept_separately(tmp_path, postgres_dsn):
     # A DIFFERENT ts is a genuine second event, not a re-emit.
     # Arrange
     store = _store(tmp_path)
@@ -441,7 +441,7 @@ def test_dedup_distinct_ts_is_kept_separately(tmp_path):
     assert third is not None
 
 
-def test_dedup_distinct_ts_yields_two_records(tmp_path):
+def test_dedup_distinct_ts_yields_two_records(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     _enqueue_reassigned(store)
@@ -452,7 +452,7 @@ def test_dedup_distinct_ts_yields_two_records(tmp_path):
     assert len(everything) == 2
 
 
-def test_enqueue_with_falsy_recipient_returns_none(tmp_path):
+def test_enqueue_with_falsy_recipient_returns_none(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     # Act
@@ -463,7 +463,7 @@ def test_enqueue_with_falsy_recipient_returns_none(tmp_path):
     assert rec is None
 
 
-def test_poll_inbox_with_falsy_recipient_is_empty(tmp_path):
+def test_poll_inbox_with_falsy_recipient_is_empty(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     # Act
@@ -472,7 +472,7 @@ def test_poll_inbox_with_falsy_recipient_is_empty(tmp_path):
     assert got == []
 
 
-def test_poll_inbox_for_unknown_recipient_is_empty(tmp_path):
+def test_poll_inbox_for_unknown_recipient_is_empty(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     # Act
@@ -481,7 +481,7 @@ def test_poll_inbox_for_unknown_recipient_is_empty(tmp_path):
     assert got == []
 
 
-def test_ack_for_unknown_recipient_is_a_noop(tmp_path):
+def test_ack_for_unknown_recipient_is_a_noop(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     # Act
@@ -737,7 +737,7 @@ async def _call_tool(tool_callable, **kwargs):
 
 
 @pytest.fixture()
-def alice_notification_store(tmp_path):
+def alice_notification_store(tmp_path, postgres_dsn):
     """A REGISTERED alice with one COMPLETED notification queued."""
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
@@ -751,7 +751,7 @@ def alice_notification_store(tmp_path):
 
 
 @pytest.fixture()
-def dave_notification_store(tmp_path):
+def dave_notification_store(tmp_path, postgres_dsn):
     """An UNREGISTERED dave with one REASSIGNED notification queued."""
     store = _store(tmp_path)
     add_task(store=store, id="c1", title="x", agent="dave", created_by="dave")

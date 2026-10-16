@@ -2,7 +2,7 @@
  *
  * WHY IT LIVES IN ui/ AND NOT chat/: this is a generic "insert a character
  * at the caret of a text field" widget with no knowledge of DMs, messages
- * or `.msg`. It is written to be HARVESTED into scitex-ui as a shared
+ * or `.msg`. It is written to be HARVESTED into the SDK as a shared
  * primitive — the class names are self-describing (`stx-emoji-picker__*`),
  * the palette rides component tokens, and the only contract with the host
  * page is "point me at a text field".

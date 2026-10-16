@@ -27,10 +27,11 @@ from scitex_cards._django.services import _reset_cache  # noqa: E402
 
 
 _STORE_TEXT = (
+    # Fixture seeds deferred (``pending`` was abolished 2026-07-10).
     "tasks:\n"
     "  - id: a\n"
     "    title: A\n"
-    "    status: pending\n"
+    "    status: deferred\n"
     "    agent: proj-alpha\n"
     "    project: alpha\n"
 )
@@ -88,7 +89,7 @@ class TestCacheInvalidation:
         # Act — bump the mtime by re-writing the file with a new task.
         time.sleep(0.02)  # ensure mtime ticks past the 1ms resolution
         with open(store, "w", encoding="utf-8") as h:
-            h.write(_STORE_TEXT + "  - {id: b, title: B, status: pending}\n")
+            h.write(_STORE_TEXT + "  - {id: b, title: B, status: deferred}\n")
         # Ensure mtime actually moves (some filesystems coarsen).
         new_mtime = time.time()
         os.utime(store, (new_mtime, new_mtime))

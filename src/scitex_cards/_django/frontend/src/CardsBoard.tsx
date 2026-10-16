@@ -178,10 +178,10 @@ function Progress({ graph }: { graph: GraphPayload }) {
     "goal",
     "in_progress",
     "blocked",
-    "pending",
     "deferred",
     "failed",
     "done",
+    "cancelled",
   ];
   const blockedOn = activeStatuses.includes("blocked");
   return (

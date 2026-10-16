@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Everything our templates load from scitex-ui must actually ARRIVE.
+"""Everything our templates load from the SDK must actually ARRIVE.
 
 THE FAILURE MODE THIS EXISTS FOR IS SILENT BY CONSTRUCTION. Both pages consume
-scitex-ui through progressive enhancement::
+the SDK through progressive enhancement::
 
     if (window.STX && window.STX.Combobox) { ...enhance... } else { ...plain... }
 
@@ -18,20 +18,20 @@ been, but the reason nobody could say so without a browser is exactly this.
 
 WHAT IS PINNED, and why each half is needed:
 
-  1. Every ``{% static 'scitex_ui/...' %}`` path our templates reference RESOLVES
+  1. Every ``{% static 'scitex_sdk/ui/...' %}`` path our templates reference RESOLVES
      through the real staticfiles finders. This catches the version-floor and
-     asset-rename classes: a scitex-ui that does not ship the file at all.
+     asset-rename classes: an SDK that does not ship the file at all.
 
   2. The bundle we feature-detect actually ATTACHES ``window.STX.Combobox`` and
      its ``fuzzyMatch`` static. Presence is not currency — and this is not
-     hypothetical. On 2026-07-29 scitex-ui regenerated ``js/app/combobox.js``
+     hypothetical. On 2026-07-29 the base ``js/app/combobox.js`` was regenerated
      from its TypeScript with ``esbuild --format=esm``. The result was valid
      JavaScript, byte-for-byte a real file at the same path, passing every
      exists() check — and it set NO GLOBAL, which would have pinned every
      consumer to its fallback branch permanently. Check (1) alone would have
      been green through all of it.
 
-This is a CONTRACT test against the installed scitex-ui, so it fails when the
+This is a CONTRACT test against the installed SDK, so it fails when the
 environment is wrong rather than when this repo is. That is deliberate: an
 install too old to honour our declared floor is a real defect, and the declared
 floor is the thing this test makes enforceable.
@@ -51,11 +51,11 @@ from scitex_cards._django import views
 
 _TEMPLATES = Path(views.__file__).parent / "templates" / "scitex_cards"
 
-#: `{% static 'scitex_ui/...' %}` with either quote style. Only scitex-ui paths:
+#: `{% static 'scitex_sdk/ui/...' %}` with either quote style. Only SDK paths:
 #: our own assets ship in this wheel and are covered by the packaging tests.
 _STATIC = re.compile('\\{%\\s*static\\s+[\'"](scitex_sdk/ui/[^\'"]+)[\'"]\\s*%\\}')
 
-#: Hand-written IIFE bundles from scitex-ui that MUST attach a global, mapped to
+#: Hand-written IIFE bundles from the SDK that MUST attach a global, mapped to
 #: the symbol our code feature-detects. Extend this when a page starts consuming
 #: another one. A bundle absent from this map is not "exempt" — it is merely not
 #: yet depended on by a `window.`-guarded branch in this repo.
@@ -65,7 +65,7 @@ _GLOBAL_BUNDLES = {
 
 
 def _referenced_assets() -> dict[str, list[str]]:
-    """Map scitex-ui static path -> templates that reference it."""
+    """Map SDK static path -> templates that reference it."""
     found: dict[str, list[str]] = {}
     for template in sorted(_TEMPLATES.glob("*.html")):
         for path in _STATIC.findall(template.read_text(encoding="utf-8")):
@@ -85,7 +85,7 @@ def referenced() -> dict[str, list[str]]:
 # scan's own reach is asserted before anything is concluded from it.
 
 
-def test_the_scan_finds_scitex_ui_references_at_all(referenced) -> None:
+def test_the_scan_finds_sdk_references_at_all(referenced) -> None:
     """If this goes red, every other test in this file is vacuous."""
     # Arrange
     # Act
@@ -97,7 +97,7 @@ def test_the_scan_finds_scitex_ui_references_at_all(referenced) -> None:
 
 
 def test_the_scan_covers_both_operator_facing_pages(referenced) -> None:
-    """board_v3 and chat both consume scitex-ui; a scan seeing one is half-blind."""
+    """board_v3 and chat both consume the SDK; a scan seeing one is half-blind."""
     # Arrange
     seen = {name for names in referenced.values() for name in names}
     # Act
@@ -116,8 +116,8 @@ def test_the_combobox_bundle_is_among_them(referenced) -> None:
 # === (1) the files arrive ==================================================
 
 
-def test_every_referenced_scitex_ui_asset_resolves(referenced) -> None:
-    """Through the REAL finders, against the INSTALLED scitex-ui."""
+def test_every_referenced_sdk_asset_resolves(referenced) -> None:
+    """Through the REAL finders, against the INSTALLED SDK."""
     # Arrange
     from django.contrib.staticfiles import finders
 
@@ -127,8 +127,8 @@ def test_every_referenced_scitex_ui_asset_resolves(referenced) -> None:
     }
     # Assert
     assert not missing, (
-        "scitex-ui assets referenced by our templates but NOT shipped by the "
-        f"installed scitex-ui: {json.dumps(missing, indent=2)} — the page will "
+        "SDK assets referenced by our templates but NOT shipped by the "
+        f"installed SDK: {json.dumps(missing, indent=2)} — the page will "
         "silently fall back rather than fail, so nothing else will tell you"
     )
 
@@ -144,7 +144,7 @@ def _node() -> str:
 
 
 def _installed_path(asset: str) -> str:
-    """Where the INSTALLED scitex-ui put `asset`.
+    """Where the INSTALLED SDK put `asset`.
 
     Raises rather than asserting so the caller keeps a single assertion: the
     "is it shipped at all?" question already has its own test above, and a
@@ -162,7 +162,7 @@ def _installed_path(asset: str) -> str:
 def _globals_attached_by(asset: str) -> list[str]:
     """Execute the bundle with a bare `window` and report what it attached.
 
-    Runs the file scitex-ui actually installed — the point is to observe the
+    Runs the file the SDK actually installed — the point is to observe the
     shipped artifact's effect, which is not derivable from its path.
     """
     resolved = _installed_path(asset)
@@ -205,7 +205,7 @@ def test_the_bundle_attaches_the_symbol_we_feature_detect(
 def test_the_combobox_exposes_the_fuzzy_matcher_as_a_static() -> None:
     """`Combobox.fuzzyMatch` is what chat_filter.js consumes for list filtering.
 
-    A list filter wants the MATCHER, not the widget. If scitex-ui ever drops the
+    A list filter wants the MATCHER, not the widget. If the SDK ever drops the
     static, this page silently degrades to substring matching and the operator
     meets two different search behaviours in one app.
     """

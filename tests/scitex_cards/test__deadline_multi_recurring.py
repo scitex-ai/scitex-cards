@@ -156,13 +156,16 @@ class TestNextOccurrenceFutureBaseReturnsBase:
 
 
 class TestMutualExclusion:
+    # NOTE (pending abolished 2026-07-10): fixtures seed ``deferred`` (the
+    # open successor default), not the abolished ``pending`` — the assertions
+    # pin deadline-shape errors, and the status is incidental.
     def test_rejects_both_set(self):
         # Arrange
         tasks = [
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "deadline": "2026-06-15",
                 "deadlines": ["2026-06-15"],
             }
@@ -176,7 +179,7 @@ class TestMutualExclusion:
 class TestDeadlinesEmptyListRejected:
     def test_raises_on_empty_deadline_list(self):
         # Arrange
-        tasks = [{"id": "a", "title": "A", "status": "pending", "deadlines": []}]
+        tasks = [{"id": "a", "title": "A", "status": "deferred", "deadlines": []}]
         # Act
         # Assert
         with pytest.raises(TaskValidationError, match="empty deadlines list"):
@@ -190,7 +193,7 @@ class TestDeadlinesPerEntryValidated:
             {
                 "id": "a",
                 "title": "A",
-                "status": "pending",
+                "status": "deferred",
                 "deadlines": ["2026-06-15", "nope"],
             }
         ]

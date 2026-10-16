@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""``update_task(..., expected_revision=N)`` -- the opt-in compare-and-set."""
+"""``update_task(..., expected_revision=N)`` -- the opt-in compare-and-set.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 9 tests below seed/read the ambient per-test
+store via the ``seeded`` / ``contended`` / ``refusal`` fixtures, which is
+refused without a writable cluster. The ``new_store`` rebuild test stays
+unguarded by design -- that factory is already fail-LOUD on its own.
+"""
 
 from __future__ import annotations
 
@@ -49,15 +56,21 @@ def _revision(task_id="c1"):
 
 
 @pytest.fixture()
-def seeded():
-    """One card in the test's own isolated store."""
+def seeded(postgres_dsn):
+    """One card in the test's own isolated store.
+
+    ``postgres_dsn`` is the fail-LOUD guard (bare-param pattern): the seed
+    below writes the ambient per-test store, which is refused without a
+    writable cluster. Carried on the fixture so every consumer inherits it
+    even if a future test forgets the bare param.
+    """
     add_task(id="c1", title="Original", status="deferred", assignee="tester",
              created_by="tester")
     return "c1"
 
 
 @pytest.fixture()
-def contended(seeded):
+def contended(seeded, postgres_dsn):
     """A card a concurrent writer has already moved past the caller's revision."""
     stale = _revision()
     update_task(None, "c1", title="Winner")
@@ -65,7 +78,7 @@ def contended(seeded):
 
 
 @pytest.fixture()
-def refusal(contended):
+def refusal(contended, postgres_dsn):
     """The refused write, already performed. Returns (stale, exception)."""
     stale = contended
     try:
@@ -80,7 +93,7 @@ def refusal(contended):
 # --------------------------------------------------------------------------
 
 
-def test_a_write_holding_the_current_revision_lands(seeded):
+def test_a_write_holding_the_current_revision_lands(seeded, postgres_dsn):
     # Arrange
     current = _revision()
     # Act
@@ -89,7 +102,7 @@ def test_a_write_holding_the_current_revision_lands(seeded):
     assert merged["title"] == "Updated"
 
 
-def test_omitting_the_guard_still_writes(seeded):
+def test_omitting_the_guard_still_writes(seeded, postgres_dsn):
     """The opt-in property. REJECT-by-default was ruled unusable for a
     mixed-version fleet (`_migrate_v6_to_v7`)."""
     # Arrange
@@ -105,7 +118,7 @@ def test_omitting_the_guard_still_writes(seeded):
 # --------------------------------------------------------------------------
 
 
-def test_a_stale_revision_is_refused(contended):
+def test_a_stale_revision_is_refused(contended, postgres_dsn):
     # Arrange
     stale = contended
     call = partial(update_task, None, "c1", title="Loser", expected_revision=stale)
@@ -116,7 +129,7 @@ def test_a_stale_revision_is_refused(contended):
         call()
 
 
-def test_the_refused_write_changes_nothing(refusal):
+def test_the_refused_write_changes_nothing(refusal, postgres_dsn):
     # Arrange
     _stale, _exc = refusal
     # Act
@@ -125,7 +138,7 @@ def test_the_refused_write_changes_nothing(refusal):
     assert current["title"] == "Winner"
 
 
-def test_the_error_names_the_card(refusal):
+def test_the_error_names_the_card(refusal, postgres_dsn):
     """A reconciler retries the losers; it cannot retry a row it cannot name."""
     # Arrange
     _stale, exc = refusal
@@ -135,7 +148,7 @@ def test_the_error_names_the_card(refusal):
     assert named == "c1"
 
 
-def test_the_error_carries_the_revision_the_store_actually_holds(refusal):
+def test_the_error_carries_the_revision_the_store_actually_holds(refusal, postgres_dsn):
     """So the caller can log the gap without a second query."""
     # Arrange
     _stale, exc = refusal
@@ -145,7 +158,7 @@ def test_the_error_carries_the_revision_the_store_actually_holds(refusal):
     assert found == _revision()
 
 
-def test_the_error_carries_the_revision_the_caller_expected(refusal):
+def test_the_error_carries_the_revision_the_caller_expected(refusal, postgres_dsn):
     # Arrange
     stale, exc = refusal
     # Act
@@ -154,7 +167,7 @@ def test_the_error_carries_the_revision_the_caller_expected(refusal):
     assert expected == stale
 
 
-def test_the_error_says_retrying_this_payload_cannot_succeed(refusal):
+def test_the_error_says_retrying_this_payload_cannot_succeed(refusal, postgres_dsn):
     """The message has to stop the obvious wrong move -- retrying verbatim --
     which is exactly what the hash hazard would have made permanent."""
     # Arrange
@@ -170,7 +183,7 @@ def test_the_error_says_retrying_this_payload_cannot_succeed(refusal):
 # --------------------------------------------------------------------------
 
 
-def test_a_retry_after_a_refusal_can_actually_land(refusal):
+def test_a_retry_after_a_refusal_can_actually_land(refusal, postgres_dsn):
     """THE TEST THAT GOES RED WITHOUT THE FIX.
 
     If the refused write had recorded its content hash, this retry -- with the

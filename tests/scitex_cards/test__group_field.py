@@ -9,6 +9,11 @@ from `_groups.py`'s project-cluster Group dataclass (viewer
 aggregation; this is per-task dispatch metadata).
 
 No mocks (STX-NM / PA-306). AAA pattern, one assertion per test.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 6 ambient-store checks below target the ambient
+per-test store, which is refused without a writable cluster. The 9 pure
+dataclass/validate tests above stay unguarded by design (no store touch).
 """
 
 from __future__ import annotations
@@ -64,12 +69,15 @@ def test_task_dataclass_omits_none_group_from_to_dict():
 
 
 # === _validate_tasks accepts a valid `group` string ========================
+# Fixtures use ``status: deferred`` (the successor default since ``pending``
+# was abolished 2026-07-10): these tests pin `group` shapes, not statuses,
+# so they must not seed the abolished value.
 
 
 def test_validate_accepts_non_empty_group_string():
     # Arrange
     tasks = [
-        {"id": "t-a", "title": "x", "status": "pending", "group": "paper-portfolio"}
+        {"id": "t-a", "title": "x", "status": "deferred", "group": "paper-portfolio"}
     ]
     accepted = False
     # Act
@@ -81,7 +89,7 @@ def test_validate_accepts_non_empty_group_string():
 
 def test_validate_accepts_absent_group():
     # Arrange
-    tasks = [{"id": "t-a", "title": "x", "status": "pending"}]
+    tasks = [{"id": "t-a", "title": "x", "status": "deferred"}]
     accepted = False
     # Act
     _validate_tasks(tasks, source="<test>")
@@ -95,7 +103,7 @@ def test_validate_accepts_absent_group():
 
 def test_validate_rejects_empty_string_group():
     # Arrange
-    tasks = [{"id": "t-a", "title": "x", "status": "pending", "group": ""}]
+    tasks = [{"id": "t-a", "title": "x", "status": "deferred", "group": ""}]
     # Act
     # Assert
     with pytest.raises(TaskValidationError):
@@ -104,7 +112,7 @@ def test_validate_rejects_empty_string_group():
 
 def test_validate_rejects_non_string_group():
     # Arrange
-    tasks = [{"id": "t-a", "title": "x", "status": "pending", "group": ["paper", "ci"]}]
+    tasks = [{"id": "t-a", "title": "x", "status": "deferred", "group": ["paper", "ci"]}]
     # Act
     # Assert
     with pytest.raises(TaskValidationError):
@@ -113,7 +121,7 @@ def test_validate_rejects_non_string_group():
 
 def test_validate_rejects_integer_group():
     # Arrange
-    tasks = [{"id": "t-a", "title": "x", "status": "pending", "group": 42}]
+    tasks = [{"id": "t-a", "title": "x", "status": "deferred", "group": 42}]
     # Act
     # Assert
     with pytest.raises(TaskValidationError):
@@ -123,7 +131,7 @@ def test_validate_rejects_integer_group():
 # === Python API: add_task + update_task pipe `group` through ==============
 
 
-def test_add_task_persists_group():
+def test_add_task_persists_group(postgres_dsn):
     # Arrange
     # Act
     add_task(id="t-a", title="x", group="paper-portfolio", assignee="agent:test-suite")
@@ -132,7 +140,7 @@ def test_add_task_persists_group():
     assert loaded.get("group") == "paper-portfolio"
 
 
-def test_update_task_sets_group():
+def test_update_task_sets_group(postgres_dsn):
     # Arrange
     add_task(id="t-a", title="x", assignee="agent:test-suite")
     # Act
@@ -142,7 +150,7 @@ def test_update_task_sets_group():
     assert loaded.get("group") == "ci-recovery-wave"
 
 
-def test_update_task_clears_group_when_none_passed():
+def test_update_task_clears_group_when_none_passed(postgres_dsn):
     # Arrange — group set first; then cleared by passing group=None.
     add_task(id="t-a", title="x", group="paper", assignee="agent:test-suite")
     # Act
@@ -155,7 +163,7 @@ def test_update_task_clears_group_when_none_passed():
 # === CLI: --group flag on add + update ===================================
 
 
-def test_cli_add_with_group_persists():
+def test_cli_add_with_group_persists(postgres_dsn):
     # Arrange
     runner = CliRunner()
     # Act
@@ -176,7 +184,7 @@ def test_cli_add_with_group_persists():
     assert result.exit_code == 0, result.output
 
 
-def test_cli_update_with_group_sets_field():
+def test_cli_update_with_group_sets_field(postgres_dsn):
     # Arrange
     add_task(id="t-a", title="x", assignee="agent:test-suite")
     runner = CliRunner()
@@ -190,7 +198,7 @@ def test_cli_update_with_group_sets_field():
     assert loaded.get("group") == "paper-portfolio"
 
 
-def test_cli_update_with_empty_group_clears():
+def test_cli_update_with_empty_group_clears(postgres_dsn):
     # Arrange — group set first; --group '' clears (per the
     # existing update-clear-via-empty-string convention).
     add_task(id="t-a", title="x", group="paper", assignee="agent:test-suite")

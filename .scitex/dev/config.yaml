@@ -205,6 +205,12 @@ audit:
           and gate history documented in-file); converting to the org caller
           renames the required check context per BLOCKER 1, which needs
           branch-protection coordination done as its own change.
+    # REMOVED 2026-10-12 (PS-220 has no configuration or comment bypass under
+    # scitex-dev >= 0.62: the two former per-site entries for the stdout
+    # protocol payloads did not suppress anything). The payloads are now
+    # emitted via scitex-logging's prescribed PlainConsole transport
+    # (write_content(); cards-audit-4-develop-inherited-errors-ps220-ps234-20261012),
+    # so no exemption is needed. Do NOT re-add PS-220 entries here.
 
   # REMOVED 2026-09-22 (kept as comment so the parser never sees it):
   # PS-128 RECORD ONLY entry deleted as stale (the rule is verified silent

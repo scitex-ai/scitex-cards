@@ -6,6 +6,13 @@ Uses click's ``CliRunner`` against the real root group — no mocks. Covers:
 * ``notifyd --once`` runs a single real delivery pass and exits (no daemon).
 * ``notifyd install-unit`` writes the unit to a tmp ``$XDG_CONFIG_HOME`` and
   prints the operator-gated enable commands WITHOUT running systemctl.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the seeding below enqueues into the PG-backed inbox /
+writes the ambient per-test store, which is refused without a writable
+cluster. The five ``install-unit`` tests stay unguarded by design: they write
+a unit file under a tmp $XDG_CONFIG_HOME with a shimmed $PATH and never open
+the store.
 """
 
 from __future__ import annotations
@@ -50,7 +57,7 @@ def _run_notifyd_once():
     return runner.invoke(main, ["notifyd", "--once"])
 
 
-def test_notifyd_once_exits_zero():
+def test_notifyd_once_exits_zero(postgres_dsn):
     # Arrange
     # Act
     result = _run_notifyd_once()
@@ -58,7 +65,7 @@ def test_notifyd_once_exits_zero():
     assert result.exit_code == 0, result.output
 
 
-def test_notifyd_once_announces_the_single_pass():
+def test_notifyd_once_announces_the_single_pass(postgres_dsn):
     # Arrange
     # Act
     result = _run_notifyd_once()
@@ -66,7 +73,7 @@ def test_notifyd_once_announces_the_single_pass():
     assert "notifyd --once" in result.output
 
 
-def test_notifyd_once_runs_single_pass():
+def test_notifyd_once_runs_single_pass(postgres_dsn):
     # Arrange
     # Act
     result = _run_notifyd_once()
@@ -195,7 +202,9 @@ def _sweep_with_none_store(env, tmp_path):
     return [n for n in notes if n["event_type"] == "reminder"]
 
 
-def test_run_reminder_sweep_resolves_none_store_and_enqueues(env, tmp_path):
+def test_run_reminder_sweep_resolves_none_store_and_enqueues(
+    env, tmp_path, postgres_dsn
+):
     # Arrange
     # Act
     digest = _sweep_with_none_store(env, tmp_path)
@@ -203,7 +212,7 @@ def test_run_reminder_sweep_resolves_none_store_and_enqueues(env, tmp_path):
     assert len(digest) == 1
 
 
-def test_the_reminder_digest_names_the_stale_card(env, tmp_path):
+def test_the_reminder_digest_names_the_stale_card(env, tmp_path, postgres_dsn):
     # Arrange
     # Act
     digest = _sweep_with_none_store(env, tmp_path)

@@ -23,6 +23,12 @@ Plus the happy path (a normal valid write verifies AND promotes via
 os.replace) and the byte-length short-write guard.
 
 Real tmp files, NO mocks (STX-NM / PA-306).
+
+The ``promoted_store`` fixture below writes the ambient per-test store, so it
+requests the ``postgres_dsn`` fail-LOUD fixture (bare-param pattern): with no
+writable cluster the seed write would refuse on the harness's refused
+placeholder, and the fixture names that cause instead of leaving it to the
+next guard.
 """
 
 from __future__ import annotations
@@ -41,10 +47,14 @@ from scitex_cards._yaml import _SAFE_LOADER, safe_dump
 # Helpers
 # ---------------------------------------------------------------------------
 def _valid_doc(n: int = 1) -> dict:
-    """A structurally valid store doc with ``n`` tasks."""
+    """A structurally valid store doc with ``n`` tasks.
+
+    Statuses are the successor default ``deferred`` (``pending`` was abolished
+    2026-07-10): the verify pins YAML integrity, never the status domain.
+    """
     return {
         "tasks": [
-            {"id": f"t{i}", "title": f"Title {i}", "status": "pending"}
+            {"id": f"t{i}", "title": f"Title {i}", "status": "deferred"}
             for i in range(n)
         ],
         # The store is the database now: the `users:` section is a LIST of records
@@ -104,7 +114,7 @@ def _events_before_failure(path):
     return events
 
 
-#: A valid dump whose LAST scalar is ``status: pending``, paired with a
+#: A valid dump whose LAST scalar is ``status: deferred``, paired with a
 #: byte-for-byte SAME-LENGTH corruption of it: the first character of that
 #: scalar's value is replaced by a double-quote, opening a quoted scalar that
 #: is never closed before EOF. That is the 2026-06-13 incident shape at an
@@ -112,15 +122,15 @@ def _events_before_failure(path):
 #: can catch it. The tests in ``TestSameLengthMidScalarCorruption`` each pin
 #: one link of that argument; dropping any of them leaves the claim
 #: "the event-scan is load-bearing" unproven.
-GOOD_DUMP = safe_dump({"tasks": [{"id": "a", "title": "A", "status": "pending"}]})
-BAD_SAME_LENGTH = GOOD_DUMP.replace("status: pending", 'status: "ending', 1)
+GOOD_DUMP = safe_dump({"tasks": [{"id": "a", "title": "A", "status": "deferred"}]})
+BAD_SAME_LENGTH = GOOD_DUMP.replace("status: deferred", 'status: "eferred', 1)
 
 
 # ---------------------------------------------------------------------------
 # Happy path
 # ---------------------------------------------------------------------------
 @pytest.fixture()
-def promoted_store(env):
+def promoted_store(env, postgres_dsn):
     """A 3-task doc written end-to-end through the REAL save path.
 
     Yields the canonical STORE path after ``_save_doc_unlocked`` committed the
@@ -134,6 +144,11 @@ def promoted_store(env):
     read refuses the DB unless that stamp equals the resolved store. Handing a
     throwaway ``tmp_path`` here would stamp the DB for a store nothing reads,
     so every round-trip below would raise "stamped for a DIFFERENT store".
+
+    ``postgres_dsn`` is requested but is not the seed target: with no
+    writable cluster the seed write below refuses on the harness's refused
+    placeholder, and the fixture names that cause instead of leaving it to
+    the next guard.
     """
     env.set("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "0")
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
@@ -192,7 +207,7 @@ class TestSameLengthMidScalarCorruption:
     def test_the_valid_dump_ends_with_a_status_scalar(self):
         """The premise the corruption is crafted against."""
         # Arrange
-        last_scalar = "status: pending"
+        last_scalar = "status: deferred"
         # Act
         dump = GOOD_DUMP
         # Assert
@@ -278,7 +293,7 @@ class TestTruncatedMidDocument:
                     # A value with ': ' forces pyyaml to quote it, so a
                     # truncation inside it leaves an unterminated quoted scalar.
                     "note": "colon: forces quoting so truncation breaks parse",
-                    "status": "pending",
+                    "status": "deferred",
                 }
             ]
         }
@@ -305,7 +320,7 @@ PARTIAL_STREAM = (
     "tasks:\n"
     "- id: a\n"
     "  title: A\n"
-    "  status: pending\n"
+    "  status: deferred\n"
     "- id: b\n"
     "  title: 'unterminated for b"  # EOF mid-quoted-scalar
 )
@@ -416,7 +431,7 @@ _PARSEABLE_BUT_UNCONSTRUCTABLE = (
     "tasks:\n"
     "- id: t0\n"
     "  title: Title 0\n"
-    "  status: pending\n"
+    "  status: deferred\n"
     "  note: !a-tag-with-no-constructor payload\n"
 )
 

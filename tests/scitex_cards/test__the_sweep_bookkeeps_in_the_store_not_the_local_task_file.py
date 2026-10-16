@@ -39,7 +39,27 @@ from scitex_cards._paths import local_store_path
 from scitex_cards._store_target import database_for, resolve_store_target
 
 
-def test_the_sweep_bookkeeps_in_the_resolved_store_target():
+def _ambient_is_a_database_deployment() -> bool:
+    """True iff the ambient store resolves to a database target.
+
+    Refusal-tolerant by necessity: with no writable PostgreSQL the harness
+    pins the refused placeholder and resolution RAISES instead of returning
+    a DSN (fail-CLOSED, never the live board). A refused store is not a
+    database deployment, so the calibration test below skips — same as it
+    always did whenever the ambient store was a file.
+    """
+    try:
+        return "://" in str(resolve_store_target(None))
+    except Exception:
+        return False
+
+
+def test_the_sweep_bookkeeps_in_the_resolved_store_target(postgres_dsn):
+    # ``postgres_dsn`` is requested but is not the assertion target. With no
+    # writable PostgreSQL the harness pins the refused placeholder, so the
+    # ambient resolve below would raise — the fixture fails first, LOUDLY,
+    # with the reason and the remedy. (Same guard as the ``store`` fixtures
+    # in _django/.)
     # Arrange
     expected = resolve_store_target(None)
     # Act
@@ -58,8 +78,8 @@ def test_an_explicitly_named_store_is_honoured_verbatim(tmp_path):
 
 
 @pytest.mark.skipif(
-    "://" not in str(resolve_store_target(None)),
-    reason="ambient store is a file; both resolvers agree by construction",
+    not _ambient_is_a_database_deployment(),
+    reason="ambient store is not a database deployment (file or refused placeholder)",
 )
 def test_on_a_database_deployment_it_differs_from_the_local_task_file():
     # Arrange
@@ -70,7 +90,7 @@ def test_on_a_database_deployment_it_differs_from_the_local_task_file():
     assert not agrees_with_local_file
 
 
-def test_a_task_file_label_resolves_to_the_ambient_store(tmp_path):
+def test_a_task_file_label_resolves_to_the_ambient_store(tmp_path, postgres_dsn):
     """Why passing the LOCAL PATH was wrong: a label NAMES a store, never locates one.
 
     Until 6f976060 this asserted the label mapped to ``<label>.parent/cards.db``
@@ -78,6 +98,10 @@ def test_a_task_file_label_resolves_to_the_ambient_store(tmp_path):
     not: that filename names no store, so every caller handed it either CREATED
     one or, after the door started refusing, failed outright. The label branch
     now answers the ambient target, and this pins that.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the test above: the label branch answers the ambient
+    target, which is refused without a cluster.
     """
     # Arrange
     label = tmp_path / "tasks.yaml"
@@ -87,13 +111,16 @@ def test_a_task_file_label_resolves_to_the_ambient_store(tmp_path):
     assert mapped == resolve_store_target(None)
 
 
-def test_a_label_never_maps_to_a_sibling_of_itself(tmp_path):
+def test_a_label_never_maps_to_a_sibling_of_itself(tmp_path, postgres_dsn):
     """THE REGRESSION GUARD: restoring the sibling construction fails here.
 
     Kept separate from the test above because that one pins the value and this
     one pins the SHAPE. A label branch that returned some other ambient-looking
     answer would still satisfy the equality; only this fires on the specific
     construction the fix removed -- a path built from the label's own directory.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard: the label branch answers the ambient target.
     """
     # Arrange
     label = tmp_path / "tasks.yaml"

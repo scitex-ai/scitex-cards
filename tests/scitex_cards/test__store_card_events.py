@@ -24,6 +24,10 @@ EMIT-ONLY: there is intentionally NO consumer yet (delivery is C4, a
 separate card). Tests capture the emitted card-event via the documented
 in-process ``entry_points=`` injection seam (a real fake handler) — no
 mocks, no monkeypatch (STX-NM / PA-306). AAA pattern.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every mutation below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -79,7 +83,7 @@ def _card_events(sink: _Capturing, ev_type: str | None = None) -> list[dict]:
 # === add_task → created ====================================================
 
 
-def test_add_task_emits_exactly_one_created(tmp_path: Path):
+def test_add_task_emits_exactly_one_created(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     sink = _Capturing()
@@ -96,7 +100,7 @@ def test_add_task_emits_exactly_one_created(tmp_path: Path):
     assert len(created) == 1
 
 
-def test_created_event_carries_card_id(tmp_path: Path):
+def test_created_event_carries_card_id(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     sink = _Capturing()
@@ -112,7 +116,7 @@ def test_created_event_carries_card_id(tmp_path: Path):
     assert _card_events(sink, "created")[0]["card_id"] == "c-1"
 
 
-def test_created_event_actor_is_creating_user(tmp_path: Path):
+def test_created_event_actor_is_creating_user(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     sink = _Capturing()
@@ -132,7 +136,7 @@ def test_created_event_actor_is_creating_user(tmp_path: Path):
 # === comment_task → commented (+ the legacy card-message still fires) ======
 
 
-def test_comment_task_emits_commented(tmp_path: Path):
+def test_comment_task_emits_commented(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", assignee="agent:test-suite")
@@ -167,7 +171,7 @@ def _commented_sink(tmp_path: Path) -> _Capturing:
     return sink
 
 
-def test_comment_task_still_emits_card_message(tmp_path: Path):
+def test_comment_task_still_emits_card_message(tmp_path: Path, postgres_dsn):
     # Arrange
     sink = _commented_sink(tmp_path)
     # Act
@@ -176,7 +180,7 @@ def test_comment_task_still_emits_card_message(tmp_path: Path):
     assert legacy != []
 
 
-def test_comment_task_also_emits_the_canonical_event(tmp_path: Path):
+def test_comment_task_also_emits_the_canonical_event(tmp_path: Path, postgres_dsn):
     # Arrange
     sink = _commented_sink(tmp_path)
     # Act
@@ -185,7 +189,7 @@ def test_comment_task_also_emits_the_canonical_event(tmp_path: Path):
     assert canonical != []
 
 
-def test_commented_event_carries_body_and_actor(tmp_path: Path):
+def test_commented_event_carries_body_and_actor(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", assignee="agent:test-suite")
@@ -208,18 +212,20 @@ def test_commented_event_carries_body_and_actor(tmp_path: Path):
 # === update_task → status_changed / completed =============================
 
 
-def test_status_flip_emits_status_changed_with_from_to(tmp_path: Path):
+def test_status_flip_emits_status_changed_with_from_to(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    # deferred is the backlog state since pending was abolished 2026-07-10;
+    # the emit path is status-blind, so the flip pin stays live on it.
     add_task(
-        store=store, id="c-1", title="x", status="pending", assignee="agent:test-suite"
+        store=store, id="c-1", title="x", status="deferred", assignee="agent:test-suite"
     )
     sink = _Capturing()
     # Act
     update_task(store, "c-1", status="in_progress", entry_points=_eps(sink))
     # Assert
     e = _card_events(sink, "status_changed")[0]
-    assert (e["from"], e["to"]) == ("pending", "in_progress")
+    assert (e["from"], e["to"]) == ("deferred", "in_progress")
 
 
 #: WHO made the transition, which `update_task` hardcoded as `actor=None` until
@@ -236,11 +242,11 @@ def test_status_flip_emits_status_changed_with_from_to(tmp_path: Path):
 #: suite runs under (conftest sets it for every test) — read from the
 #: environment rather than restated as a literal, so this asserts the value that
 #: was actually resolved rather than a copy of it.
-def test_status_flip_names_the_acting_agent(tmp_path: Path):
+def test_status_flip_names_the_acting_agent(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(
-        store=store, id="c-1", title="x", status="pending", assignee="agent:test-suite"
+        store=store, id="c-1", title="x", status="deferred", assignee="agent:test-suite"
     )
     sink = _Capturing()
     # Act
@@ -269,7 +275,7 @@ def _flip_to_done_sink(tmp_path: Path) -> _Capturing:
     return sink
 
 
-def test_update_to_done_emits_completed(tmp_path: Path):
+def test_update_to_done_emits_completed(tmp_path: Path, postgres_dsn):
     # Arrange
     sink = _flip_to_done_sink(tmp_path)
     # Act
@@ -278,7 +284,7 @@ def test_update_to_done_emits_completed(tmp_path: Path):
     assert len(completed) == 1
 
 
-def test_update_to_done_emits_no_status_changed(tmp_path: Path):
+def test_update_to_done_emits_no_status_changed(tmp_path: Path, postgres_dsn):
     # Arrange
     sink = _flip_to_done_sink(tmp_path)
     # Act
@@ -292,7 +298,7 @@ def test_update_to_done_emits_no_status_changed(tmp_path: Path):
 #: `update_task` takes no `by=` and was emitting an anonymous `completed` — so
 #: the throughput readers that aggregate on completion could say a card was
 #: finished without being able to say by whom.
-def test_update_to_done_names_the_acting_agent(tmp_path: Path):
+def test_update_to_done_names_the_acting_agent(tmp_path: Path, postgres_dsn):
     # Arrange
     sink = _flip_to_done_sink(tmp_path)
     # Act
@@ -306,14 +312,14 @@ def test_update_to_done_names_the_acting_agent(tmp_path: Path):
 def _note_only_sink(tmp_path: Path) -> _Capturing:
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(
-        store=store, id="c-1", title="x", status="pending", assignee="agent:test-suite"
+        store=store, id="c-1", title="x", status="deferred", assignee="agent:test-suite"
     )
     sink = _Capturing()
     update_task(store, "c-1", note="just a note", entry_points=_eps(sink))
     return sink
 
 
-def test_update_without_status_change_emits_no_status_changed(tmp_path: Path):
+def test_update_without_status_change_emits_no_status_changed(tmp_path: Path, postgres_dsn):
     # Arrange
     sink = _note_only_sink(tmp_path)
     # Act
@@ -322,7 +328,7 @@ def test_update_without_status_change_emits_no_status_changed(tmp_path: Path):
     assert status_changed == []
 
 
-def test_update_without_status_change_emits_no_completed(tmp_path: Path):
+def test_update_without_status_change_emits_no_completed(tmp_path: Path, postgres_dsn):
     # Arrange
     sink = _note_only_sink(tmp_path)
     # Act
@@ -331,15 +337,15 @@ def test_update_without_status_change_emits_no_completed(tmp_path: Path):
     assert completed == []
 
 
-def test_update_status_to_same_value_emits_no_event(tmp_path: Path):
+def test_update_status_to_same_value_emits_no_event(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(
-        store=store, id="c-1", title="x", status="pending", assignee="agent:test-suite"
+        store=store, id="c-1", title="x", status="deferred", assignee="agent:test-suite"
     )
     sink = _Capturing()
     # Act
-    update_task(store, "c-1", status="pending", entry_points=_eps(sink))
+    update_task(store, "c-1", status="deferred", entry_points=_eps(sink))
     # Assert — re-setting status to its current value is not a flip.
     assert _card_events(sink) == []
 
@@ -347,7 +353,7 @@ def test_update_status_to_same_value_emits_no_event(tmp_path: Path):
 # === complete_task → completed =============================================
 
 
-def test_complete_task_emits_completed(tmp_path: Path):
+def test_complete_task_emits_completed(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(
@@ -367,7 +373,7 @@ def test_complete_task_emits_completed(tmp_path: Path):
 
 # The first completion transitions; the second is an idempotent no-op and must
 # emit nothing at all.
-def test_recomplete_done_task_emits_no_event(tmp_path: Path):
+def test_recomplete_done_task_emits_no_event(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(
@@ -388,7 +394,7 @@ def test_recomplete_done_task_emits_no_event(tmp_path: Path):
 # === resolve_task → status_changed {from, to: done} =======================
 
 
-def test_resolve_task_emits_status_changed_to_done(tmp_path: Path):
+def test_resolve_task_emits_status_changed_to_done(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(
@@ -407,7 +413,7 @@ def test_resolve_task_emits_status_changed_to_done(tmp_path: Path):
     assert len(e) == 1 and (e[0]["from"], e[0]["to"]) == ("blocked", "done")
 
 
-def test_resolve_already_done_emits_no_event(tmp_path: Path):
+def test_resolve_already_done_emits_no_event(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(
@@ -434,7 +440,7 @@ def _reassigned_card(tmp_path: Path) -> dict:
     return [t for t in load_tasks(store) if t["id"] == "c-1"][0]
 
 
-def test_reassign_sets_the_agent_field(tmp_path: Path):
+def test_reassign_sets_the_agent_field(tmp_path: Path, postgres_dsn):
     # Arrange
     card = _reassigned_card(tmp_path)
     # Act
@@ -443,7 +449,7 @@ def test_reassign_sets_the_agent_field(tmp_path: Path):
     assert owner == "proj-new"
 
 
-def test_reassign_sets_the_assignee_field(tmp_path: Path):
+def test_reassign_sets_the_assignee_field(tmp_path: Path, postgres_dsn):
     # Arrange
     card = _reassigned_card(tmp_path)
     # Act
@@ -452,7 +458,7 @@ def test_reassign_sets_the_assignee_field(tmp_path: Path):
     assert assignee == "proj-new"
 
 
-def test_reassign_sets_the_scope_field(tmp_path: Path):
+def test_reassign_sets_the_scope_field(tmp_path: Path, postgres_dsn):
     # Arrange
     card = _reassigned_card(tmp_path)
     # Act
@@ -461,7 +467,7 @@ def test_reassign_sets_the_scope_field(tmp_path: Path):
     assert scope == "agent:proj-new"
 
 
-def test_reassign_appends_audit_comment(tmp_path: Path):
+def test_reassign_appends_audit_comment(tmp_path: Path, postgres_dsn):
     # Arrange
     card = _reassigned_card(tmp_path)
     # Act
@@ -484,7 +490,7 @@ def _reassigned_events(tmp_path: Path) -> list[dict]:
     return _card_events(sink, "reassigned")
 
 
-def test_reassign_emits_exactly_one_reassigned(tmp_path: Path):
+def test_reassign_emits_exactly_one_reassigned(tmp_path: Path, postgres_dsn):
     # Arrange
     events = _reassigned_events(tmp_path)
     # Act
@@ -493,7 +499,7 @@ def test_reassign_emits_exactly_one_reassigned(tmp_path: Path):
     assert fired == 1
 
 
-def test_reassigned_event_carries_the_card_id(tmp_path: Path):
+def test_reassigned_event_carries_the_card_id(tmp_path: Path, postgres_dsn):
     # Arrange
     events = _reassigned_events(tmp_path)
     # Act
@@ -502,7 +508,7 @@ def test_reassigned_event_carries_the_card_id(tmp_path: Path):
     assert card_id == "c-1"
 
 
-def test_reassigned_event_carries_the_previous_owner(tmp_path: Path):
+def test_reassigned_event_carries_the_previous_owner(tmp_path: Path, postgres_dsn):
     # Arrange
     events = _reassigned_events(tmp_path)
     # Act
@@ -511,7 +517,7 @@ def test_reassigned_event_carries_the_previous_owner(tmp_path: Path):
     assert from_owner == "proj-old"
 
 
-def test_reassigned_event_carries_the_new_owner(tmp_path: Path):
+def test_reassigned_event_carries_the_new_owner(tmp_path: Path, postgres_dsn):
     # Arrange
     events = _reassigned_events(tmp_path)
     # Act
@@ -520,7 +526,7 @@ def test_reassigned_event_carries_the_new_owner(tmp_path: Path):
     assert to_owner == "proj-new"
 
 
-def test_reassigned_event_carries_the_actor(tmp_path: Path):
+def test_reassigned_event_carries_the_actor(tmp_path: Path, postgres_dsn):
     # Arrange
     events = _reassigned_events(tmp_path)
     # Act
@@ -529,7 +535,7 @@ def test_reassigned_event_carries_the_actor(tmp_path: Path):
     assert actor == "operator"
 
 
-def test_reassign_to_same_owner_is_noop_no_event(tmp_path: Path):
+def test_reassign_to_same_owner_is_noop_no_event(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", agent="proj-old")
@@ -542,7 +548,7 @@ def test_reassign_to_same_owner_is_noop_no_event(tmp_path: Path):
     assert result["changed"] is False
 
 
-def test_reassign_to_same_owner_writes_no_audit_comment(tmp_path: Path):
+def test_reassign_to_same_owner_writes_no_audit_comment(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", agent="proj-old")
@@ -555,7 +561,7 @@ def test_reassign_to_same_owner_writes_no_audit_comment(tmp_path: Path):
     assert len(after.get("comments") or []) == n_comments_before
 
 
-def test_reassign_to_same_owner_emits_no_event(tmp_path: Path):
+def test_reassign_to_same_owner_emits_no_event(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", agent="proj-old")
@@ -579,7 +585,7 @@ def _second_identical_reassign(tmp_path: Path):
     return result, sink
 
 
-def test_reassign_is_idempotent_second_call_noop(tmp_path: Path):
+def test_reassign_is_idempotent_second_call_noop(tmp_path: Path, postgres_dsn):
     # Arrange
     result, _sink = _second_identical_reassign(tmp_path)
     # Act
@@ -588,7 +594,7 @@ def test_reassign_is_idempotent_second_call_noop(tmp_path: Path):
     assert changed is False
 
 
-def test_reassign_second_identical_call_emits_no_event(tmp_path: Path):
+def test_reassign_second_identical_call_emits_no_event(tmp_path: Path, postgres_dsn):
     # Arrange
     _result, sink = _second_identical_reassign(tmp_path)
     # Act
@@ -608,7 +614,7 @@ def _reassigned_from_unowned(tmp_path: Path):
     # add_task now REQUIRES an owner (fail-loud), so seed the owner-less raw
     # row straight into the canonical DB to exercise reassign-from-None.
     seed_db_from_doc(
-        {"tasks": [{"id": "c-1", "title": "x", "status": "pending"}]},
+        {"tasks": [{"id": "c-1", "title": "x", "status": "deferred"}]},
         os.environ["SCITEX_STORE_DSN"],
     )
     sink = _Capturing()
@@ -617,7 +623,7 @@ def _reassigned_from_unowned(tmp_path: Path):
     return _card_events(sink, "reassigned")[0], card
 
 
-def test_reassign_from_unassigned_records_placeholder(tmp_path: Path):
+def test_reassign_from_unassigned_records_placeholder(tmp_path: Path, postgres_dsn):
     # Arrange
     event, _card = _reassigned_from_unowned(tmp_path)
     # Act
@@ -626,7 +632,7 @@ def test_reassign_from_unassigned_records_placeholder(tmp_path: Path):
     assert transition == (None, "proj-new")
 
 
-def test_reassign_from_unassigned_leaves_the_card_owned(tmp_path: Path):
+def test_reassign_from_unassigned_leaves_the_card_owned(tmp_path: Path, postgres_dsn):
     # Arrange
     _event, card = _reassigned_from_unowned(tmp_path)
     # Act
@@ -661,7 +667,7 @@ def _added_with_exploding_handler(tmp_path: Path):
     return inserted, store
 
 
-def test_add_task_returns_normally_when_emit_raises(tmp_path: Path):
+def test_add_task_returns_normally_when_emit_raises(tmp_path: Path, postgres_dsn):
     # Arrange
     inserted, _store_path = _added_with_exploding_handler(tmp_path)
     # Act
@@ -670,7 +676,7 @@ def test_add_task_returns_normally_when_emit_raises(tmp_path: Path):
     assert card_id == "c-1"
 
 
-def test_add_task_persists_even_when_emit_raises(tmp_path: Path):
+def test_add_task_persists_even_when_emit_raises(tmp_path: Path, postgres_dsn):
     # Arrange
     _inserted, store = _added_with_exploding_handler(tmp_path)
     # Act
@@ -679,7 +685,7 @@ def test_add_task_persists_even_when_emit_raises(tmp_path: Path):
     assert matching != []
 
 
-def test_complete_task_persists_even_when_emit_raises(tmp_path: Path):
+def test_complete_task_persists_even_when_emit_raises(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(
@@ -696,11 +702,11 @@ def test_complete_task_persists_even_when_emit_raises(tmp_path: Path):
     assert t["status"] == "done"
 
 
-def test_update_status_persists_even_when_emit_raises(tmp_path: Path):
+def test_update_status_persists_even_when_emit_raises(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(
-        store=store, id="c-1", title="x", status="pending", assignee="agent:test-suite"
+        store=store, id="c-1", title="x", status="deferred", assignee="agent:test-suite"
     )
     # Act
     update_task(store, "c-1", status="in_progress", entry_points=_bad_eps())
@@ -711,7 +717,7 @@ def test_update_status_persists_even_when_emit_raises(tmp_path: Path):
 
 # The bad handler receives BOTH the card-message and the commented emit, so
 # this covers the pair in one shot.
-def test_comment_task_persists_even_when_emit_raises(tmp_path: Path):
+def test_comment_task_persists_even_when_emit_raises(tmp_path: Path, postgres_dsn):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", assignee="agent:test-suite")
@@ -732,7 +738,7 @@ def _reassigned_with_exploding_handler(tmp_path: Path):
     return result, card
 
 
-def test_reassign_returns_normally_when_emit_raises(tmp_path: Path):
+def test_reassign_returns_normally_when_emit_raises(tmp_path: Path, postgres_dsn):
     # Arrange
     result, _card = _reassigned_with_exploding_handler(tmp_path)
     # Act
@@ -741,7 +747,7 @@ def test_reassign_returns_normally_when_emit_raises(tmp_path: Path):
     assert changed is True
 
 
-def test_reassign_persists_even_when_emit_raises(tmp_path: Path):
+def test_reassign_persists_even_when_emit_raises(tmp_path: Path, postgres_dsn):
     # Arrange
     _result, card = _reassigned_with_exploding_handler(tmp_path)
     # Act
@@ -773,7 +779,7 @@ def _created_notifications(tmp_path: Path):
     return _inbox.poll_inbox("alice", unseen_only=False, mark_seen=False, store=store)
 
 
-def test_add_task_enqueues_created_notification_into_same_store(tmp_path: Path):
+def test_add_task_enqueues_created_notification_into_same_store(tmp_path: Path, postgres_dsn):
     # Arrange
     recs = _created_notifications(tmp_path)
     # Act
@@ -782,7 +788,7 @@ def test_add_task_enqueues_created_notification_into_same_store(tmp_path: Path):
     assert delivered == 1
 
 
-def test_the_created_notification_names_the_new_card(tmp_path: Path):
+def test_the_created_notification_names_the_new_card(tmp_path: Path, postgres_dsn):
     # Arrange
     recs = _created_notifications(tmp_path)
     # Act
@@ -791,7 +797,7 @@ def test_the_created_notification_names_the_new_card(tmp_path: Path):
     assert card_id == "c-1"
 
 
-def test_reassign_enqueues_notification_into_same_store(tmp_path: Path):
+def test_reassign_enqueues_notification_into_same_store(tmp_path: Path, postgres_dsn):
     # Arrange
     from scitex_cards import _inbox
 

@@ -11,6 +11,12 @@ client setting it), and a valid call must actually persist the floor.
 ``db_group`` is invoked directly (the same pattern as
 ``test__db_snapshot_freshness_guard.py``), relying on the suite-wide
 ``$SCITEX_STORE_DSN`` pin (``tests/conftest.py``) for the target database.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 5 floor read/write checks below target the
+ambient per-test store, which is refused without a writable cluster.
+The 3 version-refusal output tests stay unguarded by design (the
+too-high refusal precedes any store touch).
 """
 
 from __future__ import annotations
@@ -81,7 +87,7 @@ def test_refusing_a_high_floor_names_the_rejected_floor():
     assert too_high in result.output
 
 
-def test_refusing_a_high_floor_leaves_no_floor_stamped():
+def test_refusing_a_high_floor_leaves_no_floor_stamped(postgres_dsn):
     # Arrange
     too_high = "9999.0.0"
 
@@ -92,7 +98,7 @@ def test_refusing_a_high_floor_leaves_no_floor_stamped():
     assert _read_floor_now() is None
 
 
-def test_set_min_client_version_accepts_a_floor_below_the_running_client():
+def test_set_min_client_version_accepts_a_floor_below_the_running_client(postgres_dsn):
     # Arrange
     low_floor = "0.0.1"
 
@@ -103,7 +109,7 @@ def test_set_min_client_version_accepts_a_floor_below_the_running_client():
     assert result.exit_code == 0, result.output
 
 
-def test_accepting_a_floor_persists_it_to_schema_meta():
+def test_accepting_a_floor_persists_it_to_schema_meta(postgres_dsn):
     # Arrange
     low_floor = "0.0.1"
 
@@ -114,7 +120,7 @@ def test_accepting_a_floor_persists_it_to_schema_meta():
     assert _read_floor_now() == "0.0.1"
 
 
-def test_set_min_client_version_accepts_a_floor_exactly_equal_to_the_running_client():
+def test_set_min_client_version_accepts_a_floor_exactly_equal_to_the_running_client(postgres_dsn):
     # Arrange
     running = resolve_running_version()
 
@@ -125,7 +131,7 @@ def test_set_min_client_version_accepts_a_floor_exactly_equal_to_the_running_cli
     assert result.exit_code == 0, result.output
 
 
-def test_accepting_an_equal_floor_persists_the_exact_version_string():
+def test_accepting_an_equal_floor_persists_the_exact_version_string(postgres_dsn):
     # Arrange
     running = resolve_running_version()
 

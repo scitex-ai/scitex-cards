@@ -265,8 +265,13 @@ def _run_reassign_all(store: str, task_id: str) -> None:
         "reassign_all",
     ],
 )
-def test_every_store_verb_stamps_the_comment_it_appends(verb):
-    # Arrange
+def test_every_store_verb_stamps_the_comment_it_appends(verb, postgres_dsn):
+    """Every verb's appended comment carries an id.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the ``store`` fixtures in _django/: the ``add_task``
+    below writes the ambient store, which is refused without a cluster.
+    """
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     task_id = f"card-{verb.__name__}"
     _store.add_task(store, id=task_id, title="A", assignee="agent:test-suite")

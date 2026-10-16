@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Tests for the POST /reopen handler — the board-v3 Undo affordance.
 
-Mirrors ``src/scitex_cards/_django/handlers/crud.py::handle_reopen``. Real
+Mirrors ``src/scitex_cards/_django/handlers/reopen.py::handle_reopen``. Real
 ``RequestFactory`` POST against the canonical store (no mocks, STX-NM /
 PA-306), verifying:
 
@@ -57,8 +57,8 @@ _STORE_TEXT = (
     "    kind: decision\n"
     "    agent: proj-paper-scitex-clew\n"
     "    project: paper-scitex-clew\n"
-    "  - id: was-pending\n"
-    "    title: A task that was pending before being resolved\n"
+    "  - id: was-deferred\n"
+    "    title: A task that was deferred before being resolved\n"
     "    status: done\n"
     "  - id: still-blocked\n"
     "    title: A task that is currently blocked\n"
@@ -156,29 +156,50 @@ def test_reopen_default_blocker_is_operator_decision(store):
 
 
 def test_reopen_honors_caller_prior_status(store):
-    # Arrange
-    body = {"id": "was-pending", "actor": "operator", "prior_status": "pending"}
+    # Arrange — deferred is the backlog state since pending was abolished
+    # (2026-07-10); a reopen must restore the caller's live decision as-is.
+    body = {"id": "was-deferred", "actor": "operator", "prior_status": "deferred"}
     # Act
     _post("reopen", store, body)
     # Assert
-    assert _load(store)["was-pending"]["status"] == "pending"
+    assert _load(store)["was-deferred"]["status"] == "deferred"
+
+
+def test_reopen_rejects_abolished_prior_status_with_400(store):
+    # Arrange — pending was abolished 2026-07-10: the Undo affordance must
+    # refuse to mint it, like the create/update verbs do.
+    body = {"id": "was-deferred", "actor": "operator", "prior_status": "pending"}
+    # Act
+    resp = _post("reopen", store, body)
+    # Assert
+    assert resp.status_code == 400
+
+
+def test_reopen_rejected_reopen_leaves_the_row_untouched(store):
+    # Arrange — same abolished restore, observing the stored row instead of
+    # the response: the 400 fires before the store lock, so nothing changes.
+    body = {"id": "was-deferred", "actor": "operator", "prior_status": "pending"}
+    # Act
+    _post("reopen", store, body)
+    # Assert
+    assert _load(store)["was-deferred"]["status"] == "done"
 
 
 def test_reopen_drops_blocker_when_restoring_to_non_blocked(store):
     """Schema disallows blocker on non-blocked rows; restoring to
-    status=pending must omit blocker even if the caller passed one.
+    status=deferred must omit blocker even if the caller passed one.
     """
     # Arrange
     body = {
-        "id": "was-pending",
+        "id": "was-deferred",
         "actor": "operator",
-        "prior_status": "pending",
+        "prior_status": "deferred",
         "prior_blocker": "operator-decision",
     }
     # Act
     _post("reopen", store, body)
     # Assert
-    assert "blocker" not in _load(store)["was-pending"]
+    assert "blocker" not in _load(store)["was-deferred"]
 
 
 def test_reopen_uses_caller_prior_blocker_when_restoring_to_blocked(store):

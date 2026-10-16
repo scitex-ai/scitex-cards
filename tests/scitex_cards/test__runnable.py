@@ -240,7 +240,7 @@ def test_lower_priority_number_picked_first():
 # === CLI verb ==============================================================
 
 
-def test_cli_runnable_lists_runnable_tasks():
+def test_cli_runnable_lists_runnable_tasks(postgres_dsn):
     # Arrange
     add_task(id="t-a", title="x", group="paper-portfolio", assignee="agent:test-suite")
     runner = CliRunner()
@@ -253,7 +253,7 @@ def test_cli_runnable_lists_runnable_tasks():
     assert result.exit_code == 0
 
 
-def test_cli_runnable_json_emits_full_payload():
+def test_cli_runnable_json_emits_full_payload(postgres_dsn):
     # Arrange
     add_task(id="t-a", title="x", group="paper-portfolio", assignee="agent:test-suite")
     runner = CliRunner()
@@ -267,7 +267,7 @@ def test_cli_runnable_json_emits_full_payload():
     assert set(payload.keys()) == {"tasks", "candidate_count", "blocked_by_deps_count"}
 
 
-def test_cli_runnable_group_filter_narrows_results():
+def test_cli_runnable_group_filter_narrows_results(postgres_dsn):
     # Arrange
     add_task(
         id="t-paper", title="x", group="paper-portfolio", assignee="agent:test-suite"
@@ -284,7 +284,7 @@ def test_cli_runnable_group_filter_narrows_results():
     assert [t["id"] for t in payload["tasks"]] == ["t-paper"]
 
 
-def test_cli_runnable_exit_1_when_queue_empty():
+def test_cli_runnable_exit_1_when_queue_empty(postgres_dsn):
     # Arrange — empty store.
     add_task(id="t-done", title="x", status="done", assignee="agent:test-suite")
     runner = CliRunner()
@@ -297,7 +297,7 @@ def test_cli_runnable_exit_1_when_queue_empty():
     assert result.exit_code == 1
 
 
-def test_cli_runnable_mine_uses_env_agent(env):
+def test_cli_runnable_mine_uses_env_agent(env, postgres_dsn):
     # Arrange — --mine reads $SCITEX_CARDS_AGENT_ID.
     add_task(id="t-a", title="x", agent="proj-scitex-cards")
     env.set("SCITEX_CARDS_AGENT_ID", "proj-scitex-cards")

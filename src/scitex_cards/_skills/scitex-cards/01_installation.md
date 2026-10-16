@@ -23,7 +23,7 @@ System requirements: Python ≥ 3.10.
 
 | Extra   | Adds                                                        |
 |---------|-------------------------------------------------------------|
-| `web`   | Django + scitex-app/scitex-ui for the `scitex-cards board`   |
+| `web`   | Django + scitex-sdk for the `scitex-cards board`          |
 | `docs`  | Sphinx + RTD theme for building the documentation           |
 | `dev`   | pytest, pytest-cov, scitex-dev (test + audit toolchain)     |
 | `all`   | everything above                                            |

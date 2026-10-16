@@ -29,7 +29,7 @@ from scitex_cards._django.handlers.dm import (
     dm_reaction_view,
     dm_thread_view,
 )
-from scitex_cards._threads import append_message
+from scitex_cards._dm.threads import append_message
 
 
 @pytest.fixture()

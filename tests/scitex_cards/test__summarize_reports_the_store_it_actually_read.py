@@ -46,12 +46,18 @@ from scitex_cards._store_list import summarize_tasks
 from scitex_cards._store_target import resolve_store_target
 
 
-def test_the_reported_store_matches_the_resolver():
+def test_the_reported_store_matches_the_resolver(postgres_dsn):
     """THE CONTRACT: the label is the resolver's answer, not a composed path.
 
     Asserted against ``resolve_store_target`` rather than a literal value,
     because the property that matters is AGREEMENT between what the verb says
     and what the package resolves -- not any particular store.
+
+    ``postgres_dsn`` is requested but is not the assertion target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    ambient read below would raise — the fixture fails first, LOUDLY, with
+    the reason and the remedy. (Same guard as the ``store`` fixtures in
+    _django/.)
     """
     # Arrange
     expected = resolve_store_target(None)
@@ -63,12 +69,15 @@ def test_the_reported_store_matches_the_resolver():
     assert reported == expected
 
 
-def test_the_reported_store_is_never_a_yaml_path():
+def test_the_reported_store_is_never_a_yaml_path(postgres_dsn):
     """The reported case, pinned by its own shape.
 
     Even when the resolver's answer changes, a cards store is a database. A
     ``.yaml`` in this field means the label was composed from the legacy path
     resolver again -- the exact regression this fixes.
+
+    ``postgres_dsn`` is requested but is not the assertion target — same
+    fail-LOUD guard as the test above: the verb reads the ambient store.
     """
     # Arrange
     # Act

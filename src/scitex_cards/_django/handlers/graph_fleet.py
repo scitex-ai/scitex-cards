@@ -10,6 +10,8 @@ and pins this module's behavior through the views layer). ``graph.py`` imports
 
 from __future__ import annotations
 
+from ..._backlog_triage import BACKLOG_STATUS
+
 # Statuses that exclude a task from the "runnable" count for liveness.
 # Mirrors the task-harvest skill's non-runnable set (40_task-harvest.md):
 # blocked / done / deferred / failed / cancelled are not "could be
@@ -60,8 +62,9 @@ def _build_fleet(tasks: list[dict], *, now=None) -> list[dict]:
                                 agent's most-recent ``last_activity`` is
                                 within ``SCITEX_CARDS_FLEET_WORKING_MIN``
                                 minutes (default 10). Without the
-                                freshness gate, agents that forgot to
-                                flip in_progress→pending stay "working"
+                                freshness gate, agents that forgot to flip
+                                back to ``deferred`` (``pending`` was
+                                abolished 2026-07-10) stay "working"
                                 forever and the UI lies.
       3. ``stale``              any task is status=in_progress but the
                                 agent's most-recent ``last_activity`` is
@@ -170,8 +173,14 @@ def _build_fleet(tasks: list[dict], *, now=None) -> list[dict]:
             status = "idle"
 
         # current_task — prefer in_progress, then most-recent activity, then
-        # highest-priority pending. Lets the dot-strip's tooltip answer
+        # highest-priority backlog. Lets the dot-strip's tooltip answer
         # "what are they on right now" with the most-relevant single row.
+        # The backlog leg reads ``_backlog_triage.BACKLOG_STATUS``
+        # (``deferred`` since ``pending`` was abolished 2026-07-10) — the
+        # same single source the CLI triage verb and the /stale panel read.
+        # The hardcoded ``"pending"`` this replaced matched no card in any
+        # live store, so the fallback silently degenerated to ALL items and
+        # could name a closed (done/failed/cancelled) card as current.
         in_progress = [t for t in items if t.get("status") == "in_progress"]
         if in_progress:
             current = sorted(in_progress, key=_priority_key)[0]
@@ -180,8 +189,8 @@ def _build_fleet(tasks: list[dict], *, now=None) -> list[dict]:
             if with_activity:
                 current = max(with_activity, key=_last_activity_key)
             else:
-                pending = [t for t in items if t.get("status") == "pending"]
-                pool = pending or items
+                backlog = [t for t in items if t.get("status") == BACKLOG_STATUS]
+                pool = backlog or items
                 current = sorted(pool, key=_priority_key)[0]
 
         # `overdue_count` = tasks past their next deadline AND not in a

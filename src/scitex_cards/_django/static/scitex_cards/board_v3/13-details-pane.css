@@ -6,11 +6,11 @@
  *   "Legend と対応させて Details の方に Stats を用意して、可視化してください。
  *    タイムスケールも分けられるようにして可視化してください。(d/w/m) など"
  *   "Details カラムは scitex-writer とかが参考になりそうです。"
- *   "scitex-ui にシェルとカラムとスマートな畳み方などがあるはずです。"
+ *   "[SDK: the old UI package at the time] にシェルとカラムとスマートな畳み方などがあるはずです。"
  *
- * MACHINERY comes from scitex-ui; SHAPE comes from scitex-writer.
+ * MACHINERY comes from the SDK; SHAPE comes from scitex-writer.
  *
- *   PANE      = scitex-ui `.stx-shell-sidebar` (css/shell/stx-shell-sidebar.css
+ *   PANE      = the SDK `.stx-shell-sidebar` (css/shell/stx-shell-sidebar.css
  *               — "SINGLE SOURCE OF TRUTH for workspace sidebar layout. Used
  *               by: Writer, Scholar, Visualizer, Console, Verifier, Hub").
  *               Already linked by the standalone shell this board extends, so
@@ -39,7 +39,7 @@
   overflow: hidden;
 }
 
-/* --- overrides on scitex-ui's .stx-shell-sidebar ----------------------- */
+/* --- overrides on the SDK's .stx-shell-sidebar ----------------------- */
 /* Right-docked (the shell's own sidebars sit on the left, so the border and
  * the width are the only structural things the board changes). */
 .details-pane.stx-shell-sidebar {

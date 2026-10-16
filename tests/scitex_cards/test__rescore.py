@@ -66,11 +66,16 @@ def _eps(sink: _Capturing) -> list[_FakeEP]:
 
 
 @pytest.fixture()
-def store(env):
+def store(env, postgres_dsn):
     # The store is the database now; the harness bootstraps an empty canonical DB per test
     # and pins SCITEX_CARDS_TASKS_YAML_SHARED as the STORE IDENTITY. Return that
     # pinned store path (NOT a tmp_path file — a write stamped with any other
     # path fails the next read's ownership guard; see THE STORE-PATH RULE).
+    #
+    # ``postgres_dsn`` is requested but is not the seed target. With no
+    # writable PostgreSQL the harness pins the refused placeholder, so the
+    # seeding below would raise — the fixture fails first, LOUDLY, with the
+    # reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
     env.set("SCITEX_CARDS_AGENT_ID", "rank-tester")
     return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 

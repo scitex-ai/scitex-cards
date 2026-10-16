@@ -59,8 +59,8 @@
 .card[data-status="blocked"]::before {
   background: var(--status-fill-blocked);
 }
-.card[data-status="pending"]::before {
-  background: var(--status-fill-pending);
+.card[data-status="cancelled"]::before {
+  background: var(--status-fill-cancelled);
 }
 .card[data-status="deferred"]::before {
   background: var(--status-fill-deferred);
@@ -68,9 +68,10 @@
 .card[data-status="failed"]::before {
   background: var(--status-fill-failed);
 }
-/* Blocked keeps its attention-grabbing pulse (bucket-driven, unchanged). */
+/* Blocked keeps a solid red bar (bucket-driven, unchanged); the infinite
+ * pulse is gone — calm: a static state signal costs no compositor work. */
 .card--blocked::before {
-  animation: pulse-red 1.8s ease-in-out infinite;
+  background: var(--status-fill-blocked, var(--red));
 }
 .card-pad {
   margin-left: 6px;
@@ -101,8 +102,8 @@
 .card[data-status="blocked"] .card-status {
   color: var(--status-stroke-blocked);
 }
-.card[data-status="pending"] .card-status {
-  color: var(--status-stroke-pending);
+.card[data-status="cancelled"] .card-status {
+  color: var(--status-stroke-cancelled);
 }
 .card[data-status="deferred"] .card-status {
   color: var(--status-stroke-deferred);
@@ -290,8 +291,8 @@
   color: #fff;
   background: var(--red);
   border-color: var(--red);
+  /* Calm: static glow — the overdue meaning does not change between frames. */
   box-shadow: 0 0 8px 1px rgba(244, 67, 54, 0.55);
-  animation: pulse-red 2s ease-in-out infinite;
 }
 .date-pill--today {
   color: #000;

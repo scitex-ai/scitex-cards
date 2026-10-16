@@ -2,7 +2,7 @@
  *
  * Operator complaint via lead a2a `510a58d4` (2026-06-14): on the board at
  * http://127.0.0.1:8051 the SCROLLBAR and DROPDOWNS / SELECTS rendered
- * WHITE in dark mode (un-themed). The board already loads scitex-ui's
+ * WHITE in dark mode (un-themed). The board already loads the SDK's
  * shell CSS and uses tokens like `var(--col-bg)` / `var(--border)`, and
  * `<body>` carries class `dark-theme`, so the gap was specifically that
  * scrollable elements and vanilla <select> elements weren't BOUND to the
@@ -13,11 +13,11 @@
  * in itself) win on specificity where they want to. The rules here form
  * the GLOBAL FALLBACK contract: any scrollable element or <select> inside
  * `body:has(.filterbar)` (the board_v3 layout root) gets themed chrome
- * derived from scitex-ui shell tokens — no hardcoded colors.
+ * derived from SDK shell tokens — no hardcoded colors.
  *
  * Sibling file: ../../frontend/src/styles/board.css carries the React-side
  * equivalent rules under `.stx-cards-board`. The two surfaces share the
- * scitex-ui token system so behaviour matches across both UIs.
+ * SDK token system so behaviour matches across both UIs.
  */
 
 /* ============================================================================

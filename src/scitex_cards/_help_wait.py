@@ -28,6 +28,21 @@ replacement):
 The functions REUSE the package's model store I/O (``load_tasks`` /
 ``_save_tasks_unlocked`` / ``_store_lock``) so comment / key-order
 round-tripping and validation are preserved — no bespoke YAML I/O here.
+
+Leaving-``done`` clears the completion stamp. A ``help-<agent>-waiting``
+card is an ordinary store row, so it can reach ``done``+stamped through
+any stamping writer (``complete_task`` stamps ``_log_meta.completed_{at,by}``)
+and the agent's NEXT wait then re-runs this verb: without a clear the flip
+back to ``blocked`` keeps ``completed_at`` on a live row — the
+phantom-delivery row ``fleet/timing.py`` + ``timeline.py`` aggregate on
+``completed_at`` alone (same honesty class as the board ``/reopen``,
+``/restore``, ``/archive`` and upsert stamp clears). The existing-card
+branch therefore calls the named
+``_clear_completion_stamp_on_leaving_done`` clock after the flip, before
+the save — never two inline pops. ``help_clear`` entering ``done``
+deliberately does NOT stamp (mixed convention: the board Resolve button
+and ``update_task``→``done`` do not stamp either; only ``complete_task``
+does), so a pure wait/clear cycle never mints a stamp in the first place.
 """
 
 from __future__ import annotations
@@ -82,6 +97,13 @@ def help_wait(
     ``agent`` is taken as already-sanitized by the caller (the hook owns
     sanitization); this only trims surrounding whitespace. Returns the
     upserted card mapping (a fresh dict).
+
+    A re-wait on a ``done``+stamped card (completed elsewhere, e.g. via the
+    ``done`` verb) leaves ``done`` for ``blocked`` — that transition clears
+    ``_log_meta.completed_{at,by}`` via the named
+    ``_clear_completion_stamp_on_leaving_done`` clock (phantom-delivery:
+    ``fleet/timing.py`` + ``timeline.py`` aggregate ``completed_at`` alone),
+    same honesty class as the board ``/reopen`` fix.
     """
     agent = (agent or "").strip()
     if not agent:
@@ -105,6 +127,9 @@ def help_wait(
         tasks = load_tasks(resolved)
         existing = next((t for t in tasks if t.get("id") == card_id), None)
         if existing is not None:
+            # Capture the prior status BEFORE the flip: the clock below keys
+            # on the transition, and the assignment overwrites the evidence.
+            prior_status = existing.get("status")
             existing["title"] = title
             existing["status"] = "blocked"
             existing["blocker"] = "operator-decision"
@@ -113,6 +138,14 @@ def help_wait(
             existing["host"] = host_eff
             existing["note"] = note
             existing["last_activity"] = _utc_now_iso()
+            # A re-wait on a `done`+stamped card leaves `done`: drop the
+            # completion stamp via the named clock (same honesty class as the
+            # board `/reopen` fix) — never two inline pops. A refresh of an
+            # already-`blocked` card is not a transition, so its (absent)
+            # stamp state is untouched.
+            from ._store_clocks import _clear_completion_stamp_on_leaving_done
+
+            _clear_completion_stamp_on_leaving_done(existing, prior_status)
             _save_tasks_unlocked(tasks, resolved)
             return dict(existing)
         stamp = _utc_now_iso()

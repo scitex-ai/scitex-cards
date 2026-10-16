@@ -225,8 +225,14 @@ def test_a_lone_pre_json_sidecar_is_left_on_disk(tmp_path):
 #: The empty-subscribers claim is the one a first-assert failure would hide,
 #: and it is the one that silently over-notifies when it breaks.
 @pytest.fixture()
-def role_members_with_owner_and_collaborator(tmp_path):
-    """Resolve one card carrying a registered owner AND a registered collaborator."""
+def role_members_with_owner_and_collaborator(tmp_path, postgres_dsn):
+    """Resolve one card carrying a registered owner AND a registered collaborator.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     store = _store(tmp_path)
     owner = register_user(kind="agent", names=["alice"], store=store)
     collab = register_user(kind="agent", names=["bob"], store=store)
@@ -276,8 +282,13 @@ def test_card_role_members_leaves_an_unfilled_role_empty(
 #: role (via the legacy fallback) and the `assignee` role to that same user.
 #: Fixing one without the other is what leaves legacy cards half-notified.
 @pytest.fixture()
-def role_members_from_legacy_assignee(tmp_path):
-    """No `agent` field → owner role resolves from `assignee` (legacy)."""
+def role_members_from_legacy_assignee(tmp_path, postgres_dsn):
+    """No `agent` field → owner role resolves from `assignee` (legacy).
+
+    ``postgres_dsn`` is requested but is not the seed target — same
+    fail-LOUD guard as the fixture above: the seeding below writes the
+    ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     user = register_user(kind="agent", names=["carol"], store=store)
     card = {"id": "c1", "assignee": "carol"}
@@ -306,7 +317,7 @@ def test_card_role_members_also_fills_the_assignee_role(
     assert members["assignee"] == {scenario["user"].id}
 
 
-def test_unresolved_name_falls_back_to_raw_string(tmp_path):
+def test_unresolved_name_falls_back_to_raw_string(tmp_path, postgres_dsn):
     # Arrange — `dave` is NOT registered → the raw name string is the id.
     store = _store(tmp_path)
     card = {"id": "c1", "agent": "dave"}
@@ -319,7 +330,7 @@ def test_unresolved_name_falls_back_to_raw_string(tmp_path):
 # --------------------------------------------------------------------------- #
 # resolve_recipients: default resolution per event type                       #
 # --------------------------------------------------------------------------- #
-def test_commented_resolves_owner_collaborators_subscribers(tmp_path):
+def test_commented_resolves_owner_collaborators_subscribers(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     owner = register_user(kind="agent", names=["alice"], store=store)
@@ -339,7 +350,7 @@ def test_commented_resolves_owner_collaborators_subscribers(tmp_path):
     assert got == {owner.id, collab.id, sub.id}
 
 
-def test_pulled_resolves_to_empty_by_default(tmp_path):
+def test_pulled_resolves_to_empty_by_default(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     register_user(kind="agent", names=["alice"], store=store)
@@ -352,7 +363,7 @@ def test_pulled_resolves_to_empty_by_default(tmp_path):
     assert got == set()
 
 
-def test_resolver_accepts_event_dict(tmp_path):
+def test_resolver_accepts_event_dict(tmp_path, postgres_dsn):
     # Arrange — the resolver accepts an Event OR a plain wire dict.
     store = _store(tmp_path)
     owner = register_user(kind="agent", names=["alice"], store=store)
@@ -383,8 +394,13 @@ def test_resolver_unknown_event_type_fails_loud(tmp_path):
 #: mute that drops the whole recipient set passes the "she was removed" half
 #: while silencing the card entirely.
 @pytest.fixture()
-def commented_recipients_with_muted_subscriber(tmp_path):
-    """eve mutes `commented` → dropped even though she's a subscriber."""
+def commented_recipients_with_muted_subscriber(tmp_path, postgres_dsn):
+    """eve mutes `commented` → dropped even though she's a subscriber.
+
+    ``postgres_dsn`` is requested but is not the seed target — same
+    fail-LOUD guard as the fixtures above: the seeding below writes the
+    ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     owner = register_user(kind="agent", names=["alice"], store=store)
     sub = register_user(kind="human", names=["eve"], store=store)
@@ -419,7 +435,7 @@ def test_per_user_mute_removes_recipient(
     assert scenario["sub"].id not in got
 
 
-def test_per_user_watch_adds_member_not_in_default_roles(tmp_path):
+def test_per_user_watch_adds_member_not_in_default_roles(tmp_path, postgres_dsn):
     # Arrange — `completed` default = [owner, subscribers]; bob is a
     # COLLABORATOR (not in the default roles) but watches `completed` → opted
     # in because he's a member. (Uses `completed` not `merged`: C4 made
@@ -443,10 +459,14 @@ def test_per_user_watch_adds_member_not_in_default_roles(tmp_path):
 #: specific absence, because "the set is right" and "she in particular did not
 #: leak in" are the two ways this rule is read.
 @pytest.fixture()
-def completed_recipients_with_watching_outsider(tmp_path):
+def completed_recipients_with_watching_outsider(tmp_path, postgres_dsn):
     """mallory watches `completed` but is NOT on the card → never added.
 
     (`completed`, not `merged`: see the note above — `merged` is now [].)
+
+    ``postgres_dsn`` is requested but is not the seed target — same
+    fail-LOUD guard as the fixtures above: the seeding below writes the
+    ambient store, which is refused without a cluster.
     """
     store = _store(tmp_path)
     owner = register_user(kind="agent", names=["alice"], store=store)
@@ -482,7 +502,7 @@ def test_per_user_watch_does_not_add_non_member(
     assert scenario["outsider"].id not in got
 
 
-def test_user_mute_beats_role_membership_but_card_add_can_reinclude(tmp_path):
+def test_user_mute_beats_role_membership_but_card_add_can_reinclude(tmp_path, postgres_dsn):
     # Arrange — mute drops a recipient; a per-card `add` re-includes them
     # (card wins).
     store = _store(tmp_path)
@@ -509,8 +529,13 @@ def test_user_mute_beats_role_membership_but_card_add_can_reinclude(tmp_path):
 #: (say, an empty set) fails the first claim; one that never applied fails the
 #: second.
 @pytest.fixture()
-def commented_recipients_narrowed_to_subscribers(tmp_path):
-    """Default `commented` = owner+collab+subscribers; this card narrows it."""
+def commented_recipients_narrowed_to_subscribers(tmp_path, postgres_dsn):
+    """Default `commented` = owner+collab+subscribers; this card narrows it.
+
+    ``postgres_dsn`` is requested but is not the seed target — same
+    fail-LOUD guard as the fixtures above: the seeding below writes the
+    ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     owner = register_user(kind="agent", names=["alice"], store=store)
     sub = register_user(kind="human", names=["eve"], store=store)
@@ -549,7 +574,7 @@ def test_per_card_events_override_drops_the_removed_role(
     assert scenario["owner"].id not in got
 
 
-def test_merged_is_default_quiet(tmp_path):
+def test_merged_is_default_quiet(tmp_path, postgres_dsn):
     # Arrange — C4 decision: `merged` defaults to [] (a PR-merge-close also
     # fires `completed`, the canonical done-notice — defaulting `merged` to
     # recipients too would double-notify). With zero per-card opt-in, a
@@ -563,7 +588,7 @@ def test_merged_is_default_quiet(tmp_path):
     assert got == set()
 
 
-def test_per_card_add_force_includes(tmp_path):
+def test_per_card_add_force_includes(tmp_path, postgres_dsn):
     # Arrange — frank is not in any role but is force-added for `completed`.
     # (Uses `completed` not `merged`: `merged` is now default-quiet [], so
     # there is no base `owner` recipient to assert alongside the force-add.)
@@ -581,7 +606,7 @@ def test_per_card_add_force_includes(tmp_path):
     assert got == {owner.id, extra.id}
 
 
-def test_per_card_add_opts_a_quiet_event_back_in(tmp_path):
+def test_per_card_add_opts_a_quiet_event_back_in(tmp_path, postgres_dsn):
     # Arrange — the opt-in path for the now-quiet `merged`: a card can still
     # force a merge ping via its per-card `notify.add`, even though the
     # default is [].
@@ -604,8 +629,13 @@ def test_per_card_add_opts_a_quiet_event_back_in(tmp_path):
 #: gone — while the owner, who neither opted in nor was muted, must remain.
 #: A card mute that silences everyone satisfies the exclusion half alone.
 @pytest.fixture()
-def commented_recipients_with_card_muted_watcher(tmp_path):
-    """eve WATCHES commented (opt-in) but the card mutes her → card wins."""
+def commented_recipients_with_card_muted_watcher(tmp_path, postgres_dsn):
+    """eve WATCHES commented (opt-in) but the card mutes her → card wins.
+
+    ``postgres_dsn`` is requested but is not the seed target — same
+    fail-LOUD guard as the fixtures above: the seeding below writes the
+    ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     owner = register_user(kind="agent", names=["alice"], store=store)
     sub = register_user(kind="human", names=["eve"], store=store)
@@ -652,8 +682,13 @@ def test_per_card_mute_force_excludes_beating_user_and_global(
 #: `completed` not `merged`: `merged` is now default-quiet [], so it has no
 #: base `owner` recipient to assert survives.)
 @pytest.fixture()
-def completed_recipients_with_card_add_then_mute(tmp_path):
-    """A card that force-adds frank and then mutes him in the same clause."""
+def completed_recipients_with_card_add_then_mute(tmp_path, postgres_dsn):
+    """A card that force-adds frank and then mutes him in the same clause.
+
+    ``postgres_dsn`` is requested but is not the seed target — same
+    fail-LOUD guard as the fixtures above: the seeding below writes the
+    ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     owner = register_user(kind="agent", names=["alice"], store=store)
     frank = register_user(kind="human", names=["frank"], store=store)
@@ -694,7 +729,7 @@ def test_per_card_add_then_mute_leaves_the_added_user_out(
     assert scenario["frank"].id not in got
 
 
-def test_malformed_card_notify_fails_loud(tmp_path):
+def test_malformed_card_notify_fails_loud(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     register_user(kind="agent", names=["alice"], store=store)
@@ -706,7 +741,7 @@ def test_malformed_card_notify_fails_loud(tmp_path):
         resolve_recipients(Event(type=EventType.COMMENTED), card, store=store)
 
 
-def test_malformed_card_events_unknown_role_fails_loud(tmp_path):
+def test_malformed_card_events_unknown_role_fails_loud(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     register_user(kind="agent", names=["alice"], store=store)
@@ -740,8 +775,13 @@ def test_malformed_card_events_unknown_role_fails_loud(tmp_path):
 #: happened for the wrong reason, and asserting only the exclusions would miss
 #: frank's inclusion — so each is pinned on its own.
 @pytest.fixture()
-def merged_recipients_across_all_precedence_layers(tmp_path):
-    """Global sidecar + per-user mute/watch + per-card add/mute, in one card."""
+def merged_recipients_across_all_precedence_layers(tmp_path, postgres_dsn):
+    """Global sidecar + per-user mute/watch + per-card add/mute, in one card.
+
+    ``postgres_dsn`` is requested but is not the seed target — same
+    fail-LOUD guard as the fixtures above: the seeding below writes the
+    ambient store, which is refused without a cluster.
+    """
     store = _store(tmp_path)
     # Sidecar (global): `merged` notifies owner + collaborators (override the
     # built-in owner+subscribers).
@@ -807,7 +847,7 @@ def test_precedence_card_mute_beats_the_user_watch(
     assert scenario["watcher"].id not in got
 
 
-def test_shared_config_is_reused_across_resolves(tmp_path):
+def test_shared_config_is_reused_across_resolves(tmp_path, postgres_dsn):
     # Arrange — passing a pre-loaded config should give the same answer as
     # auto-load.
     store = _store(tmp_path)

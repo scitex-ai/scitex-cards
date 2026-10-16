@@ -9,7 +9,8 @@ drift between agents.
 
 Filter (RUNNABLE = picks up cleanly):
   * ``agent`` matches the requested name (or any when ``None``)
-  * ``status`` ∈ {``pending``, ``in_progress``}
+  * ``status`` ∈ {``deferred``, ``in_progress``} (``deferred`` is the
+    backlog state since ``pending`` was abolished 2026-07-10)
   * ``blocker`` is None (a blocked row is NOT runnable; a different
     agent / the operator needs to clear it first)
 

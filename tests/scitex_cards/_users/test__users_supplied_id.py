@@ -26,7 +26,7 @@ from scitex_cards import _users
 # --------------------------------------------------------------------------- #
 # register_user(id=...): created                                              #
 # --------------------------------------------------------------------------- #
-def test_register_user_accepts_caller_supplied_id(tmp_path):
+def test_register_user_accepts_caller_supplied_id(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     supplied = "u_3f9a1c0b7e42"
@@ -38,7 +38,7 @@ def test_register_user_accepts_caller_supplied_id(tmp_path):
     assert user.id == supplied
 
 
-def test_caller_supplied_id_round_trips_on_reload(tmp_path):
+def test_caller_supplied_id_round_trips_on_reload(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     supplied = "u_3f9a1c0b7e42"
@@ -51,7 +51,7 @@ def test_caller_supplied_id_round_trips_on_reload(tmp_path):
     assert reloaded is not None and reloaded.id == supplied
 
 
-def test_default_none_still_mints_a_random_id(tmp_path):
+def test_default_none_still_mints_a_random_id(tmp_path, postgres_dsn):
     """``id=None`` (the default) keeps the previous behavior byte-identical."""
     # Arrange
     store = tmp_path / "tasks.yaml"
@@ -64,7 +64,7 @@ def test_default_none_still_mints_a_random_id(tmp_path):
 # --------------------------------------------------------------------------- #
 # register_user(id=...): malformed id fails loud                              #
 # --------------------------------------------------------------------------- #
-def test_supplied_id_without_prefix_rejected(tmp_path):
+def test_supplied_id_without_prefix_rejected(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -75,7 +75,7 @@ def test_supplied_id_without_prefix_rejected(tmp_path):
         )
 
 
-def test_supplied_id_wrong_length_rejected(tmp_path):
+def test_supplied_id_wrong_length_rejected(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -86,7 +86,7 @@ def test_supplied_id_wrong_length_rejected(tmp_path):
         )
 
 
-def test_supplied_id_uppercase_hex_rejected(tmp_path):
+def test_supplied_id_uppercase_hex_rejected(tmp_path, postgres_dsn):
     """``secrets.token_hex`` emits lowercase; the registry never holds an id
     the random path could not have produced."""
     # Arrange
@@ -99,7 +99,7 @@ def test_supplied_id_uppercase_hex_rejected(tmp_path):
         )
 
 
-def test_supplied_id_non_hex_rejected(tmp_path):
+def test_supplied_id_non_hex_rejected(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -110,7 +110,7 @@ def test_supplied_id_non_hex_rejected(tmp_path):
         )
 
 
-def test_malformed_supplied_id_error_names_the_expected_format(tmp_path):
+def test_malformed_supplied_id_error_names_the_expected_format(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
@@ -122,9 +122,16 @@ def test_malformed_supplied_id_error_names_the_expected_format(tmp_path):
 
 
 @pytest.fixture
-def store_after_malformed_id_attempt(tmp_path):
+def store_after_malformed_id_attempt(tmp_path, postgres_dsn):
     """A store that survived one registration attempt with a malformed id
-    (the attempt raised, as pinned by the tests above)."""
+    (the attempt raised, as pinned by the tests above).
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    ``list_users`` below would raise — the fixture fails first, LOUDLY,
+    with the reason and the remedy. (Same guard as the ``store`` fixtures
+    in _django/.)
+    """
     store = tmp_path / "tasks.yaml"
     with pytest.raises(_users.UserValidationError):
         _users.register_user(kind="human", names=["x"], id="bogus", store=store)
@@ -143,7 +150,7 @@ def test_malformed_supplied_id_writes_nothing(store_after_malformed_id_attempt):
 # --------------------------------------------------------------------------- #
 # register_user(id=...): already-existed-same is idempotent                   #
 # --------------------------------------------------------------------------- #
-def test_reregistering_same_identity_is_idempotent(tmp_path):
+def test_reregistering_same_identity_is_idempotent(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     supplied = "u_3f9a1c0b7e42"
@@ -158,7 +165,7 @@ def test_reregistering_same_identity_is_idempotent(tmp_path):
     assert again.id == supplied
 
 
-def test_idempotent_reregistration_does_not_duplicate_the_user(tmp_path):
+def test_idempotent_reregistration_does_not_duplicate_the_user(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     supplied = "u_3f9a1c0b7e42"
@@ -174,7 +181,7 @@ def test_idempotent_reregistration_does_not_duplicate_the_user(tmp_path):
     assert len(users) == 1
 
 
-def test_idempotent_reregistration_returns_the_existing_record(tmp_path):
+def test_idempotent_reregistration_returns_the_existing_record(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     supplied = "u_3f9a1c0b7e42"
@@ -189,7 +196,7 @@ def test_idempotent_reregistration_returns_the_existing_record(tmp_path):
     assert again.created_at == first.created_at
 
 
-def test_reregistration_with_a_subset_of_names_is_idempotent(tmp_path):
+def test_reregistration_with_a_subset_of_names_is_idempotent(tmp_path, postgres_dsn):
     """A user that gained an alias since first registration still
     re-registers idempotently for any subset of its names."""
     # Arrange
@@ -212,7 +219,7 @@ def test_reregistration_with_a_subset_of_names_is_idempotent(tmp_path):
 # --------------------------------------------------------------------------- #
 # register_user(id=...): refused-different fails loud, never merges           #
 # --------------------------------------------------------------------------- #
-def test_supplied_id_of_a_different_identity_rejected(tmp_path):
+def test_supplied_id_of_a_different_identity_rejected(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     supplied = "u_3f9a1c0b7e42"
@@ -229,7 +236,7 @@ def test_supplied_id_of_a_different_identity_rejected(tmp_path):
         )
 
 
-def test_supplied_id_kind_mismatch_rejected(tmp_path):
+def test_supplied_id_kind_mismatch_rejected(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     supplied = "u_3f9a1c0b7e42"
@@ -247,9 +254,14 @@ def test_supplied_id_kind_mismatch_rejected(tmp_path):
 
 
 @pytest.fixture
-def store_after_refused_id_collision(tmp_path):
+def store_after_refused_id_collision(tmp_path, postgres_dsn):
     """A store holding alice under a supplied id, after a REFUSED attempt to
-    re-register that id for bob (the attempt raised, as pinned above)."""
+    re-register that id for bob (the attempt raised, as pinned above).
+
+    ``postgres_dsn`` is requested but is not the seed target — same
+    fail-LOUD guard as the fixture above: the seeding below writes the
+    ambient store, which is refused without a cluster.
+    """
     store = tmp_path / "tasks.yaml"
     supplied = "u_3f9a1c0b7e42"
     _users.register_user(
@@ -273,7 +285,7 @@ def test_refused_id_collision_does_not_merge_names(
     assert existing.names == ["alice@example.com"]
 
 
-def test_supplied_id_with_a_name_owned_by_another_user_rejected(tmp_path):
+def test_supplied_id_with_a_name_owned_by_another_user_rejected(tmp_path, postgres_dsn):
     """A FRESH id whose requested name belongs to someone else hits the
     existing cross-registry name-uniqueness path unchanged."""
     # Arrange
@@ -353,7 +365,7 @@ def test_separator_ambiguity_cannot_merge_two_people():
     assert a != b
 
 
-def test_deterministic_user_id_is_accepted_by_register_user(tmp_path):
+def test_deterministic_user_id_is_accepted_by_register_user(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     uid = _users.deterministic_user_id("https://orcid.org", "0000-0001-2345")

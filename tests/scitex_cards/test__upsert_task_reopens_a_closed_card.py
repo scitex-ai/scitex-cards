@@ -9,6 +9,12 @@ the hand-rolled ``add || comment`` fallback dropped an outage notice onto a
 a replica down ~8 h, the alert fired correctly into a place nothing reads.
 
 The reopen case is therefore the point of the verb, not an edge of it.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 9 ambient-store checks below target the ambient
+per-test store, which is refused without a writable cluster. The 3 pure
+validation tests (empty status/id/title, raised before any read) stay
+unguarded by design (no store touch).
 """
 
 from __future__ import annotations
@@ -38,7 +44,7 @@ def _mk(card_id: str, status: str = "deferred") -> None:
 # ---------------------------------------------------------------- create
 
 
-def test__upsert_creates_the_card_when_it_does_not_exist():
+def test__upsert_creates_the_card_when_it_does_not_exist(postgres_dsn):
     # Arrange
     card_id = "upsert-create-1"
     # Act
@@ -47,7 +53,7 @@ def test__upsert_creates_the_card_when_it_does_not_exist():
     assert get_task(task_id=card_id)["id"] == card_id
 
 
-def test__upsert_refuses_to_create_an_owner_less_card():
+def test__upsert_refuses_to_create_an_owner_less_card(postgres_dsn):
     """CI caught the mirror of this: add_task rejects an owner-less card, and
     this verb appends straight to the document, so without the same gate the
     new door would mint exactly what the old door refuses."""
@@ -63,7 +69,7 @@ def test__upsert_refuses_to_create_an_owner_less_card():
         act()
 
 
-def test__upsert_reports_created_for_a_new_card():
+def test__upsert_reports_created_for_a_new_card(postgres_dsn):
     # Arrange
     card_id = "upsert-create-2"
     # Act
@@ -77,7 +83,7 @@ def test__upsert_reports_created_for_a_new_card():
 # ---------------------------------------------------------------- reopen
 
 
-def test__upsert_reopens_a_done_card_to_the_requested_status():
+def test__upsert_reopens_a_done_card_to_the_requested_status(postgres_dsn):
     """THE WHOLE POINT. add_task refuses this id; comment_task would mute."""
     # Arrange
     card_id = "upsert-reopen-1"
@@ -89,7 +95,7 @@ def test__upsert_reopens_a_done_card_to_the_requested_status():
     assert get_task(task_id=card_id)["status"] == "in_progress"
 
 
-def test__upsert_reports_reopened_when_the_status_changed():
+def test__upsert_reports_reopened_when_the_status_changed(postgres_dsn):
     """A recurrence is different news from a first occurrence."""
     # Arrange
     card_id = "upsert-reopen-2"
@@ -101,7 +107,7 @@ def test__upsert_reports_reopened_when_the_status_changed():
     assert result["_upsert_action"] == "reopened"
 
 
-def test__upsert_does_not_duplicate_the_card_on_reopen():
+def test__upsert_does_not_duplicate_the_card_on_reopen(postgres_dsn):
     # Arrange
     card_id = "upsert-reopen-3"
     _mk(card_id)
@@ -114,7 +120,7 @@ def test__upsert_does_not_duplicate_the_card_on_reopen():
     assert len([t for t in list_tasks() if t.get("id") == card_id]) == 1
 
 
-def test__upsert_refreshes_the_title_on_an_existing_card():
+def test__upsert_refreshes_the_title_on_an_existing_card(postgres_dsn):
     # Arrange
     card_id = "upsert-reopen-4"
     _mk(card_id)
@@ -127,7 +133,7 @@ def test__upsert_refreshes_the_title_on_an_existing_card():
 # ---------------------------------------------------------------- blocker
 
 
-def test__upsert_clears_the_blocker_when_leaving_a_blocked_state():
+def test__upsert_clears_the_blocker_when_leaving_a_blocked_state(postgres_dsn):
     """A card carrying a blocker while not blocked fails WHOLE-document
     validation, so one such card stops every other write — the failure
     complete_task learned in 2026-08."""
@@ -150,7 +156,7 @@ def test__upsert_clears_the_blocker_when_leaving_a_blocked_state():
 # ---------------------------------------------------------------- refusals
 
 
-def test__upsert_refuses_to_resurrect_a_tombstoned_card():
+def test__upsert_refuses_to_resurrect_a_tombstoned_card(postgres_dsn):
     """A deleted card must not come back through the upsert door."""
     # Arrange
     card_id = "upsert-tombstone-1"
@@ -205,6 +211,43 @@ def test__upsert_requires_a_non_empty_title():
     # Assert
     with pytest.raises(ValueError, match="title"):
         act()
+
+
+# ---------------------------------------------------------------- abolished-status gate (CI round-trip twins)
+
+
+def test__upsert_rejects_abolished_pending(postgres_dsn):
+    """Pending was abolished 2026-07-10: the alerter door must refuse to
+    mint it, like the create/update verbs and the board reopen/restore
+    handlers do (the save path only warns, so the source stays strict)."""
+    # Arrange
+    card_id = "upsert-pending-1"
+
+    # Act
+    def act():
+        upsert_task(id=card_id, title="x", status="pending", assignee=OWNER)
+
+    # Assert
+    from scitex_cards._task import TaskValidationError
+
+    with pytest.raises(TaskValidationError, match="pending"):
+        act()
+
+
+def test__upsert_rejected_upsert_leaves_the_row_untouched(postgres_dsn):
+    """The rejection fires before the store lock, so nothing changes."""
+    # Arrange
+    card_id = "upsert-pending-2"
+    _mk(card_id)
+
+    # Act
+    from scitex_cards._task import TaskValidationError
+
+    with pytest.raises(TaskValidationError):
+        upsert_task(id=card_id, title="x", status="pending", assignee=OWNER)
+
+    # Assert
+    assert get_task(task_id=card_id)["status"] == "deferred"
 
 
 # EOF

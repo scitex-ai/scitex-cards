@@ -81,10 +81,10 @@ scitex-cards update "$task_id" --status blocked --blocker dependency \
 
 | from        | to            | trigger                                       |
 | ----------- | ------------- | --------------------------------------------- |
-| pending     | in_progress   | agent claims via `next --auto-claim`          |
+| deferred    | in_progress   | agent claims via `next --auto-claim`          |
 | in_progress | done          | work complete                                 |
 | in_progress | blocked       | dependency / decision / compute wait surfaces |
-| blocked     | pending       | operator / lead resolves the blocker          |
+| blocked     | deferred      | operator / lead resolves the blocker — card returns to the backlog; re-claim via `next --auto-claim` |
 | any         | failed        | unrecoverable — annotate in `comments`        |
 | any         | deferred      | operator-decided "not now"                    |
 
@@ -96,7 +96,7 @@ rejects any other value.
 `scitex-cards next` filters by:
 
 - `agent` (or legacy `assignee`) matches the requested name,
-- `status` in `{pending, in_progress}`,
+- `status` in `{deferred, in_progress}` (`deferred` is the backlog state since `pending` was abolished 2026-07-10),
 - `blocker` is None (a blocked row is NOT runnable; the operator or
   the lead must clear it first).
 

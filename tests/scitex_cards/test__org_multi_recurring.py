@@ -19,7 +19,7 @@ class TestExportRepeaterSuffix:
             {
                 "id": "a",
                 "title": "X",
-                "status": "pending",
+                "status": "deferred",
                 "deadline": "2026-06-15 +1w",
             }
         ]
@@ -34,7 +34,7 @@ class TestExportRepeaterSuffix:
             {
                 "id": "a",
                 "title": "X",
-                "status": "pending",
+                "status": "deferred",
                 "deadline": "2026-06-15 ++2m",
             }
         ]
@@ -51,7 +51,7 @@ class TestExportMultipleDeadlines:
             {
                 "id": "a",
                 "title": "X",
-                "status": "pending",
+                "status": "deferred",
                 "deadlines": ["2026-06-15", "2026-07-01 +1m"],
             }
         ]
@@ -66,7 +66,7 @@ class TestExportMultipleDeadlines:
             {
                 "id": "a",
                 "title": "X",
-                "status": "pending",
+                "status": "deferred",
                 "deadlines": ["2026-06-15", "2026-07-01 +1m"],
             }
         ]
@@ -83,7 +83,7 @@ class TestExportMultipleDeadlines:
             {
                 "id": "a",
                 "title": "X",
-                "status": "pending",
+                "status": "deferred",
                 "deadline": "2026-09-01",
                 "deadlines": ["2026-06-15"],
             }
@@ -101,7 +101,7 @@ class TestExportMultipleDeadlines:
             {
                 "id": "a",
                 "title": "X",
-                "status": "pending",
+                "status": "deferred",
                 "deadline": "2026-09-01",
                 "deadlines": ["2026-06-15"],
             }

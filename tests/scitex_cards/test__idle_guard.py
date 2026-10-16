@@ -4,6 +4,15 @@
 
 Real fakes, NO mocks: plain task dicts, a real tmp_path store for the
 load-path, an injected ``now``. AAA.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 5 evaluate tests + 3 main tests below seed/read
+the ambient per-test store via ``seed_db_from_doc``, which is refused
+without a writable cluster. The 2 pure ``stale_in_progress`` tests stay
+unguarded by design: they take plain dicts and never open the store.
+``test_main_no_agent_allows`` stays unguarded (returns before the store
+opens) and ``test_main_failsoft_allows_on_error`` stays unguarded (it
+deliberately points the store at a missing DB to pin the failsoft path).
 """
 
 from __future__ import annotations
@@ -61,7 +70,7 @@ def test_only_stale_in_progress_for_the_agent():
             id="fresh", owner="alice", status="in_progress", hours_ago=0.1
         ),  # fresh → out
         _t(id="blkd", owner="alice", status="blocked", hours_ago=10),  # parked → out
-        _t(id="pend", owner="alice", status="pending", hours_ago=99),  # backlog → out
+        _t(id="pend", owner="alice", status="deferred", hours_ago=99),  # backlog → out
         _t(
             id="other", owner="bob", status="in_progress", hours_ago=10
         ),  # not alice → out
@@ -99,7 +108,7 @@ def _store(tmp_path, tasks):
     return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 
-def test_evaluate_blocks_on_stale_in_progress(tmp_path):
+def test_evaluate_blocks_on_stale_in_progress(tmp_path, postgres_dsn):
     # Arrange
     store = _store(
         tmp_path, [_t(id="c1", owner="alice", status="in_progress", hours_ago=10)]
@@ -112,7 +121,7 @@ def test_evaluate_blocks_on_stale_in_progress(tmp_path):
     assert block is True
 
 
-def test_evaluate_reason_names_the_stale_card(tmp_path):
+def test_evaluate_reason_names_the_stale_card(tmp_path, postgres_dsn):
     # Arrange
     store = _store(
         tmp_path, [_t(id="c1", owner="alice", status="in_progress", hours_ago=10)]
@@ -125,7 +134,7 @@ def test_evaluate_reason_names_the_stale_card(tmp_path):
     assert "c1" in reason
 
 
-def test_evaluate_reason_says_do_not_stop(tmp_path):
+def test_evaluate_reason_says_do_not_stop(tmp_path, postgres_dsn):
     # Arrange
     store = _store(
         tmp_path, [_t(id="c1", owner="alice", status="in_progress", hours_ago=10)]
@@ -138,13 +147,13 @@ def test_evaluate_reason_says_do_not_stop(tmp_path):
     assert "DO NOT STOP" in reason
 
 
-def test_evaluate_allows_when_no_stale_in_progress(tmp_path):
+def test_evaluate_allows_when_no_stale_in_progress(tmp_path, postgres_dsn):
     # Arrange
     store = _store(
         tmp_path,
         [
             _t(id="fresh", owner="alice", status="in_progress", hours_ago=0.1),
-            _t(id="pend", owner="alice", status="pending", hours_ago=99),
+            _t(id="pend", owner="alice", status="deferred", hours_ago=99),
         ],
     )
     # Act
@@ -155,13 +164,13 @@ def test_evaluate_allows_when_no_stale_in_progress(tmp_path):
     assert block is False
 
 
-def test_evaluate_reason_is_empty_when_allowing(tmp_path):
+def test_evaluate_reason_is_empty_when_allowing(tmp_path, postgres_dsn):
     # Arrange
     store = _store(
         tmp_path,
         [
             _t(id="fresh", owner="alice", status="in_progress", hours_ago=0.1),
-            _t(id="pend", owner="alice", status="pending", hours_ago=99),
+            _t(id="pend", owner="alice", status="deferred", hours_ago=99),
         ],
     )
     # Act
@@ -194,7 +203,7 @@ def silent_stdin():
         _idle_guard.sys.stdin = prior
 
 
-def test_main_blocks_with_exit_2(tmp_path, env, silent_stdin, capsys):
+def test_main_blocks_with_exit_2(tmp_path, env, silent_stdin, capsys, postgres_dsn):
     # Arrange
     store = _store(
         tmp_path, [_t(id="c1", owner="alice", status="in_progress", hours_ago=10)]
@@ -207,7 +216,7 @@ def test_main_blocks_with_exit_2(tmp_path, env, silent_stdin, capsys):
     assert rc == 2
 
 
-def test_main_names_the_stale_card_on_stderr(tmp_path, env, silent_stdin, capsys):
+def test_main_names_the_stale_card_on_stderr(tmp_path, env, silent_stdin, capsys, postgres_dsn):
     # Arrange
     store = _store(
         tmp_path, [_t(id="c1", owner="alice", status="in_progress", hours_ago=10)]
@@ -221,14 +230,14 @@ def test_main_names_the_stale_card_on_stderr(tmp_path, env, silent_stdin, capsys
     assert "c1" in stderr
 
 
-def test_main_allows_with_exit_0(tmp_path, env, silent_stdin):
+def test_main_allows_with_exit_0(tmp_path, env, silent_stdin, postgres_dsn):
     # No in_progress card → no claimed work to abandon → allow stop. Uses only a
-    # pending card so the result is independent of the wall clock (main() reads
+    # deferred card so the result is independent of the wall clock (main() reads
     # the real `now`, so an in_progress fixture anchored to a fixed past time
     # would flake once it aged past the stale threshold).
     # Arrange
     store = _store(
-        tmp_path, [_t(id="pend", owner="alice", status="pending", hours_ago=99)]
+        tmp_path, [_t(id="pend", owner="alice", status="deferred", hours_ago=99)]
     )
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     # Act

@@ -6,6 +6,10 @@ cards-p6-overdue-ui — backend half (the fleet liveness payload now
 exposes a per-agent `overdue_count`, and the CLI can use this helper
 for a `--overdue` filter). No mocks — real dicts + frozen ``now``
 arg per STX-NM / PA-306.
+
+Fixtures use ``status: deferred`` (the successor default since ``pending``
+was abolished 2026-07-10): these tests pin deadline arithmetic, not
+statuses, so they must not seed the abolished value.
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ class TestIsOverdueAbsentDeadline:
 
     def test_no_deadline_returns_false(self):
         # Arrange
-        task = {"id": "a", "title": "A", "status": "pending"}
+        task = {"id": "a", "title": "A", "status": "deferred"}
         # Act
         result = is_overdue(task, now=_utc(2026, 6, 12, 12, 0, 0))
         # Assert
@@ -39,7 +43,7 @@ class TestIsOverduePastDeadline:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadline": "2026-06-11",
         }
         # Act
@@ -52,7 +56,7 @@ class TestIsOverduePastDeadline:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadline": "2026-06-12",
         }
         # Act
@@ -65,7 +69,7 @@ class TestIsOverduePastDeadline:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadline": "2026-06-13",
         }
         # Act
@@ -129,7 +133,7 @@ class TestIsOverdueMultipleDeadlines:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadlines": ["2026-06-10", "2026-06-20"],
         }
         # Act
@@ -142,7 +146,7 @@ class TestIsOverdueMultipleDeadlines:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadlines": ["2026-06-13", "2026-06-20"],
         }
         # Act
@@ -162,7 +166,7 @@ class TestIsOverdueTimedDeadline:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadline": "2026-06-12T09:00",
         }
         # Act
@@ -175,7 +179,7 @@ class TestIsOverdueTimedDeadline:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadline": "2026-06-12T15:00",
         }
         # Act
@@ -188,7 +192,7 @@ class TestIsOverdueTimedDeadline:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadline": "2026-06-10T09:00",
         }
         # Act
@@ -201,7 +205,7 @@ class TestIsOverdueTimedDeadline:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadline": "2026-06-12T09:00:00",
         }
         # Act
@@ -220,7 +224,7 @@ class TestIsOverdueDateOnlyGranularityPreserved:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadline": "2026-06-12",
         }
         # Act
@@ -233,7 +237,7 @@ class TestIsOverdueDateOnlyGranularityPreserved:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadline": "2026-06-12",
         }
         # Act
@@ -269,7 +273,7 @@ class TestIsOverdueTimedMultiple:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadlines": ["2026-06-12T09:00", "2026-08-01"],
         }
         # Act
@@ -282,7 +286,7 @@ class TestIsOverdueTimedMultiple:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadlines": ["2026-06-13", "2026-06-20T09:00"],
         }
         # Act
@@ -300,7 +304,7 @@ class TestIsOverdueTimezoneAwareDeadline:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadline": "2026-06-12T09:00+09:00",
         }
         # Act
@@ -313,7 +317,7 @@ class TestIsOverdueTimezoneAwareDeadline:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadline": "2026-06-12T23:00-09:00",
         }
         # Act
@@ -333,7 +337,7 @@ class TestIsOverdueUnparseableDeadlineIsLoud:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadline": "not-a-real-date",
         }
         # Act
@@ -348,7 +352,7 @@ class TestIsOverdueUnparseableDeadlineIsLoud:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadline": "not-a-real-date",
         }
         # Act
@@ -363,7 +367,7 @@ class TestIsOverdueUnparseableDeadlineIsLoud:
         task = {
             "id": "a",
             "title": "A",
-            "status": "pending",
+            "status": "deferred",
             "deadline": "not-a-real-date",
         }
         # Act

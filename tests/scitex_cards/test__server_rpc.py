@@ -18,6 +18,10 @@ Pinned here:
 4. CONCURRENCY — two clients interleaving writes over HTTP; both survive
    (the store flock serializes beneath the server; no lost update).
 5. AUDIT — one JSONL line per authenticated request.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the ``rig`` fixture below reads the ambient
+per-test store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -35,8 +39,14 @@ from scitex_cards import _server, _store
 
 
 @pytest.fixture()
-def rig(tmp_path, env):
+def rig(tmp_path, env, postgres_dsn):
     """A serving rig: pinned store + tmp tokens + tmp audit + live server.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    ``$SCITEX_STORE_DSN`` read below would hand the server a filename —
+    the fixture fails first, LOUDLY, with the reason and the remedy.
+    (Same guard as the ``store`` fixtures in _django/.)
 
     The store is the database now, and the harness (tests/conftest.py) already pins
     every store-selecting env var at a per-test scratch dir and bootstraps an

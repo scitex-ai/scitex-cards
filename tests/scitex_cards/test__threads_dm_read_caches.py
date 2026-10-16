@@ -29,8 +29,8 @@ from __future__ import annotations
 
 import pytest
 
-from scitex_cards import _threads
-from scitex_cards._threads import append_message, list_threads, mark_read, thread_key
+from scitex_cards._dm import threads as _threads
+from scitex_cards._dm.threads import append_message, list_threads, mark_read, thread_key
 from scitex_cards import _db_users
 from scitex_cards._users import _store_read
 from scitex_cards._users._store_read import list_users

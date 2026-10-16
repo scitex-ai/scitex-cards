@@ -1,6 +1,6 @@
 /* Emoji picker — component styles for static/scitex_cards/ui/emoji_picker.js.
  *
- * Written to be HARVESTED into scitex-ui as a shared primitive, so:
+ * Written to be HARVESTED into the SDK as a shared primitive, so:
  *   - every selector is self-describing and lives in its own
  *     `stx-emoji-picker` block; nothing here reaches for `.msg`, `#compose`
  *     or any other chat-specific ancestor.
@@ -13,7 +13,7 @@
  *
  * THEME ORDER, and it matters: the base block is the light default, the
  * prefers-color-scheme block flips it for a dark OS, and the [data-theme]
- * blocks come LAST so an explicit theme attribute (scitex-ui's contract,
+ * blocks come LAST so an explicit theme attribute (the SDK's contract,
  * <html data-theme="…">) wins over the OS preference in BOTH directions.
  * Attribute selectors outrank the bare class regardless of the media query,
  * which is exactly the precedence we want.

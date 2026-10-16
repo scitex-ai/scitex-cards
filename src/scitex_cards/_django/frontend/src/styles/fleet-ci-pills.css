@@ -7,7 +7,7 @@
  *   - On per-repo adapter errors, the pill renders a red ring + a ``!``
  *     marker and the back-end error message is in the tooltip.
  *
- * All colors come from scitex-ui design tokens declared on the board
+ * All colors come from SDK design tokens declared on the board
  * root (see board.css `.stx-cards-board`):
  *   --status-success / --status-error / --status-warning / --text-muted
  *   plus board-local --stx-text / --stx-text-muted / --stx-border /

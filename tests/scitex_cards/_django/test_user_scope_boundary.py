@@ -127,6 +127,121 @@ def test_manifest_declares_user_scope_for_the_leaf_package():
     assert declared == "user"
 
 
+def _mount_policy() -> dict:
+    """Shared Arrange: the manifest's ``mount_policy`` block, as a dict."""
+    manifest = (
+        Path(_user_scope.__file__).resolve().parent / "manifest.json"
+    )
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    policy = data.get("mount_policy")
+    assert isinstance(policy, dict), (
+        "manifest.json names no `mount_policy` block — the hub reads the "
+        "file jail from there, so a missing block silently unjails the board."
+    )
+    return policy
+
+
+def test_manifest_mount_policy_declares_the_file_jail():
+    """Positive control: the board touches files AND names the jail to hold it.
+
+    The manifest description promises writes (card comments, DM send and
+    reactions, file uploads) and ``writable_routes`` lists the upload route —
+    so ``touches_files`` must be true or the hub has no reason to jail
+    anything, and the ``jail`` block must carry every key the hub reads
+    (``scope`` / ``working_dir_param`` / ``path_params``). A pin that only
+    asserted values would pass vacuously on a block that lost a key.
+    """
+    # Arrange
+    policy = _mount_policy()
+    # Act
+    jail = policy.get("jail")
+    # Assert
+    assert policy.get("touches_files") is True, (
+        "mount_policy.touches_files is not true — the board writes (comments, "
+        "DM send/reactions, uploads) and must be jailed as a file-touching app."
+    )
+    assert isinstance(jail, dict) and set(
+        ("scope", "working_dir_param", "path_params")
+    ) <= set(jail), (
+        f"mount_policy.jail is missing keys: {jail!r} — the hub constrains "
+        "scope, the working-dir param, and path params from this block."
+    )
+
+
+def test_manifest_jail_is_user_scoped_and_agrees_with_the_boundary():
+    """The jail holds the board to the user — the same user the boundary sees.
+
+    Three sources must agree: the jail scope, the manifest's top-level scope,
+    and ``_user_scope.SCOPE``. A jail scoped to anything else (or a top-level
+    scope that drifted from it) re-scopes a user-scoped app at the mount
+    layer, exactly the widening the principal tests above forbid in code
+    (own-ledger #48).
+    """
+    # Arrange
+    manifest = (
+        Path(_user_scope.__file__).resolve().parent / "manifest.json"
+    )
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    # Act
+    jail_scope = data.get("mount_policy", {}).get("jail", {}).get("scope")
+    # Assert
+    assert (jail_scope, data.get("scope"), _user_scope.SCOPE) == (
+        "user",
+        "user",
+        "user",
+    ), (
+        f"jail scope ({jail_scope!r}), manifest scope ({data.get('scope')!r}), "
+        f"and boundary SCOPE ({_user_scope.SCOPE!r}) disagree — a user-scoped "
+        "app must be user-jailed at every layer."
+    )
+
+
+def test_manifest_jail_names_the_constrained_working_dir_param():
+    """The jail names the exact param the hub must constrain — and its shape.
+
+    ``working_dir_param`` is the request param the hub pins inside the user's
+    jail; an empty or renamed value constrains nothing while looking
+    configured. ``path_params`` must stay a list (today empty: no other path
+    param carries a filesystem location) so the hub's iteration cannot break
+    on a future string-or-null edit.
+    """
+    # Arrange
+    policy = _mount_policy()
+    # Act
+    jail = policy.get("jail", {})
+    # Assert
+    assert jail.get("working_dir_param") == "working_dir", (
+        f"mount_policy.jail.working_dir_param is {jail.get('working_dir_param')!r} "
+        "— the hub jails exactly this param; renaming it here without the hub "
+        "unpins every file write."
+    )
+    assert isinstance(jail.get("path_params"), list), (
+        f"mount_policy.jail.path_params is {jail.get('path_params')!r}, not a "
+        "list — the hub iterates it to constrain path-carrying params."
+    )
+
+
+def test_manifest_writable_routes_include_the_upload_route():
+    """The upload route stays declared writable — or uploads silently stop.
+
+    The manifest description promises file uploads and ``urls.py`` serves
+    ``dm/upload``; ``writable_routes`` is the list the hub consults to allow
+    writes. A route dropped from that list keeps its URL while its writes
+    are refused at the mount layer — the write-half twin of the silent
+    unjailing the jail pins above forbid.
+    """
+    # Arrange
+    policy = _mount_policy()
+    # Act
+    writable = policy.get("writable_routes")
+    # Assert
+    assert isinstance(writable, list) and "dm/upload" in writable, (
+        f"mount_policy.writable_routes is {writable!r} — the board uploads "
+        "files via dm/upload (urls.py) and promises uploads in its "
+        "description; dropping it here silently unwrites that promise."
+    )
+
+
 def test_current_user_source_never_consults_a_project_selector():
     # Arrange — walk the executable AST (a docstring is a Constant, never an
     # attribute access, so mentioning a selector in prose cannot trip this).
@@ -189,4 +304,37 @@ def test_dm_author_of_delegates_to_the_user_scope_boundary():
         "dm._author_of no longer delegates to _user_scope — the 'who is this "
         "request' logic should live in ONE boundary, not be re-implemented in "
         "the DM view (own-ledger #231)"
+    )
+
+
+def test_manifest_description_names_the_canonical_statuses_and_no_abolished_one():
+    """The board legend must match the statuses the store actually accepts.
+
+    ``status 'pending'`` was abolished 2026-07-10 (``_task.ABOLISHED_STATUSES``)
+    and the canonical set is ``_task.VALID_STATUSES`` (7 values, ``cancelled``
+    included). The manifest description is the legend the hub shows for the
+    board — naming an abolished status there teaches readers a value every
+    write door refuses, and omitting ``cancelled`` hides a terminal state the
+    board really renders.
+    """
+    # Arrange
+    from scitex_cards._task import ABOLISHED_STATUSES, VALID_STATUSES
+
+    manifest = (
+        Path(_user_scope.__file__).resolve().parent / "manifest.json"
+    )
+    description = json.loads(manifest.read_text(encoding="utf-8")).get(
+        "description", ""
+    )
+    # Act
+    missing = [s for s in VALID_STATUSES if s not in description]
+    resurrected = [s for s in ABOLISHED_STATUSES if s in description]
+    # Assert
+    assert not missing, (
+        f"manifest description omits canonical statuses: {missing!r} — "
+        "the board legend must name every status the store accepts."
+    )
+    assert not resurrected, (
+        f"manifest description names abolished statuses: {resurrected!r} — "
+        "abolished 2026-07-10, refused by every write door since."
     )

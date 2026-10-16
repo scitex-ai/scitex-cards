@@ -125,7 +125,7 @@ def test_the_local_names_alias_base_tokens(rendered):
     assert present
 
 
-def test_the_scitex_ui_theme_stylesheet_is_linked(rendered):
+def test_the_sdk_theme_stylesheet_is_linked(rendered):
     """The aliases resolve to nothing if base's theme is not loaded."""
     # Arrange
     needle = "shell/theme.css"

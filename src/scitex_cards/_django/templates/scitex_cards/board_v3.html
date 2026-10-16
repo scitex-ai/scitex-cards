@@ -1,31 +1,31 @@
 {% extends "scitex_sdk/app/app_shell.html" %}
-{% load static %}
+{% load static i18n %}
 {% comment %}
-  Board v3 now extends the scitex-ui workspace shell (operator-asked,
+  Board v3 now extends the SDK workspace shell (operator-asked,
   TG msg 302 / 303 — wants Alt+I element-inspector + shared chrome
   parity with the legacy GraphView). All inline content is repacked
   into the shell's three blocks: extra_css holds the page-local
-  styles, scitex_app_content holds the kanban + BLOCKING-YOU panel + detail
+  styles, app_content holds the kanban + BLOCKING-YOU panel + detail
   modal, extra_js holds the page logic.
 
-  Alt+I element-inspector wires up automatically via scitex-ui's
-  context_processor (settings.py guards the install at scitex-ui
-  ≥0.5.0). For older scitex-ui installs the inspector degrades
-  silently; the board itself works either way.
+  Alt+I element-inspector wires up automatically via the SDK's
+  context_processor (settings.py guards the install). For older SDK
+  installs the inspector degrades silently; the board itself works
+  either way.
 
-  No favicon link here: scitex-ui's shell supplies the shared SciTeX brand
+  No favicon link here: the SDK's shell supplies the shared SciTeX brand
   mark as its default. One source, not two copies that drift. If the mark is
-  wrong, fix it in scitex-ui, which owns the asset.
+  wrong, fix it in scitex-sdk, which owns the asset.
 {% endcomment %}
 {% block extra_css %}
-<!-- P11b (lead-approved, operator priority 2026-06-12). Load the scitex-ui
+<!-- P11b (lead-approved, operator priority 2026-06-12). Load the SDK
      Combobox bundle (pre-built JS sibling of the TS class shipped in
-     scitex-ui#36/#37). The CSS uses the existing scitex-ui design tokens
+     the SDK UI component). The CSS uses the existing SDK design tokens
      so the popover blends with the board chrome. JS exposes
      window.STX.Combobox; attachCombobox() below layers a Combobox over
      every existing <select.filt> + the card-ctx move-picker as a
      progressive enhancement — if window.STX.Combobox is unavailable
-     (older scitex-ui pin), the page falls back to the plain <select>s
+     (older SDK pin), the page falls back to the plain <select>s
      and the move-picker's existing inline list. -->
 <!-- board_v3 page CSS (extracted 2026-06-12 from a 3800-line monolith).
      The inline <style> block was the root cause of squash-merge regressions
@@ -292,8 +292,9 @@
            Search-as-launcher (P1, lead brief 2026-06-12) — the PRIMARY
            filterbar entry point. -->
       <span class="filt-search-wrap" id="f-search-wrap">
+        {% translate '🔎 Search… ( / to focus, Esc to blur) — try project:paper-scitex-clew, status:blocked, kind:compute, …' as search_ph %}
         <input class="filt filt-search" id="f-search" type="search"
-               placeholder="🔎 Search… ( / to focus, Esc to blur) — try project:paper-scitex-clew, status:blocked, kind:compute, …"
+               placeholder="{{ search_ph }}"
                title="Fuzzy match + GitHub-style qualifiers (project: / agent: / status: / kind: / parent: / scope: / id: / priority: / host:). Press / to focus, Esc to blur. Tab to autocomplete the qualifier or value under the cursor."
                oninput="onSearchInput(event)" onkeydown="onSearchKeyDown(event)"
                onfocus="onSearchFocus(event)" onblur="onSearchBlur(event)"
@@ -302,7 +303,7 @@
                autocomplete="off">
         <!-- Autocomplete dropdown (operator TG 12318) -->
         <ul class="search-suggest" id="search-suggest" role="listbox"
-            aria-label="Search suggestions" hidden></ul>
+            aria-label="{% translate 'Search suggestions' %}" hidden></ul>
       </span>
     </div>{# end .fb-center / SEARCH group #}
 
@@ -350,21 +351,21 @@
          localStorage still said "column" would land on a BLANK board). -->
     <span class="filt-layout"
           title="Switch layout: Timeline (time raster) | Wall (sticky notes) | Graph (dep map)">
-      <label class="filt-layout-label">Layout</label>
-      <div class="filt-layout-seg" role="radiogroup" aria-label="Layout mode">
+      <label class="filt-layout-label">{% translate "Layout" %}</label>
+      <div class="filt-layout-seg" role="radiogroup" aria-label="{% translate 'Layout' %}">
         <button type="button" class="filt-layout-btn filt-layout-btn--on"
                 id="f-layout-timeline"
                 data-layout="timeline" onclick="onLayoutChange('timeline')"
                 role="radio" aria-checked="true"
-                title="Timeline — time raster by agent/project, or a per-task simple list (day/week/month windows) — default">⏱ Timeline</button>
+                title="Timeline — time raster by agent/project, or a per-task simple list (day/week/month windows) — default">{% translate "⏱ Timeline" %}</button>
         <button type="button" class="filt-layout-btn" id="f-layout-wall"
                 data-layout="wall" onclick="onLayoutChange('wall')"
                 role="radio" aria-checked="false"
-                title="Wall — sticky notes clustered by assignee; the selected agent's next-up stack rises to the top">🗒 Wall</button>
+                title="Wall — sticky notes clustered by assignee; the selected agent's next-up stack rises to the top">{% translate "🗒 Wall" %}</button>
         <button type="button" class="filt-layout-btn" id="f-layout-graph"
                 data-layout="graph" onclick="onLayoutChange('graph')"
                 role="radio" aria-checked="false"
-                title="Dependency / blocker graph (mermaid)">📊 Graph</button>
+                title="Dependency / blocker graph (mermaid)">{% translate "📊 Graph" %}</button>
         {% comment %}
           Matrix — urgency×importance quadrants (ADR-0011 §8). The layout
           itself lives in 14-matrix.js; this is only the toggle.
@@ -375,7 +376,7 @@
         <button type="button" class="filt-layout-btn" id="f-layout-matrix"
                 data-layout="matrix" onclick="onLayoutChange('matrix')"
                 role="radio" aria-checked="false"
-                title="Matrix — urgency × importance quadrants (I urgent+important / II important / III urgent / IV neither)">🎯 Matrix</button>
+                title="Matrix — urgency × importance quadrants (I urgent+important / II important / III urgent / IV neither)">{% translate "🎯 Matrix" %}</button>
       </div>
     </span>
     </div>{# end VIEW group #}
@@ -383,7 +384,7 @@
     <span class="stx-cards-filterbar__divider" aria-hidden="true"></span>
 
     <div class="stx-cards-filterbar__primary" role="group"
-         aria-label="Primary action — add a new task">
+         aria-label="{% translate 'Primary action — add a new task' %}">
     <!-- Add Task — operator-CRUD wiring (TG 344): one-click new-task
          entry from the filterbar. Opens the #add-task-backdrop modal
          below; POST /create on submit; loadGraph() refresh.
@@ -391,7 +392,7 @@
          overhaul part 2, 2026-06-14) so the operator's most-used
          button pops with the brand accent. -->
     <button id="add-task-btn" class="add-task-btn" onclick="openAddTaskModal()"
-            title="Add a new task (Cmd/Ctrl-N)">+ Add Task</button>
+            title="Add a new task (Cmd/Ctrl-N)">{% translate "+ Add Task" %}</button>
     </div>{# end PRIMARY action zone #}
     </div>{# end .fb-right #}
   </div>{# end .filterbar #}
@@ -405,9 +406,9 @@
   <div class="filterbar-chips" id="filterbar-chips">
     <div class="filt-qhints" id="filt-qhints"
          aria-live="polite"
-         aria-label="Recognized search qualifiers"></div>
+         aria-label="{% translate 'Recognized search qualifiers' %}"></div>
     <div id="filt-chips" class="filt-chips"
-         aria-live="polite" aria-label="Active filters"></div>
+         aria-live="polite" aria-label="{% translate 'Active filters' %}"></div>
   </div>
 
   {% comment %}
@@ -428,9 +429,9 @@
     same single-sourcing — only the disclosure wrapper is new.
   {% endcomment %}
   <details class="status-legend-wrap" id="status-legend-wrap">
-    <summary class="status-legend-summary">Legend</summary>
+    <summary class="status-legend-summary">{% translate "Legend" %}</summary>
   <div class="status-legend" id="status-legend"
-       role="group" aria-label="Status color legend">
+       role="group" aria-label="{% translate 'Status color legend' %}">
     {% for s, c in status_colors.items %}
     <span class="status-legend-chip" data-legend-status="{{ s }}"
           title="{{ s }}" aria-label="status color: {{ s }}">
@@ -466,10 +467,10 @@
                 border:1px solid var(--accent, #d99700);
                 border-radius:6px; font-size:13px; line-height:1.5;"
          role="status">
-      <strong style="color:var(--accent-strong, #b97400)">0 matches.</strong>
+      <strong style="color:var(--accent-strong, #b97400)">{% translate "0 matches." %}</strong>
       <span id="filter-empty-banner-detail"></span>
       <button type="button" id="filter-empty-banner-clear"
-              style="margin-left:10px; cursor:pointer;">Clear all filters</button>
+              style="margin-left:10px; cursor:pointer;">{% translate "Clear all filters" %}</button>
     </div>
     <div class="columns" id="columns" aria-busy="true"
          data-cards-internal-chrome="{{ cards_internal_chrome_enabled|yesno:'true,false,false' }}">
@@ -481,9 +482,9 @@
         false the moment data — or a named empty/error state — lands. Pure
         markup + 18-skeleton.css: no JS needed to show it.
       {% endcomment %}
-      <div class="board-skeleton" role="status" aria-label="Loading board">
+      <div class="board-skeleton" role="status" aria-label="{% translate 'Loading board' %}">
         <div class="board-skeleton__spinner" aria-hidden="true"></div>
-        <p class="board-skeleton__msg">Loading board…</p>
+        <p class="board-skeleton__msg">{% translate "Loading board…" %}</p>
         <div class="board-skeleton__grid" aria-hidden="true">
           <div class="sk-card"><div class="sk-line sk-line--title"></div><div class="sk-line"></div><div class="sk-line sk-line--short"></div><div class="sk-chips"><span></span><span></span></div></div>
           <div class="sk-card"><div class="sk-line sk-line--title"></div><div class="sk-line"></div><div class="sk-line sk-line--short"></div><div class="sk-chips"><span></span><span></span></div></div>
@@ -512,9 +513,9 @@
       ordinary filter rows) and HIDDEN cards.
     {% endcomment %}
     <aside class="details-pane stx-shell-sidebar" id="details-panel"
-           aria-label="Details">
+           aria-label="{% translate 'Details' %}">
       {% comment %}
-        The pane itself is scitex-ui's `.stx-shell-sidebar` — the SAME
+        The pane itself is the SDK's `.stx-shell-sidebar` — the SAME
         workspace-pane primitive Writer / Scholar / Console use (shell CSS
         css/shell/stx-shell-sidebar.css, already linked by the standalone
         shell this template extends). We get its 50 px `__header`, its
@@ -526,10 +527,10 @@
         board-appropriate width.
       {% endcomment %}
       <div class="stx-shell-sidebar__header">
-        <h5><span aria-hidden="true">📊</span> Details</h5>
+        <h5><span aria-hidden="true">📊</span> {% translate "Details" %}</h5>
         {# shown only when collapsed — the shell's vertical icon+label strip #}
         <span class="stx-shell-sidebar__title">
-          <i aria-hidden="true">📊</i><span>Details</span>
+          <i aria-hidden="true">📊</i><span>{% translate "Details" %}</span>
         </span>
         <button type="button" class="stx-shell-sidebar__toggle"
                 id="details-toggle" onclick="toggleDetailsPane()"
@@ -541,7 +542,7 @@
         <div class="details-section open" data-id="stats">
           <button type="button" class="details-section-toggle"
                   onclick="toggleDetailsSection('stats')">
-            <span class="details-section-title">Stats</span>
+            <span class="details-section-title">{% translate "Stats" %}</span>
             <span class="details-chevron" aria-hidden="true">▸</span>
           </button>
           <div class="details-section-body" id="details-stats-body">
@@ -567,48 +568,48 @@
         <div class="details-section open" data-id="filters">
           <button type="button" class="details-section-toggle"
                   onclick="toggleDetailsSection('filters')">
-            <span class="details-section-title">Filters</span>
+            <span class="details-section-title">{% translate "Filters" %}</span>
             <span class="details-filter-count" id="filt-active-count">(0)</span>
             <span class="details-chevron" aria-hidden="true">▸</span>
           </button>
           <div class="details-section-body">
             <div class="details-row details-row--filter">
-              <label for="f-project">Project</label>
-              <select class="filt" id="f-project"><option value="">All projects</option></select>
+              <label for="f-project">{% translate "Project" %}</label>
+              <select class="filt" id="f-project"><option value="">{% translate "All projects" %}</option></select>
             </div>
             <div class="details-row details-row--filter">
-              <label for="f-agent">Assignee</label>
-              <select class="filt" id="f-agent"><option value="">All assignees</option></select>
+              <label for="f-agent">{% translate "Assignee" %}</label>
+              <select class="filt" id="f-agent"><option value="">{% translate "All assignees" %}</option></select>
             </div>
             <div class="details-row details-row--filter">
-              <label for="f-status">Status</label>
-              <select class="filt" id="f-status"><option value="">All statuses</option></select>
+              <label for="f-status">{% translate "Status" %}</label>
+              <select class="filt" id="f-status"><option value="">{% translate "All statuses" %}</option></select>
             </div>
             <div class="details-row details-row--filter">
-              <label for="f-blocker">Blocked by</label>
-              <select class="filt" id="f-blocker" title="Show what each card is waiting for"><option value="">All blockers</option></select>
+              <label for="f-blocker">{% translate "Blocked by" %}</label>
+              <select class="filt" id="f-blocker" title="Show what each card is waiting for"><option value="">{% translate "All blockers" %}</option></select>
             </div>
             <div class="details-row details-row--filter">
-              <label for="f-host">Host</label>
-              <select class="filt" id="f-host"><option value="">All hosts</option></select>
+              <label for="f-host">{% translate "Host" %}</label>
+              <select class="filt" id="f-host"><option value="">{% translate "All hosts" %}</option></select>
             </div>
             <div class="details-row details-row--filter">
-              <label for="f-date">Date</label>
+              <label for="f-date">{% translate "Date" %}</label>
               <select class="filt" id="f-date"
                       title="Show cards by due date">
-                <option value="">All dates</option>
-                <option value="overdue">📅 overdue</option>
-                <option value="today">📅 today</option>
-                <option value="7d">📅 within 7 days</option>
-                <option value="30d">📅 within 30 days</option>
-                <option value="undated">no date in title</option>
+                <option value="">{% translate "All dates" %}</option>
+                <option value="overdue">{% translate "📅 overdue" %}</option>
+                <option value="today">{% translate "📅 today" %}</option>
+                <option value="7d">{% translate "📅 within 7 days" %}</option>
+                <option value="30d">{% translate "📅 within 30 days" %}</option>
+                <option value="undated">{% translate "no date in title" %}</option>
               </select>
             </div>
             <label class="details-check" for="f-blockingme"
                    title="Show blocked cards that need your decision">
               <input type="checkbox" id="f-blockingme"
                      onchange="onBlockingMeChange(event)">
-              <span>🚧 awaiting your decision</span>
+              <span>{% translate "🚧 awaiting your decision" %}</span>
             </label>
             <label class="details-check" for="f-showdone">
               <input type="checkbox" id="f-showdone" onchange="onShowDoneChange(event)">
@@ -616,20 +617,20 @@
                 <span id="f-showdone-count" class="details-muted">(0 hidden)</span></span>
             </label>
             <button type="button" class="details-clear" onclick="clearAllFilters()"
-                    title="Reset every filter">Clear all filters</button>
+                    title="Reset every filter">{% translate "Clear all filters" %}</button>
           </div>
         </div>
 
         <div class="details-section" data-id="hidden">
           <button type="button" class="details-section-toggle"
                   onclick="toggleDetailsSection('hidden')">
-            <span class="details-section-title">Hidden cards</span>
+            <span class="details-section-title">{% translate "Hidden cards" %}</span>
             <span class="details-filter-count">(<span id="hidden-count">0</span>)</span>
             <span class="details-chevron" aria-hidden="true">▸</span>
           </button>
           <div class="details-section-body">
             <div id="hidden-list-panel" class="hidden-list-panel">
-              <div class="hidden-list-empty">No hidden cards.</div>
+              <div class="hidden-list-empty">{% translate "No hidden cards." %}</div>
             </div>
           </div>
         </div>
@@ -739,7 +740,7 @@
        projects via the auto-discovered list. -->
   <div class="at-backdrop" id="add-task-backdrop" onclick="closeAddTaskModal(event)">
     <div class="at-modal" onclick="event.stopPropagation()">
-      <h2>+ Add Task</h2>
+      <h2>{% translate "+ Add Task" %}</h2>
       <div class="at-row">
         <label for="at-title">Title <span style="color: var(--red);">*</span></label>
         <input class="at-input" id="at-title" type="text" autocomplete="off"
@@ -838,6 +839,23 @@
     // The lane key an owner-less card buckets under — a clearly-labeled
     // lane, NEVER a retired identity (operator mandate 2026-06-26).
     const UNASSIGNED_LANE = "(unassigned)";
+
+    // === Board-chrome JA dictionary (operator: board chrome entirely English)
+    // Django renders each value in the ACTIVE language, so this is the same
+    // msgid set the static markup above wraps in the translate tag —
+    // one catalog, two consumers. `populateFilters()` / the chip strip
+    // REBUILD their `<option>` / chip labels in JS on every load, which wipes
+    // the server-rendered translations; reading the labels from here keeps
+    // the rebuilt controls in the operator's language. Status/blocker enum
+    // VALUES stay English: they are store vocabulary, not chrome.
+    const STX_BOARD_T = {
+      allProjects: "{% translate 'All projects' %}",
+      allHosts: "{% translate 'All hosts' %}",
+      allAssignees: "{% translate 'All assignees' %}",
+      allStatuses: "{% translate 'All statuses' %}",
+      allBlockers: "{% translate 'All blockers' %}",
+      blockingMe: "{% translate 'blocking me' %}",
+    };
 
     let STATE = { graph: null, openId: null, lastMtime: null,
       filters: { project: "", host: "", status: "", blocker: "", agent: "",
@@ -1316,6 +1334,15 @@
 
     function populateFilters() {
       if (!STATE.graph) return;
+      // Translation labels, self-contained: the browser defines STX_BOARD_T
+      // (server-rendered JA dictionary above), but node harnesses that
+      // extract this function run without it — fall back to the English
+      // msgids (which are also what the JA catalog translates FROM).
+      const T = (typeof STX_BOARD_T === "undefined") ? {
+        allProjects: "All projects", allHosts: "All hosts",
+        allAssignees: "All assignees", allStatuses: "All statuses",
+        allBlockers: "All blockers",
+      } : STX_BOARD_T;
       const nodes = STATE.graph.nodes;
       const uniq = (key) => {
         const s = new Set();
@@ -1337,15 +1364,15 @@
       // makes the empty-project column filterable).
       const projects = uniq("project");
       if (nodes.some(n => !n.project)) projects.push("Uncategorized");
-      set("f-project", projects, "All projects");
-      set("f-host", uniq("host"), "All hosts");
-      set("f-agent", uniq("agent"), "All assignees");
+      set("f-project", projects, T.allProjects);
+      set("f-host", uniq("host"), T.allHosts);
+      set("f-agent", uniq("agent"), T.allAssignees);
       // Status / blocker = closed enums. Status now lists the 7 REAL
       // statuses (SSOT STATUS_STYLE order) and filters by RAW status — the
       // 4-bucket collapse was the source of the goal/failed color confusion.
       // (hook-bypass: line-limit.)
       document.getElementById("f-status").innerHTML =
-        `<option value="">All statuses</option>` +
+        `<option value="">${T.allStatuses}</option>` +
         ["goal", "done", "in_progress", "blocked", "deferred", "failed", "cancelled"]
           .map(s => `<option value="${s}">${s}</option>`).join("");
       const blockerLabels = {
@@ -1354,7 +1381,7 @@
         "none": "None",
       };
       document.getElementById("f-blocker").innerHTML =
-        `<option value="">All blockers</option>` +
+        `<option value="">${T.allBlockers}</option>` +
         ["compute", "dependency", "dep", "operator-decision", "agent-wait", "none"]
           .map(b => `<option value="${b}">${blockerLabels[b]}</option>`).join("") +
         `<option value="__none">No blocker</option>`;
@@ -1405,7 +1432,7 @@
         (STATE.graph && STATE.graph.status_colors) || {},
       ).filter((s) => s !== "pending");
       if (!statuses.length) {
-        statuses.push("in_progress", "blocked", "done", "deferred", "failed", "goal");
+        statuses.push("in_progress", "blocked", "done", "deferred", "failed", "goal", "cancelled");
       }
       const isHidden = hiddenSet().has(cardId);
       const menu = document.createElement("div");
@@ -1416,12 +1443,12 @@
         `<button class="card-ctx-item${danger ? " card-ctx-item--danger" : ""}"
           onclick="${fn}">${label}</button>`;
       // P11b (operator priority 2026-06-12) — move-picker is now a
-      // scitex-ui Combobox: fuzzy typeahead over ALL projects +
+      // SDK Combobox: fuzzy typeahead over ALL projects +
       // "+ Create '<query>'" for brand-new ones. Restores the P8
       // capability ("list ALL projects, plus a + New project flow")
       // that regressed in develop AND adds substring search.
       // Progressive enhancement — when window.STX.Combobox is
-      // unavailable (older scitex-ui pin), the inline list rendered
+      // unavailable (older SDK pin), the inline list rendered
       // by the fallback branch below keeps the legacy click-to-pick
       // behaviour. (hook-bypass: line-limit.)
       const _hasCombobox = !!(window.STX && window.STX.Combobox);
@@ -1564,7 +1591,7 @@
       }
     }
 
-    // P11b (operator priority 2026-06-12) — wire the scitex-ui Combobox
+    // P11b (operator priority 2026-06-12) — wire the SDK Combobox
     // popover for the right-click move-to-project flow. Opens a
     // typeahead listing ALL projects + an inline "+ Create '<query>'"
     // affordance for brand-new ones. (hook-bypass: line-limit.)
@@ -1987,9 +2014,10 @@
 
     // === Stale Review layout ─────────────────────────────────────────
     // Operator directive 2026-06-13 (via lead a2a) — a recurring
-    // standing-section that surfaces stale/orphaned PENDING cards so
+    // standing-section that surfaces the stale deferred-backlog rows so
     // the operator can archive them WITH a reason recorded (no silent
-    // drops). Pulls from GET /stale (backend PR #153); per-row Archive
+    // drops). `pending` was abolished 2026-07-10 — GET /stale serves
+    // `deferred` (backend PR #153); per-row Archive
     // button posts to /archive (HTTP twin of CLI `close --reason`
     // verb in PR #151). Layout-state cache so we don't refetch on
     // every render() — invalidate via `loadGraph()` reload or after
@@ -2116,7 +2144,7 @@
       // empty), so we re-prompt if blank.
       const reason = window.prompt(
         `Archive (close with reason) — "${title || id}"\n\n` +
-        `This appends [CLOSED] <reason> to comments[], flips status to deferred,\n` +
+        `This appends [CLOSED] <reason> to comments[], flips status to cancelled (terminal),\n` +
         `and stamps _log_meta.closed_{at,by}. The row stays for audit.\n\n` +
         `Enter a short reason (REQUIRED):`,
         ""
@@ -2404,7 +2432,7 @@
     function toggleDetailsPane() {
       const pane = document.getElementById("details-panel");
       if (!pane) return;
-      // `.collapsed` is scitex-ui's own state class (css/shell/
+      // `.collapsed` is the SDK's own state class (css/shell/
       // stx-shell-sidebar.css): it shrinks the pane to
       // --ui-collapsed-pane-width and flips the header into the vertical
       // icon+label strip. We only toggle it — the behaviour is the shell's.
@@ -2580,16 +2608,16 @@
       // any filters restored from STATE before the operator's first
       // interaction. (hook-bypass: line-limit — see REFACTORING.md.)
       renderActiveFilterChips();
-      // P11b (operator priority 2026-06-12): layer the scitex-ui
+      // P11b (operator priority 2026-06-12): layer the SDK
       // Combobox on top of every <select.filt> for fuzzy-typeahead.
       // Progressive enhancement — when window.STX.Combobox is
-      // unavailable (older scitex-ui pin), the plain <select> stays
+      // unavailable (older SDK pin), the plain <select> stays
       // functional (this just no-ops).
       attachCombobox();
     }
 
     // === P11b — Combobox layer over <select.filt> ========================
-    // For each filter <select>, attach a scitex-ui Combobox that mirrors
+    // For each filter <select>, attach an SDK Combobox that mirrors
     // the option list, opens with a button trigger, and on selection
     // updates the underlying <select>.value + dispatches a "change"
     // event so attachFilters()'s existing listeners fire unchanged.
@@ -2707,10 +2735,14 @@
       }
       // blockingMe is a boolean toggle — show as a chip too.
       if (STATE.filters.blockingMe) {
+        // Same self-contained rule as populateFilters(): the browser has
+        // STX_BOARD_T; an extractor running this function standalone does not.
+        const blockingMeLabel = (typeof STX_BOARD_T === "undefined")
+          ? "blocking me" : STX_BOARD_T.blockingMe;
         chips.push(
           `<span class="filt-chip" title="Click × to clear">
             <span class="filt-chip-key">🚧</span>
-            <span class="filt-chip-val">blocking me</span>
+            <span class="filt-chip-val">${blockingMeLabel}</span>
             <button type="button" class="filt-chip-clear"
               aria-label="Clear blocking-me filter"
               onclick="clearOneFilter('blockingMe')">×</button>
@@ -2817,7 +2849,7 @@
 
     // ESC closes the open modal — operator TG 265: "popup は常に esc 有効
     // なように." HIG / WAI-ARIA universal expectation. Long-term home is
-    // the scitex-ui Modal primitive (so every scitex-app gets it for free);
+    // the SDK Modal primitive (so every SDK leaf gets it for free);
     // this local handler is the short-term scitex-cards fix until that lands.
     // Listens on document so the focus can be anywhere (the modal contents,
     // an input field, the body) and ESC still closes.

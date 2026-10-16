@@ -154,7 +154,11 @@ a {
   margin: 0 4px 0 0;
   font-size: 1.05rem;
   font-weight: 700;
-  color: #fff;
+  /* Theme-aware (operator light-mode screenshot: white title stranded on a
+   * light bar). The shared page-header.css rule sets `.stx-cards-header h1`
+   * from `--stx-cards-header-fg`, which flips in the light block — read the
+   * same variable so the two cannot disagree. */
+  color: var(--stx-cards-header-fg, #fff);
   white-space: nowrap;
 }
 .filterbar .small {
@@ -163,7 +167,12 @@ a {
   color: var(--text-muted);
 }
 .filt {
-  background: #232a36;
+  /* Theme-aware fill (operator light-mode screenshot: invisible filter
+   * text — `color: var(--text)` turns dark `#1f2328` while a `#232a36`
+   * fill stayed dark). `--card-bg` flips with the theme (`#161b22` dark /
+   * `#ffffff` light), so the control reads as an input surface against
+   * the `--col-bg` filterbar in BOTH themes. */
+  background: var(--card-bg, #232a36);
   border: 1px solid var(--border);
   color: var(--text);
   padding: 5px 10px;
@@ -175,7 +184,7 @@ a {
   border-color: var(--purple);
 }
 .filt option {
-  background: #232a36;
+  background: var(--card-bg, #232a36);
   color: var(--text);
 }
 .toggle-block {
@@ -241,18 +250,19 @@ a {
   cursor: pointer;
   flex: 0 0 auto;
   border: 2px solid transparent;
-  transition:
-    transform 100ms ease,
-    border-color 100ms ease;
+  /* Calm: border-color feedback only — no hover grow (layout-adjacent
+   * motion with no information in it). */
+  transition: border-color 100ms ease;
 }
 .flt-dot:hover {
-  transform: scale(1.25);
   border-color: rgba(255, 255, 255, 0.4);
 }
 .flt-dot--blocking-operator {
   background: var(--gold);
+  /* Calm: static state glow — the infinite pulse cost perpetual
+   * compositor work for a dot whose meaning (operator-decision blocker)
+   * does not change between frames. */
   box-shadow: 0 0 6px 1px rgba(255, 193, 7, 0.65);
-  animation: pulse-gold 1.8s ease-in-out infinite;
 }
 .flt-dot--working {
   background: var(--green);
@@ -275,15 +285,6 @@ a {
   font-size: 0.72rem;
   font-style: italic;
   padding: 0 4px;
-}
-@keyframes pulse-gold {
-  0%,
-  100% {
-    box-shadow: 0 0 6px 1px rgba(255, 193, 7, 0.65);
-  }
-  50% {
-    box-shadow: 0 0 14px 4px rgba(255, 193, 7, 0.95);
-  }
 }
 
 /* === MAIN LAYOUT ======================================================== */
@@ -411,13 +412,11 @@ a {
   font-size: 0.9rem;
   line-height: 1;
   padding: 0 4px;
-  transition:
-    color 100ms ease,
-    transform 100ms ease;
+  /* Calm: color feedback only — no hover grow. */
+  transition: color 100ms ease;
 }
 .col-nudge-btn:hover {
   color: var(--gold);
-  transform: scale(1.15);
 }
 .col-nudge-btn:disabled {
   opacity: 0.5;
@@ -434,7 +433,11 @@ a {
 .col-name {
   font-weight: 700;
   font-size: 0.92rem;
-  color: #fff;
+  /* Theme-aware (operator light-mode screenshot: white column titles stranded
+   * on the light `#f6f8fa` column surface). Column text follows `--text` in
+   * both themes; the `#fff` fallback preserves the dark look where the board
+   * palette is absent. */
+  color: var(--text, #fff);
 }
 .col-count {
   background: rgba(109, 76, 173, 0.25);

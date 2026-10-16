@@ -476,7 +476,7 @@ class Task:
         Fields with default values (None / empty list / empty dict) are
         OMITTED so the YAML stays compact. The validator-REQUIRED fields
         (`id`, `title`, `status`) always emit — including when `status`
-        equals the `"pending"` default — because a row missing `status`
+        equals the `"deferred"` default — because a row missing `status`
         would fail `_validate_tasks` on the next load. Required fields
         survive the to_dict-then-from_dict round-trip even at defaults.
         """

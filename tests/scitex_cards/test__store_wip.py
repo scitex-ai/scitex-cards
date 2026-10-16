@@ -11,6 +11,11 @@ REFUSED the card — "WIP gate refuses add: … Close existing tasks before addi
 more." A throughput cap was sitting on the emergency-recording path, and its
 cheapest workaround was to close cards you had not finished. Priority <= 1 is
 now never gated; a card admitted over the cap says so, on the card.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every seed/write below targets the ambient per-test
+store, which is refused without a writable cluster. Pure
+``is_priority_exempt`` predicate tests stay untouched.
 """
 
 from __future__ import annotations
@@ -54,8 +59,13 @@ def _refusal_message(store, card_id: str) -> str:
 
 
 @pytest.fixture()
-def over_cap(env):
+def over_cap(env, postgres_dsn):
     """An agent ``a`` sitting FAR over its refuse threshold (limit 1 → 2x = 2).
+
+    ``postgres_dsn`` is requested but is not the seed target: the seed below
+    writes the ambient per-test store, which is refused without a writable
+    cluster — the fixture fails first, LOUDLY, with the reason and the
+    remedy. Store-touching tests inherit the guard through this fixture.
 
     Yields the STORE path. Seeded by writing the 8 in-flight rows DIRECTLY
     into the canonical DB (``seed_db_from_doc``): the gate itself
@@ -224,9 +234,13 @@ class TestBypassIsLoudNotSilent:
         kinds = [c.get("kind") for c in persisted.get("comments") or []]
         assert OVERRIDE_COMMENT_KIND in kinds
 
-    def test_card_under_the_cap_is_not_stamped(self, env):
+    def test_card_under_the_cap_is_not_stamped(self, env, postgres_dsn):
         """A P1 filed by an agent with room to spare is ordinary; the stamp
-        must mean "a bypass happened", not "someone typed priority 1"."""
+        must mean "a bypass happened", not "someone typed priority 1".
+
+        ``postgres_dsn`` is requested but is not the assertion target — same
+        fail-LOUD guard: the ``add_task`` below writes the ambient store,
+        which is refused without a cluster."""
         # Arrange — the harness bootstraps an EMPTY canonical DB per test, so
         # agent ``a`` starts with zero in-flight cards; no seeding needed.
         env.set(ENV_WIP_LIMIT, "10")

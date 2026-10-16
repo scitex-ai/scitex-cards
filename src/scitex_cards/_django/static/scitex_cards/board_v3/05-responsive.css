@@ -13,7 +13,7 @@
  * a 375pt-wide iPhone viewport.
  * ============================================================ */
 @media (max-width: 768px) {
-  /* OVERRIDE the scitex-ui shell's three-column grid (workspace-three-col
+  /* OVERRIDE the SDK shell's three-column grid (workspace-three-col
    * sets a desktop layout with sidebars + fixed widths that swallow the
    * board content on phone widths). On mobile collapse the shell to a
    * single column so the board's filterbar + columns get the full
@@ -33,7 +33,7 @@
     flex: 1 1 100% !important;
     min-width: 0 !important;
   }
-  /* Hide the scitex-ui shell's left/right utility panes on mobile. */
+  /* Hide the SDK shell's left/right utility panes on mobile. */
   .ws-ai-pane,
   .ws-worktree-pane,
   .ws-viewer-pane,
@@ -192,13 +192,10 @@
   border: 2px solid var(--gold);
   font-size: 1.4rem;
   font-weight: 700;
-  box-shadow:
-    0 4px 18px rgba(0, 0, 0, 0.5),
-    0 0 12px 2px rgba(255, 193, 7, 0.45);
+  /* Calm: plain drop shadow only — the gold halo glow and the hover grow
+   * are gone (no halo, no hover movement; touch-first control). */
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
   cursor: pointer;
-}
-.by-fab:hover {
-  transform: scale(1.05);
 }
 .by-fab-count {
   position: absolute;

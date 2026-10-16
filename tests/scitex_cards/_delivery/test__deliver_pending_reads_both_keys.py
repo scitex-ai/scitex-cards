@@ -35,8 +35,13 @@ The store is the harness's writable PostgreSQL, addressed through the
 file-path label pattern (``tmp_path / "tasks.yaml"``) that the rest of the
 ``_delivery`` suite uses — ``database_for`` resolves the label to the ambient
 store, so ``register_user`` / ``enqueue`` / ``resolve_user`` all hit the same
-database the harness bootstraps. No ``SCITEX_CARDS_TEST_DSN`` guard is needed:
-the same harness that makes ``test__loop.py`` green makes this green.
+database the harness bootstraps. Store-touching tests request the
+``postgres_dsn`` fail-LOUD fixture (bare-param pattern): the seeding below
+writes the ambient per-test store (the inbox is PG-only, so the ``store`` arg
+is a label resolved to the ambient schema), which is refused without a
+writable cluster. ``tmp_path`` stays load-bearing — recipients.json resolves
+next to it — and the wiring-pin test stays unguarded by design (source
+inspect, never opens the store).
 
 A real ``RecorderChannel`` is injected through the ``channels=`` seam, so no
 wire or installed entry point is touched (STX-NM / PA-306).
@@ -120,7 +125,7 @@ def test_the_pass_asks_for_every_key_the_recipient_can_live_under() -> None:
 # --------------------------------------------------------------------------- #
 # (1) the regression: note under u_* id, recipient spelled with raw name      #
 # --------------------------------------------------------------------------- #
-def test_note_under_registered_id_is_delivered_when_recipient_is_raw_name(tmp_path) -> None:
+def test_note_under_registered_id_is_delivered_when_recipient_is_raw_name(tmp_path, postgres_dsn) -> None:
     """THE DEFECT, MEASURED: the producer filed the note under the ``u_*`` id
     (the agent is registered), the ``recipients.json`` row is spelled with the
     raw name, and the pass still reaches it. Before the fix,
@@ -145,7 +150,7 @@ def test_note_under_registered_id_is_delivered_when_recipient_is_raw_name(tmp_pa
 # --------------------------------------------------------------------------- #
 # (2) the control: note under raw name, recipient spelled with raw name       #
 # --------------------------------------------------------------------------- #
-def test_note_under_raw_name_is_delivered_when_recipient_is_raw_name(tmp_path) -> None:
+def test_note_under_raw_name_is_delivered_when_recipient_is_raw_name(tmp_path, postgres_dsn) -> None:
     """CONTROL (already worked before the change; must not regress): the note
     lives under the raw name and the recipient is the raw name, so the
     raw-name drawer is the one that finds it. No user registration is needed

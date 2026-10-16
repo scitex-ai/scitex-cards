@@ -259,8 +259,9 @@ def two_card_store_after_reorder(postgres_dsn):
     seed_db_from_doc(
         {
             "tasks": [
-                {"id": "alpha", "title": "First", "status": "pending"},
-                {"id": "beta", "title": "Second", "status": "pending"},
+                # Fixture seeds deferred (``pending`` was abolished 2026-07-10).
+                {"id": "alpha", "title": "First", "status": "deferred"},
+                {"id": "beta", "title": "Second", "status": "deferred"},
             ]
         },
         os.environ["SCITEX_STORE_DSN"],

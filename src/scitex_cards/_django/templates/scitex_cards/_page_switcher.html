@@ -62,12 +62,13 @@ Callers pass the page they are on:
 
 `api_base` is inherited from the page context — both views already provide it.
 Styling lives in static/scitex_cards/page-switcher.css and consumes the
-released scitex-ui workspace, application-accent, and status tokens directly.
+released SDK workspace, application-accent, and status tokens directly.
 {% endcomment %}
-<nav class="stx-cards-switcher" aria-label="Cards sections">
-  <a class="stx-cards-switcher__item{% if active == 'board' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}board" aria-label="Board" {% if active == 'board' %}aria-current="page" {% endif %}title="Board — every card in the fleet">Board</a>
-  <a class="stx-cards-switcher__item{% if active == 'chat' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}dm" aria-label="Direct messages{% if dm_unread_count %}, {{ dm_unread_count }} unread{% endif %}" {% if active == 'chat' %}aria-current="page" {% endif %}title="Direct messages with the agents">
-    <span class="stx-cards-switcher__label-full">Direct messages</span>
+{% load i18n %}
+<nav class="stx-cards-switcher" aria-label="{% translate 'Cards sections' %}">
+  <a class="stx-cards-switcher__item{% if active == 'board' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}board" aria-label="{% translate 'Board' %}" {% if active == 'board' %}aria-current="page" {% endif %}title="{% translate 'Board — every card in the fleet' %}">{% translate "Board" %}</a>
+  <a class="stx-cards-switcher__item{% if active == 'chat' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}dm" aria-label="{% translate 'Direct messages' %}{% if dm_unread_count %}, {{ dm_unread_count }} unread{% endif %}" {% if active == 'chat' %}aria-current="page" {% endif %}title="{% translate 'Direct messages with the agents' %}">
+    <span class="stx-cards-switcher__label-full">{% translate "Direct messages" %}</span>
     <span class="stx-cards-switcher__label-short" aria-hidden="true">DM</span>
     {% if dm_unread_count %}<span class="stx-cards-switcher__badge" aria-hidden="true">{{ dm_unread_count }}</span>{% endif %}
   </a>

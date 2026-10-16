@@ -19,6 +19,14 @@ Covers the three deliverables that have NO mocks anywhere (PA-306 / STX-NM):
 
 The store tests drive the env directly via the ``env`` fixture (the
 PA-306-compliant monkeypatch replacement from ``conftest.py``), never a mock.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 2 write checks plus the 2 lockstep fixtures
+(5 derived tests) below target the ambient per-test store, which is
+refused without a writable cluster. The 4 fail-LOUD validation checks
+(owner/creator/deprecated-env, raised before any read) plus the pure
+``card_owner`` / ``_default_agent`` / toast tests stay unguarded by
+design (no store touch; they prove the raise without a server).
 """
 
 from __future__ import annotations
@@ -145,12 +153,11 @@ def test_add_task_creator_unknown_sentinel_also_raises(tmp_path, env):
         _store.add_task(store, id="a", title="A", assignee="agent:owner")
 
 
-def test_add_task_succeeds_and_stamps_created_by(tmp_path, env):
+def test_add_task_succeeds_and_stamps_created_by(env, postgres_dsn):
     # Arrange
     env.set("SCITEX_CARDS_AGENT_ID", "agent:creator")
-    store = tmp_path / "tasks.yaml"
     # Act
-    inserted = _store.add_task(store, id="a", title="A", assignee="agent:owner")
+    inserted = _store.add_task(id="a", title="A", assignee="agent:owner")
     # Assert
     assert inserted["created_by"] == "agent:creator"
 
@@ -171,13 +178,12 @@ def test_add_task_deprecated_agent_env_fails_loud(tmp_path, env):
         _store.add_task(store, id="a", title="A", assignee="agent:owner")
 
 
-def test_add_task_explicit_created_by_wins(tmp_path, env):
+def test_add_task_explicit_created_by_wins(env, postgres_dsn):
     # Arrange
     env.delete("SCITEX_CARDS_AGENT_ID")
-    store = tmp_path / "tasks.yaml"
     # Act
     inserted = _store.add_task(
-        store, id="a", title="A", assignee="agent:owner", created_by="agent:explicit"
+        id="a", title="A", assignee="agent:owner", created_by="agent:explicit"
     )
     # Assert
     assert inserted["created_by"] == "agent:explicit"
@@ -191,11 +197,10 @@ def test_add_task_explicit_created_by_wins(tmp_path, env):
 #: and `card_owner` reading back the same name is what the rest of the system
 #: actually depends on.
 @pytest.fixture()
-def lockstep_from_assignee(tmp_path, env):
+def lockstep_from_assignee(env, postgres_dsn):
     """add_task called with `assignee` only."""
     env.set("SCITEX_CARDS_AGENT_ID", "agent:creator")
-    store = tmp_path / "tasks.yaml"
-    return _store.add_task(store, id="a", title="A", assignee="agent:owner")
+    return _store.add_task(id="a", title="A", assignee="agent:owner")
 
 
 def test_add_task_lockstep_assignee_only_keeps_the_assignee(lockstep_from_assignee):
@@ -231,11 +236,10 @@ def test_add_task_lockstep_assignee_only_resolves_through_the_ssot(
 #: rationale: the mirror image of the pair above — an agent-only call must
 #: stamp `assignee` to the SAME owner (lock-step).
 @pytest.fixture()
-def lockstep_from_agent(tmp_path, env):
+def lockstep_from_agent(env, postgres_dsn):
     """add_task called with `agent` only."""
     env.set("SCITEX_CARDS_AGENT_ID", "agent:creator")
-    store = tmp_path / "tasks.yaml"
-    return _store.add_task(store, id="a", title="A", agent="agent:owner")
+    return _store.add_task(id="a", title="A", agent="agent:owner")
 
 
 def test_add_task_lockstep_agent_only_keeps_the_agent(lockstep_from_agent):

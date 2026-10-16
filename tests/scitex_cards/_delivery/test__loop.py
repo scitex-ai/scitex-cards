@@ -18,6 +18,15 @@ Covers the spec's required cases:
 
 One assertion per test (STX-TQ007): the shared setup lives in the ``_arrange*``
 helpers below so every split test carries the exact arrange it needs.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the seeding below writes the ambient per-test store
+(the inbox is PG-only, so the ``store`` arg is ignored for inbox rows and the
+ambient schema is what is written), which is refused without a writable
+cluster. ``tmp_path`` stays load-bearing — recipients.json + the delivery
+ledger resolve next to it — and the vestigial ``env`` param is dropped. The
+three ``_drop_superseded_snapshots`` pure-shape tests stay unguarded by
+design.
 """
 
 from __future__ import annotations
@@ -187,7 +196,7 @@ def test_delivery_coalescing_keeps_one_snapshot_of_each_liveness_kind():
     assert [note["id"] for note in kept] == ["pending", "blocked", "stale-new"]
 
 
-def test_delivery_loop_sends_one_turn_for_a_cumulative_backlog(tmp_path):
+def test_delivery_loop_sends_one_turn_for_a_cumulative_backlog(tmp_path, postgres_dsn):
     # Arrange
     store, _new_id = _arrange_cumulative_delivery_backlog(tmp_path)
     recorder = RecorderChannel(name="log")
@@ -197,7 +206,7 @@ def test_delivery_loop_sends_one_turn_for_a_cumulative_backlog(tmp_path):
     assert summary["sent"] == 1
 
 
-def test_delivery_loop_sends_the_newest_cumulative_snapshot(tmp_path):
+def test_delivery_loop_sends_the_newest_cumulative_snapshot(tmp_path, postgres_dsn):
     # Arrange
     store, new_id = _arrange_cumulative_delivery_backlog(tmp_path)
     recorder = RecorderChannel(name="log")
@@ -207,7 +216,7 @@ def test_delivery_loop_sends_the_newest_cumulative_snapshot(tmp_path):
     assert recorder.calls[0]["notification"]["id"] == new_id
 
 
-def test_delivery_loop_preserves_exact_target_task_events(tmp_path):
+def test_delivery_loop_preserves_exact_target_task_events(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     for event_type in ("created", "commented"):
@@ -240,7 +249,7 @@ def test_delivery_loop_preserves_exact_target_task_events(tmp_path):
 # --------------------------------------------------------------------------- #
 # (a) delivered once, not re-delivered — ledger dedup                         #
 # --------------------------------------------------------------------------- #
-def test_first_delivery_run_reports_one_notification_sent(tmp_path):
+def test_first_delivery_run_reports_one_notification_sent(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_alice")
     recorder = RecorderChannel(name="log")
@@ -250,7 +259,7 @@ def test_first_delivery_run_reports_one_notification_sent(tmp_path):
     assert summary["sent"] == 1
 
 
-def test_first_delivery_run_reports_no_failures(tmp_path):
+def test_first_delivery_run_reports_no_failures(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_alice")
     recorder = RecorderChannel(name="log")
@@ -260,7 +269,7 @@ def test_first_delivery_run_reports_no_failures(tmp_path):
     assert summary["failed"] == 0
 
 
-def test_first_delivery_run_calls_the_channel_once(tmp_path):
+def test_first_delivery_run_calls_the_channel_once(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_alice")
     recorder = RecorderChannel(name="log")
@@ -270,7 +279,7 @@ def test_first_delivery_run_calls_the_channel_once(tmp_path):
     assert len(recorder.calls) == 1
 
 
-def test_first_delivery_run_passes_the_recipient_to_the_channel(tmp_path):
+def test_first_delivery_run_passes_the_recipient_to_the_channel(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_alice")
     recorder = RecorderChannel(name="log")
@@ -280,7 +289,7 @@ def test_first_delivery_run_passes_the_recipient_to_the_channel(tmp_path):
     assert recorder.calls[0]["recipient"] == "u_alice"
 
 
-def test_first_delivery_run_passes_the_notification_to_the_channel(tmp_path):
+def test_first_delivery_run_passes_the_notification_to_the_channel(tmp_path, postgres_dsn):
     # Arrange
     store, note_id = _arrange_log_recipient(tmp_path, "u_alice")
     recorder = RecorderChannel(name="log")
@@ -290,7 +299,7 @@ def test_first_delivery_run_passes_the_notification_to_the_channel(tmp_path):
     assert recorder.calls[0]["notification"]["id"] == note_id
 
 
-def test_second_delivery_run_sends_nothing_more(tmp_path):
+def test_second_delivery_run_sends_nothing_more(tmp_path, postgres_dsn):
     # Arrange
     # the ledger already records the first delivery as done.
     store, _note_id = _arrange_log_recipient(tmp_path, "u_alice")
@@ -302,7 +311,7 @@ def test_second_delivery_run_sends_nothing_more(tmp_path):
     assert summary["sent"] == 0
 
 
-def test_second_delivery_run_reports_no_outcomes_at_all(tmp_path):
+def test_second_delivery_run_reports_no_outcomes_at_all(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_alice")
     recorder = RecorderChannel(name="log")
@@ -313,7 +322,7 @@ def test_second_delivery_run_reports_no_outcomes_at_all(tmp_path):
     assert summary["outcomes"] == []
 
 
-def test_second_delivery_run_never_calls_the_channel_again(tmp_path):
+def test_second_delivery_run_never_calls_the_channel_again(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_alice")
     recorder = RecorderChannel(name="log")
@@ -325,7 +334,7 @@ def test_second_delivery_run_never_calls_the_channel_again(tmp_path):
     assert len(recorder.calls) == 1
 
 
-def test_ledger_records_the_delivered_notification_as_done(tmp_path):
+def test_ledger_records_the_delivered_notification_as_done(tmp_path, postgres_dsn):
     # Arrange
     store, note_id = _arrange_log_recipient(tmp_path, "u_alice")
     recorder = RecorderChannel(name="log")
@@ -339,7 +348,7 @@ def test_ledger_records_the_delivered_notification_as_done(tmp_path):
 # --------------------------------------------------------------------------- #
 # (b) raising channel → failed, retry-eligible after backoff, later succeeds  #
 # --------------------------------------------------------------------------- #
-def test_raising_channel_run_reports_one_failure(tmp_path):
+def test_raising_channel_run_reports_one_failure(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_bob")
     flaky = FlakyChannel(name="log", fail_times=1)
@@ -349,7 +358,7 @@ def test_raising_channel_run_reports_one_failure(tmp_path):
     assert summary["failed"] == 1
 
 
-def test_raising_channel_run_reports_nothing_sent(tmp_path):
+def test_raising_channel_run_reports_nothing_sent(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_bob")
     flaky = FlakyChannel(name="log", fail_times=1)
@@ -359,7 +368,7 @@ def test_raising_channel_run_reports_nothing_sent(tmp_path):
     assert summary["sent"] == 0
 
 
-def test_raising_channel_is_not_recorded_as_already_done(tmp_path):
+def test_raising_channel_is_not_recorded_as_already_done(tmp_path, postgres_dsn):
     # Arrange
     store, note_id = _arrange_log_recipient(tmp_path, "u_bob")
     flaky = FlakyChannel(name="log", fail_times=1)
@@ -370,7 +379,7 @@ def test_raising_channel_is_not_recorded_as_already_done(tmp_path):
     assert led.already_done("u_bob", note_id, "log") is False
 
 
-def test_raising_channel_is_recorded_as_a_failure(tmp_path):
+def test_raising_channel_is_recorded_as_a_failure(tmp_path, postgres_dsn):
     # Arrange
     store, note_id = _arrange_log_recipient(tmp_path, "u_bob")
     flaky = FlakyChannel(name="log", fail_times=1)
@@ -381,7 +390,7 @@ def test_raising_channel_is_recorded_as_a_failure(tmp_path):
     assert led.has_failure("u_bob", note_id, "log") is True
 
 
-def test_failed_item_is_not_retry_eligible_within_the_backoff(tmp_path):
+def test_failed_item_is_not_retry_eligible_within_the_backoff(tmp_path, postgres_dsn):
     # Arrange
     store, note_id = _arrange_log_recipient(tmp_path, "u_bob")
     flaky = FlakyChannel(name="log", fail_times=1)
@@ -392,7 +401,7 @@ def test_failed_item_is_not_retry_eligible_within_the_backoff(tmp_path):
     assert led.retry_eligible("u_bob", note_id, "log", T0) is False
 
 
-def test_run_inside_the_backoff_window_produces_no_outcomes(tmp_path):
+def test_run_inside_the_backoff_window_produces_no_outcomes(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_bob")
     flaky = FlakyChannel(name="log", fail_times=1)
@@ -403,7 +412,7 @@ def test_run_inside_the_backoff_window_produces_no_outcomes(tmp_path):
     assert summary["outcomes"] == []
 
 
-def test_run_inside_the_backoff_window_does_not_re_attempt(tmp_path):
+def test_run_inside_the_backoff_window_does_not_re_attempt(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_bob")
     flaky = FlakyChannel(name="log", fail_times=1)
@@ -415,7 +424,7 @@ def test_run_inside_the_backoff_window_does_not_re_attempt(tmp_path):
     assert flaky.attempts == 1
 
 
-def test_failed_item_is_retry_eligible_after_the_backoff(tmp_path):
+def test_failed_item_is_retry_eligible_after_the_backoff(tmp_path, postgres_dsn):
     # Arrange
     store, note_id = _arrange_log_recipient(tmp_path, "u_bob")
     flaky = FlakyChannel(name="log", fail_times=1)
@@ -427,7 +436,7 @@ def test_failed_item_is_retry_eligible_after_the_backoff(tmp_path):
     assert led.retry_eligible("u_bob", note_id, "log", later) is True
 
 
-def test_recovered_channel_sends_on_the_retry_run(tmp_path):
+def test_recovered_channel_sends_on_the_retry_run(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_bob")
     flaky = FlakyChannel(name="log", fail_times=1)
@@ -439,7 +448,7 @@ def test_recovered_channel_sends_on_the_retry_run(tmp_path):
     assert summary["sent"] == 1
 
 
-def test_retry_run_really_re_attempts_the_channel(tmp_path):
+def test_retry_run_really_re_attempts_the_channel(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_bob")
     flaky = FlakyChannel(name="log", fail_times=1)
@@ -451,7 +460,7 @@ def test_retry_run_really_re_attempts_the_channel(tmp_path):
     assert flaky.attempts == 2
 
 
-def test_successful_retry_is_recorded_as_already_done(tmp_path):
+def test_successful_retry_is_recorded_as_already_done(tmp_path, postgres_dsn):
     # Arrange
     store, note_id = _arrange_log_recipient(tmp_path, "u_bob")
     flaky = FlakyChannel(name="log", fail_times=1)
@@ -467,7 +476,7 @@ def test_successful_retry_is_recorded_as_already_done(tmp_path):
 # --------------------------------------------------------------------------- #
 # (b2) permanently-down channel → TERMINAL comm-miss, surfaced not dropped     #
 # --------------------------------------------------------------------------- #
-def test_permanently_failing_channel_reaches_a_terminal_outcome(tmp_path):
+def test_permanently_failing_channel_reaches_a_terminal_outcome(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_frank")
     chan = AlwaysFailChannel(name="log")
@@ -477,7 +486,7 @@ def test_permanently_failing_channel_reaches_a_terminal_outcome(tmp_path):
     assert summary is not None
 
 
-def test_terminal_run_reports_exactly_one_terminal_failure(tmp_path):
+def test_terminal_run_reports_exactly_one_terminal_failure(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_frank")
     chan = AlwaysFailChannel(name="log")
@@ -487,7 +496,7 @@ def test_terminal_run_reports_exactly_one_terminal_failure(tmp_path):
     assert summary["failed_terminal"] == 1
 
 
-def test_terminal_run_lists_a_failed_terminal_outcome(tmp_path):
+def test_terminal_run_lists_a_failed_terminal_outcome(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_frank")
     chan = AlwaysFailChannel(name="log")
@@ -497,7 +506,7 @@ def test_terminal_run_lists_a_failed_terminal_outcome(tmp_path):
     assert any(o["outcome"] == "failed_terminal" for o in summary["outcomes"])
 
 
-def test_terminal_channel_is_tried_exactly_max_attempts_times(tmp_path):
+def test_terminal_channel_is_tried_exactly_max_attempts_times(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_frank")
     chan = AlwaysFailChannel(name="log")
@@ -508,7 +517,7 @@ def test_terminal_channel_is_tried_exactly_max_attempts_times(tmp_path):
     assert chan.attempts == MAX_ATTEMPTS
 
 
-def test_terminal_comm_miss_is_surfaced_loudly_on_stderr(tmp_path, capsys):
+def test_terminal_comm_miss_is_surfaced_loudly_on_stderr(tmp_path, capsys, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_frank")
     chan = AlwaysFailChannel(name="log")
@@ -519,7 +528,7 @@ def test_terminal_comm_miss_is_surfaced_loudly_on_stderr(tmp_path, capsys):
     assert "TERMINAL comm-miss" in err
 
 
-def test_terminal_comm_miss_warning_names_the_notification(tmp_path, capsys):
+def test_terminal_comm_miss_warning_names_the_notification(tmp_path, capsys, postgres_dsn):
     # Arrange
     store, note_id = _arrange_log_recipient(tmp_path, "u_frank")
     chan = AlwaysFailChannel(name="log")
@@ -530,7 +539,7 @@ def test_terminal_comm_miss_warning_names_the_notification(tmp_path, capsys):
     assert note_id in err
 
 
-def test_ledger_marks_the_exhausted_item_terminal(tmp_path):
+def test_ledger_marks_the_exhausted_item_terminal(tmp_path, postgres_dsn):
     # Arrange
     store, note_id = _arrange_log_recipient(tmp_path, "u_frank")
     chan = AlwaysFailChannel(name="log")
@@ -541,7 +550,7 @@ def test_ledger_marks_the_exhausted_item_terminal(tmp_path):
     assert led.is_terminal("u_frank", note_id, "log") is True
 
 
-def test_later_run_produces_no_outcomes_for_a_terminal_item(tmp_path):
+def test_later_run_produces_no_outcomes_for_a_terminal_item(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_frank")
     chan = AlwaysFailChannel(name="log")
@@ -553,7 +562,7 @@ def test_later_run_produces_no_outcomes_for_a_terminal_item(tmp_path):
     assert after["outcomes"] == []
 
 
-def test_later_run_never_re_attempts_a_terminal_item(tmp_path):
+def test_later_run_never_re_attempts_a_terminal_item(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_frank")
     chan = AlwaysFailChannel(name="log")
@@ -566,7 +575,7 @@ def test_later_run_never_re_attempts_a_terminal_item(tmp_path):
     assert chan.attempts == MAX_ATTEMPTS
 
 
-def test_later_run_does_not_re_warn_about_a_terminal_item(tmp_path, capsys):
+def test_later_run_does_not_re_warn_about_a_terminal_item(tmp_path, capsys, postgres_dsn):
     # Arrange
     # drain the stderr emitted while driving to terminal.
     store, _note_id = _arrange_log_recipient(tmp_path, "u_frank")
@@ -584,7 +593,7 @@ def test_later_run_does_not_re_warn_about_a_terminal_item(tmp_path, capsys):
 # --------------------------------------------------------------------------- #
 # (c) should_deliver_now=False → skipped, does NOT consume seen cursor        #
 # --------------------------------------------------------------------------- #
-def test_closed_policy_gate_reports_one_skipped(tmp_path, env):
+def test_closed_policy_gate_reports_one_skipped(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_carol")
     recorder = RecorderChannel(name="log")
@@ -594,7 +603,7 @@ def test_closed_policy_gate_reports_one_skipped(tmp_path, env):
     assert summary["skipped"] == 1
 
 
-def test_closed_policy_gate_reports_nothing_sent(tmp_path, env):
+def test_closed_policy_gate_reports_nothing_sent(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_carol")
     recorder = RecorderChannel(name="log")
@@ -604,7 +613,7 @@ def test_closed_policy_gate_reports_nothing_sent(tmp_path, env):
     assert summary["sent"] == 0
 
 
-def test_closed_policy_gate_never_reaches_the_channel(tmp_path, env):
+def test_closed_policy_gate_never_reaches_the_channel(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_carol")
     recorder = RecorderChannel(name="log")
@@ -615,7 +624,7 @@ def test_closed_policy_gate_never_reaches_the_channel(tmp_path, env):
     assert recorder.calls == []
 
 
-def test_closed_policy_gate_does_not_mark_the_item_done(tmp_path, env):
+def test_closed_policy_gate_does_not_mark_the_item_done(tmp_path, postgres_dsn):
     # Arrange
     store, note_id = _arrange_log_recipient(tmp_path, "u_carol")
     recorder = RecorderChannel(name="log")
@@ -626,7 +635,7 @@ def test_closed_policy_gate_does_not_mark_the_item_done(tmp_path, env):
     assert led.already_done("u_carol", note_id, "log") is False
 
 
-def test_closed_policy_gate_does_not_record_a_failure(tmp_path, env):
+def test_closed_policy_gate_does_not_record_a_failure(tmp_path, postgres_dsn):
     # Arrange
     store, note_id = _arrange_log_recipient(tmp_path, "u_carol")
     recorder = RecorderChannel(name="log")
@@ -638,7 +647,7 @@ def test_closed_policy_gate_does_not_record_a_failure(tmp_path, env):
     assert led.has_failure("u_carol", note_id, "log") is False
 
 
-def test_closed_policy_gate_leaves_the_note_unseen(tmp_path, env):
+def test_closed_policy_gate_leaves_the_note_unseen(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_carol")
     recorder = RecorderChannel(name="log")
@@ -649,7 +658,7 @@ def test_closed_policy_gate_leaves_the_note_unseen(tmp_path, env):
     assert len(unseen) == 1
 
 
-def test_closed_policy_gate_preserves_the_unseen_notification_id(tmp_path, env):
+def test_closed_policy_gate_preserves_the_unseen_notification_id(tmp_path, postgres_dsn):
     # Arrange
     store, note_id = _arrange_log_recipient(tmp_path, "u_carol")
     recorder = RecorderChannel(name="log")
@@ -660,7 +669,7 @@ def test_closed_policy_gate_preserves_the_unseen_notification_id(tmp_path, env):
     assert unseen[0]["id"] == note_id
 
 
-def test_closed_policy_gate_keeps_the_seen_flag_false(tmp_path, env):
+def test_closed_policy_gate_keeps_the_seen_flag_false(tmp_path, postgres_dsn):
     # Arrange
     store, _note_id = _arrange_log_recipient(tmp_path, "u_carol")
     recorder = RecorderChannel(name="log")
@@ -683,7 +692,7 @@ def _arrange_two_notes(tmp_path):
     return store
 
 
-def test_both_seeded_notifications_start_unseen(tmp_path):
+def test_both_seeded_notifications_start_unseen(tmp_path, postgres_dsn):
     # Arrange
     store = _arrange_two_notes(tmp_path)
     # Act
@@ -692,7 +701,7 @@ def test_both_seeded_notifications_start_unseen(tmp_path):
     assert len(before) == 2
 
 
-def test_delivery_run_sends_both_pending_notifications(tmp_path):
+def test_delivery_run_sends_both_pending_notifications(tmp_path, postgres_dsn):
     # Arrange
     store = _arrange_two_notes(tmp_path)
     recorder = RecorderChannel(name="log")
@@ -702,7 +711,7 @@ def test_delivery_run_sends_both_pending_notifications(tmp_path):
     assert summary["sent"] == 2
 
 
-def test_loop_leaves_the_unseen_count_unchanged(tmp_path):
+def test_loop_leaves_the_unseen_count_unchanged(tmp_path, postgres_dsn):
     # Arrange
     store = _arrange_two_notes(tmp_path)
     recorder = RecorderChannel(name="log")
@@ -714,7 +723,7 @@ def test_loop_leaves_the_unseen_count_unchanged(tmp_path):
     assert len(after) == 2
 
 
-def test_loop_leaves_the_same_notifications_unseen(tmp_path):
+def test_loop_leaves_the_same_notifications_unseen(tmp_path, postgres_dsn):
     # Arrange
     store = _arrange_two_notes(tmp_path)
     before = poll_inbox("u_dave", unseen_only=True, mark_seen=False, store=store)
@@ -729,7 +738,7 @@ def test_loop_leaves_the_same_notifications_unseen(tmp_path):
 # --------------------------------------------------------------------------- #
 # missing recipients.json → no recipients, no crash                          #
 # --------------------------------------------------------------------------- #
-def test_missing_recipients_file_yields_an_empty_summary(tmp_path):
+def test_missing_recipients_file_yields_an_empty_summary(tmp_path, postgres_dsn):
     # Arrange
     # a notification exists, but no recipients.json. The summary now
     # also carries `pending` and `faults` — the pass reports what it FOUND and
@@ -753,7 +762,7 @@ def test_missing_recipients_file_yields_an_empty_summary(tmp_path):
     }
 
 
-def test_missing_recipients_file_never_touches_the_channel(tmp_path):
+def test_missing_recipients_file_never_touches_the_channel(tmp_path, postgres_dsn):
     # Arrange
     store = _store(tmp_path)
     _seed(store, "u_eve")
@@ -796,7 +805,7 @@ def _arrange_recipients_fixture(tmp_path):
     return store
 
 
-def test_load_recipients_drops_a_recipient_with_no_channels(tmp_path):
+def test_load_recipients_drops_a_recipient_with_no_channels(tmp_path, postgres_dsn):
     # Arrange
     store = _arrange_recipients_fixture(tmp_path)
     # Act
@@ -805,7 +814,7 @@ def test_load_recipients_drops_a_recipient_with_no_channels(tmp_path):
     assert [r.user for r in recips] == ["u_x"]
 
 
-def test_load_recipients_drops_a_channel_without_a_kind(tmp_path):
+def test_load_recipients_drops_a_channel_without_a_kind(tmp_path, postgres_dsn):
     # Arrange
     store = _arrange_recipients_fixture(tmp_path)
     # Act
@@ -814,7 +823,7 @@ def test_load_recipients_drops_a_channel_without_a_kind(tmp_path):
     assert [c.kind for c in recips[0].channels] == ["log", "telegram"]
 
 
-def test_load_recipients_defaults_a_missing_address_to_empty(tmp_path):
+def test_load_recipients_defaults_a_missing_address_to_empty(tmp_path, postgres_dsn):
     # Arrange
     store = _arrange_recipients_fixture(tmp_path)
     # Act
@@ -824,7 +833,7 @@ def test_load_recipients_defaults_a_missing_address_to_empty(tmp_path):
     assert recips[0].channels[0].address == ""
 
 
-def test_load_recipients_parses_an_explicit_channel_address(tmp_path):
+def test_load_recipients_parses_an_explicit_channel_address(tmp_path, postgres_dsn):
     # Arrange
     store = _arrange_recipients_fixture(tmp_path)
     # Act
@@ -833,7 +842,7 @@ def test_load_recipients_parses_an_explicit_channel_address(tmp_path):
     assert recips[0].channels[1].address == "12345"
 
 
-def test_load_recipients_ignores_a_stray_legacy_yaml_sidecar(tmp_path):
+def test_load_recipients_ignores_a_stray_legacy_yaml_sidecar(tmp_path, postgres_dsn):
     """recipients.json is the only format read — a stray recipients.yaml
     sibling is not a fallback; there is no import path for it any more."""
 

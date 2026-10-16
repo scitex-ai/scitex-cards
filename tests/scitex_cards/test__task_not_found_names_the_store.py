@@ -101,9 +101,15 @@ def test_the_error_still_names_the_host_after_stripping(store_env):
     assert "10.0.0.7:55432" in message
 
 
-def test_the_error_is_a_task_not_found_error():
+def test_the_error_is_a_task_not_found_error(store_env):
     """The builder returns the exception type every caller already catches."""
     # Arrange
+    # An explicit DSN, like the siblings above: the builder NAMES the store
+    # through ``store_label`` (never opens one), and with no writable
+    # PostgreSQL the ambient target is the refused placeholder, which names
+    # nothing. Naming a fixed DSN keeps this a type test, not an ambient
+    # resolution test.
+    store_env("postgresql://scitex_cards@127.0.0.1:55432/scitex_cards")
     # Act
     built = _task_not_found("no-such-card")
     # Assert

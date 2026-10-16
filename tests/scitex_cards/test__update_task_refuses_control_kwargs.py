@@ -111,7 +111,7 @@ def test_it_cannot_be_swallowed_by_the_fields_catch_all():
 # --------------------------------------------------------------------------- #
 # tasks_path — the backend/MCP name for this function's `store` parameter     #
 # --------------------------------------------------------------------------- #
-def test_tasks_path_is_refused():
+def test_tasks_path_is_refused(postgres_dsn):
     # Arrange
     _card()
     # Act
@@ -120,7 +120,7 @@ def test_tasks_path_is_refused():
     assert "tasks_path" in message
 
 
-def test_the_tasks_path_refusal_points_at_the_store_parameter():
+def test_the_tasks_path_refusal_points_at_the_store_parameter(postgres_dsn):
     # Arrange
     _card()
     # Act
@@ -129,7 +129,7 @@ def test_the_tasks_path_refusal_points_at_the_store_parameter():
     assert "store" in message
 
 
-def test_tasks_path_is_not_persisted_onto_the_card():
+def test_tasks_path_is_not_persisted_onto_the_card(postgres_dsn):
     # Pins the exact shape of the one real leak found in the live store.
     # Arrange
     _card()
@@ -142,7 +142,7 @@ def test_tasks_path_is_not_persisted_onto_the_card():
 # --------------------------------------------------------------------------- #
 # the guard must not become a general-purpose unknown-kwarg rejecter          #
 # --------------------------------------------------------------------------- #
-def test_an_ordinary_unknown_field_is_still_returned_as_card_data():
+def test_an_ordinary_unknown_field_is_still_returned_as_card_data(postgres_dsn):
     # `**fields` IS the documented API — an arbitrary key is a FEATURE here
     # (card_json is truth and carries 22 keys with no typed column). This
     # guard must refuse the named control parameters ONLY, or it breaks the
@@ -155,7 +155,7 @@ def test_an_ordinary_unknown_field_is_still_returned_as_card_data():
     assert merged["some_new_field"] == "hello"
 
 
-def test_an_ordinary_unknown_field_is_still_persisted():
+def test_an_ordinary_unknown_field_is_still_persisted(postgres_dsn):
     # Arrange
     _card()
     # Act
@@ -189,7 +189,7 @@ def test_every_refused_name_carries_an_actionable_reason(name):
 
 
 @pytest.mark.parametrize("name", sorted(_CONTROL_KWARGS))
-def test_each_control_kwarg_is_refused(name):
+def test_each_control_kwarg_is_refused(name, postgres_dsn):
     # Arrange
     _card()
     # Act

@@ -10,6 +10,18 @@ it was based on. Two primitives close it:
   write based on a stale read is REFUSED (StaleStoreError), never applied.
 * ``edit_tasks(path)`` — one lock across the whole cycle, so there is no
   window at all.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every test below except
+``test_generation_of_missing_store`` seeds/reads the ambient per-test store
+via ``seed_db_from_doc`` / ``load_tasks`` / ``save_tasks`` / ``edit_tasks``,
+which is refused without a writable cluster. ``tmp_path`` is vestigial —
+the helpers take it but never read it; the seeding targets the ambient
+store, not a temp path — and is kept so the diff stays a pure guard
+append (same as the ``test__store.py`` slice). Helpers keep their
+``tmp_path`` signatures, tests pass ``tmp_path`` through.
+``test_generation_of_missing_store`` stays unguarded by design: the
+``new_store`` factory it uses is already fail-LOUD on its own.
 """
 
 from __future__ import annotations
@@ -80,7 +92,7 @@ def _staged_lost_update(tmp_path):
 
 
 class TestOptimisticConcurrency:
-    def test_stale_write_is_refused(self, tmp_path):
+    def test_stale_write_is_refused(self, tmp_path, postgres_dsn):
         # Arrange
         store, tasks_a, gen_a = _staged_lost_update(tmp_path)
         # Act
@@ -89,7 +101,7 @@ class TestOptimisticConcurrency:
         with refusal:
             save_tasks(tasks_a, store, expected_generation=gen_a)
 
-    def test_refused_stale_write_leaves_the_other_writers_row(self, tmp_path):
+    def test_refused_stale_write_leaves_the_other_writers_row(self, tmp_path, postgres_dsn):
         # Arrange
         store, tasks_a, gen_a = _staged_lost_update(tmp_path)
         with contextlib.suppress(StaleStoreError):
@@ -99,7 +111,7 @@ class TestOptimisticConcurrency:
         # Assert — B's row is what the refusal protected.
         assert any(t["id"] == "from-b" for t in surviving)
 
-    def test_fresh_write_passes(self, tmp_path):
+    def test_fresh_write_passes(self, tmp_path, postgres_dsn):
         # Arrange
         store = _seed(tmp_path)
         gen = store_generation(store)
@@ -110,7 +122,7 @@ class TestOptimisticConcurrency:
         # Assert — nothing intervened, so the token still matched.
         assert load_tasks(store)[0]["priority"] == 1
 
-    def test_without_token_behaviour_is_unchanged(self, tmp_path):
+    def test_without_token_behaviour_is_unchanged(self, tmp_path, postgres_dsn):
         # Arrange
         store = _seed(tmp_path)
         tasks = load_tasks(store)
@@ -158,7 +170,7 @@ class TestOptimisticConcurrency:
 
 
 class TestEditTasks:
-    def test_mutation_persists_on_clean_exit(self, tmp_path):
+    def test_mutation_persists_on_clean_exit(self, tmp_path, postgres_dsn):
         # Arrange
         store = _seed(tmp_path)
         # Act
@@ -168,7 +180,7 @@ class TestEditTasks:
         # Assert
         assert all(t["priority"] == 2 for t in load_tasks(store))
 
-    def test_body_exception_propagates_to_the_caller(self, tmp_path):
+    def test_body_exception_propagates_to_the_caller(self, tmp_path, postgres_dsn):
         # Arrange
         store = _seed(tmp_path)
         # Act
@@ -179,7 +191,7 @@ class TestEditTasks:
                 tasks[0]["priority"] = 9
                 raise RuntimeError("boom")
 
-    def test_nothing_written_on_exception(self, tmp_path):
+    def test_nothing_written_on_exception(self, tmp_path, postgres_dsn):
         # Arrange
         store = _seed(tmp_path)
         # Act — an edit that raises mid-cycle must persist nothing.
@@ -194,7 +206,7 @@ class TestEditTasks:
         # witness "unchanged" — the rows can, and are the actual subject.
         assert load_tasks(store)[0].get("priority") is None
 
-    def test_preserves_non_tasks_sections(self, tmp_path):
+    def test_preserves_non_tasks_sections(self, tmp_path, postgres_dsn):
         # Arrange
         store = _seed_with_users(tmp_path)
         # Act
@@ -205,7 +217,7 @@ class TestEditTasks:
         # YAML file's text — the rule is unchanged, only its serialization is gone.
         assert any(u.get("id") == "u1" for u in load_doc(store).get("users", []))
 
-    def test_tasks_only_edit_still_persists_the_mutation(self, tmp_path):
+    def test_tasks_only_edit_still_persists_the_mutation(self, tmp_path, postgres_dsn):
         # Arrange
         store = _seed_with_users(tmp_path)
         # Act
@@ -214,7 +226,7 @@ class TestEditTasks:
         # Assert — preserving users: must not cost the edit itself.
         assert load_tasks(store)[0]["priority"] == 1
 
-    def test_append_inside_cycle(self, tmp_path):
+    def test_append_inside_cycle(self, tmp_path, postgres_dsn):
         # Arrange
         store = _seed(tmp_path, n=1)
         # Act

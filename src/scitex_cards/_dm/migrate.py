@@ -94,7 +94,7 @@ def _read_sidecar(path: Path) -> dict[str, list[dict]]:
     sidecar's own lock (never the task store's) is the same discipline the
     sidecar's writers use.
     """
-    from .._threads import _load_threads, _threads_lock
+    from .threads import _load_threads, _threads_lock
 
     if not path.exists():
         return {}

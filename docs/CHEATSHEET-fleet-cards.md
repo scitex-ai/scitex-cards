@@ -66,7 +66,7 @@ scitex-cards list-tasks                                  # all tasks (filtered b
 scitex-cards list-tasks --scope ""                       # opt out of env-default filter (see EVERYTHING)
 scitex-cards list-tasks --assignee agent:lead            # tasks owned by the lead
 scitex-cards list-tasks --status in_progress             # what's actively being worked
-scitex-cards list-tasks --status pending --json          # JSON for scripting
+scitex-cards list-tasks --status deferred --json            # JSON for scripting
 scitex-cards summary --scope project:scitex-clew   # counts by status for one project
 ```
 
@@ -120,14 +120,14 @@ import scitex_cards as cards
 
 # ── read (snapshot, no lock) ────────────────────────────────────
 mine = cards.list_tasks(scope="agent:scitex-cards",        # 🟡 PHASE-1
-                       status="pending")
+                       status="deferred")
 counts = cards.summarize_tasks(scope="project:sac")            # 🟡 PHASE-1
 
 # ── write (locked via fcntl.flock around full RMW) ───────────────
 cards.add_task(id="my-task", title="Implement my-task",         # 🟡 PHASE-1
               scope="agent:scitex-cards",
               assignee="agent:scitex-cards",
-              status="pending", priority=5)
+              status="deferred", priority=5)
 cards.update_task(task_id="my-task", status="in_progress")      # 🟡 PHASE-1
 cards.complete_task(task_id="my-task")                          # 🟡 PHASE-1
                                                                #   ↑ stamps _log_meta.completed_at + completed_by
@@ -284,7 +284,7 @@ scitex-cards list-tasks --status in_progress      # what was I doing?
 ### 7.2 "I'm an agent claiming a task off the queue"
 
 ```bash
-scitex-cards list-tasks --assignee '' --status pending  # unowned pending work
+scitex-cards list-tasks --assignee '' --status deferred  # unowned deferred work
 scitex-cards update <id> --assignee agent:<me> --status in_progress
 ```
 
@@ -300,7 +300,7 @@ scitex-cards add memo-buy-milk "Pick up milk" --scope private
 scitex-cards add e1-acl "sac ACL fleet-group + grant CLI" \
     --scope project:sac \
     --assignee agent:scitex-agent-container \
-    --priority 2 --status pending \
+    --priority 2 --status deferred \
     --note "Brief: ..."
 ```
 
@@ -372,7 +372,7 @@ loading).
 ```yaml
 - id: <unique-string>                        # REQUIRED
   title: <human-readable>                    # REQUIRED
-  status: pending|in_progress|blocked|done|deferred|failed|goal  # REQUIRED
+  status: goal|in_progress|blocked|done|deferred|failed|cancelled  # REQUIRED
   scope: <free-form-string>                  # 🟡 PHASE-1
   assignee: <free-form-string>               # 🟡 PHASE-1
   priority: <integer>                        # ✅ LIVE — lower = earlier
@@ -390,8 +390,11 @@ loading).
     completed_by: <free-form-string>
 ```
 
-Statuses (`VALID_STATUSES`): `goal`, `pending`, `in_progress`, `blocked`,
-`done`, `deferred`, `failed`. The board colors these consistently.
+Statuses (`VALID_STATUSES`): `goal`, `in_progress`, `blocked`,
+`done`, `deferred`, `failed`, `cancelled`. The board colors these consistently.
+`pending` was abolished 2026-07-10 — a card must carry a decision, so
+backlog examples on this page use `deferred` (can be worked, consciously
+not now).
 
 ### ⚠️ A deadline is a VIEW, never a notifier
 

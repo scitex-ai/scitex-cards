@@ -118,7 +118,7 @@ export function nodeHasChildren(graph: GraphPayload, nodeId: string): boolean {
  *     as "layered" rather than flat — depth cue at the surface level.
  *
  * Status color (fill / stroke) is preserved from `nodeStyle()` so the
- * lifecycle signal (pending / done / blocked / goal …) still reads.
+ * lifecycle signal (deferred / done / blocked / goal …) still reads.
  */
 export function parentNodeStyle(
   base: CSSProperties,

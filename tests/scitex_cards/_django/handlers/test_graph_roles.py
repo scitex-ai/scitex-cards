@@ -38,12 +38,16 @@ from scitex_cards._yaml import safe_load  # noqa: E402
 
 
 def _store_text() -> str:
-    """Two tasks: one fully-roled, one legacy (no role fields at all)."""
+    """Two tasks: one fully-roled, one legacy (no role fields at all).
+
+    Seeded ``deferred`` since the pending abolition (2026-07-10): the
+    assertions pin the ROLES wire fields only, never the status.
+    """
     return (
         "tasks:\n"
         "  - id: roled\n"
         "    title: 'fully roled card'\n"
-        "    status: pending\n"
+        "    status: deferred\n"
         "    agent: agent:assignee\n"
         "    created_by: agent:creator\n"
         "    collaborators:\n"
@@ -53,7 +57,7 @@ def _store_text() -> str:
         "      - agent:sub-a\n"
         "  - id: legacy\n"
         "    title: 'legacy card with no role fields'\n"
-        "    status: pending\n"
+        "    status: deferred\n"
     )
 
 

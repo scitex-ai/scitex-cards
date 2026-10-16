@@ -21,6 +21,12 @@ No mocks; CliRunner only. The live shared store is NEVER touched:
 store-selecting env var at it, so the CLI resolves the throwaway store
 without any test having to name it (the alias/CI tests additionally pin a
 tmp HOME / XDG_RUNTIME_DIR).
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the ``store`` fixture seeds the ambient per-test
+store via ``seed_db_from_doc``, which is refused without a writable
+cluster; tests inheriting ``store`` carry the guard through the fixture
+while the help/metadata tests stay unguarded by design.
 """
 
 from __future__ import annotations
@@ -46,7 +52,7 @@ def runner():
 
 
 @pytest.fixture
-def store():
+def store(postgres_dsn):
     """Seed two small cards into the harness store — never the live one.
 
     Seed RAW cards (no ``created_at`` / ``last_activity``) straight into the

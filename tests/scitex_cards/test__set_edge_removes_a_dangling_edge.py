@@ -46,12 +46,17 @@ from scitex_cards._store import TaskNotFoundError
 
 
 @pytest.fixture()
-def store_with_dangling_edge(tmp_path: Path) -> Path:
+def store_with_dangling_edge(tmp_path: Path, postgres_dsn) -> Path:
     """A card carrying a ``depends_on`` that points at nothing.
 
     Built the way the fleet builds one — by naming a target that was never
     created — rather than by hand-editing the document, so the fixture exercises
     the same shape production produced.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
     """
     path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(

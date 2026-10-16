@@ -131,7 +131,7 @@ def chat_at_root():
 @pytest.fixture
 def pages_with_one_unread(store):
     """Both mounted surfaces after one agent message to the current user."""
-    from scitex_cards._threads import append_message
+    from scitex_cards._dm.threads import append_message
 
     append_message("agent-x", "operator", "please review", store=store)
     board = views.board_v3_page(

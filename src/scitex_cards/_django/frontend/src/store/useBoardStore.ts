@@ -32,12 +32,12 @@ const _persisted = loadPersistedView();
  * status dropdown in the editor and the "Set status ▸" context submenu. */
 export const STATUSES = [
   "goal",
-  "pending",
   "in_progress",
   "blocked",
   "done",
   "deferred",
   "failed",
+  "cancelled",
 ] as const;
 
 /** Right-click context-menu anchor. `taskId === null` = the canvas/pane menu

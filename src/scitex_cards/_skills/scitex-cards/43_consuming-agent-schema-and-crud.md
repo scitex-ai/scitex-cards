@@ -12,8 +12,7 @@ tags:
 
 # Consuming-agent schema and CRUD reference
 
-Split out of [42_for-consuming-agents.md](42_for-consuming-agents.md) to keep both leaves inside the
-skill-size budget. That file remains the entry point.
+Split out of [42_for-consuming-agents.md](42_for-consuming-agents.md) to keep both leaves in budget; that file remains the entry point.
 
 ## Schema — closed enums, fail-loud
 
@@ -31,12 +30,14 @@ The validator REJECTS unknown values in the closed enums below.
 
 | Field | Allowed values |
 |---|---|
-| `status` | `goal` · `pending` · `in_progress` · `blocked` · `done` · `deferred` · `failed` |
-| `kind` | `task` (default if absent) · `compute` · `decision` |
+| `status` | `goal` · `in_progress` · `blocked` · `done` · `deferred` · `failed` · `cancelled` |
+| `kind` | `task` (default if absent) · `compute` · `decision` · `status` (q-* status rows; see 41 Addendum) |
 | `blocker` | `compute` · `dependency` (alias `dep`) · `operator-decision` · `agent-wait` · `none` |
 
 `blocker` is **only allowed when** `status == "blocked"`. Setting a
 blocker on a non-blocked row raises.
+
+`pending` was abolished 2026-07-10 (fails validation). Backlog is `deferred`; claimed work is `in_progress`.
 
 **Recommended fields (operator-co-designed surface, TG 9667):**
 
@@ -97,7 +98,7 @@ names match too.
 scitex-cards add \
   scitex-cards-fleet-rollout \
   '[P1] Fleet rollout of scitex-cards skill across agents' \
-  --status pending \
+  --status deferred \
   --scope agent:scitex-cards \
   --assignee scitex-cards \
   --priority 10 \
@@ -120,7 +121,7 @@ add_task(
     None,                           # tasks_path; None = resolve default
     id="scitex-cards-fleet-rollout",
     title="[P1] Fleet rollout of scitex-cards skill across agents",
-    status="pending",
+    status="deferred",
     scope="agent:scitex-cards",
     assignee="scitex-cards",
     priority=10,
@@ -185,10 +186,11 @@ MCP: `complete_task`. Python: `scitex_cards.complete_task`.
 
 ### RE-OPEN (undo a done / resolve)
 
-There's no `reopen` CLI verb today. Use `update --status pending`:
+There's no `reopen` CLI verb today. Canonical path is MCP `reopen_task` (done → `blocked` + `blocker=operator-decision`, stamp cleared, comment appended).
+Closest CLI equivalent — leaving `done` clears the completion stamp, so this is a real reopen:
 
 ```bash
-scitex-cards update scitex-cards-fleet-rollout --status pending
+scitex-cards update scitex-cards-fleet-rollout --status blocked --blocker operator-decision
 ```
 
 The web board's `/reopen` HTTP endpoint (PR #61) is operator-facing;

@@ -11,7 +11,9 @@ First-slice scope (this PR — what's covered here):
     by agent name)
   * status precedence: blocking-operator > working > active > idle
   * current_task derivation: in_progress > most-recent activity > top-
-    priority pending
+    priority deferred backlog (``BACKLOG_STATUS`` — ``pending`` was
+    abolished 2026-07-10, so a legacy ``pending`` row gets no priority
+    and only ever surfaces via the activity / items fallbacks)
   * counts (task_count / runnable_count / blocked_count /
     blocking_operator_count) reflect the input
   * tasks without ``agent`` (and without ``assignee`` fallback) are
@@ -344,12 +346,12 @@ _OVERDUE_FIXTURE = (
     "tasks:\n"
     "  - id: t-overdue-yesterday\n"
     "    title: 'Late task'\n"
-    "    status: pending\n"
+    "    status: deferred\n"
     "    agent: proj-late\n"
     "    deadline: '2000-01-01'\n"
     "  - id: t-future\n"
     "    title: 'Future task'\n"
-    "    status: pending\n"
+    "    status: deferred\n"
     "    agent: proj-late\n"
     "    deadline: '2099-01-01'\n"
     "  - id: t-done-past\n"
@@ -369,9 +371,9 @@ def overdue_store(tmp_path, postgres_dsn):
     _reset_cache()
 
 
-def test_overdue_count_counts_pending_past_deadline(overdue_store):
+def test_overdue_count_counts_deferred_past_deadline(overdue_store):
     # Arrange
-    # proj-late has 1 overdue pending + 1 future + 1 done-past.
+    # proj-late has 1 overdue deferred + 1 future + 1 done-past.
     # The done one must NOT count (terminal state); the future one must
     # NOT count (deadline ahead).
     # Act
@@ -405,11 +407,11 @@ _BLOCKING_FIXTURE = (
     "    status: blocked\n"
     "    blocker: dependency\n"
     "    agent: proj-blockq\n"
-    # NOT a match: a non-blocked (pending) card — the canonical predicate
+    # NOT a match: a non-blocked (deferred) card — the canonical predicate
     # requires status==blocked.
-    "  - id: bq-pending\n"
-    "    title: 'pending, not waiting on the operator'\n"
-    "    status: pending\n"
+    "  - id: bq-deferred\n"
+    "    title: 'deferred, not waiting on the operator'\n"
+    "    status: deferred\n"
     "    agent: proj-blockq\n"
 )
 
@@ -427,7 +429,7 @@ def test_blocking_operator_count_uses_canonical_predicate(blocking_store):
     # Arrange
     # proj-blockq has exactly ONE card matching the BLOCKING-YOU
     # predicate (blocked + operator-decision). The blocked-on-dependency
-    # and the pending cards must NOT count.
+    # and the deferred cards must NOT count.
     # Act
     fleet = _fleet_by_name(_graph(blocking_store))
     # Assert
@@ -455,12 +457,12 @@ def test_blocked_on_other_blocker_not_in_operator_queue(blocking_store):
 
 def test_non_blocked_card_not_in_queue(blocking_store):
     # Arrange
-    # a non-blocked (pending) card; the canonical predicate
+    # a non-blocked (deferred) card; the canonical predicate
     # requires status==blocked, so it must NOT surface.
     # Act
     fleet = _fleet_by_name(_graph(blocking_store))
     # Assert
-    assert "bq-pending" not in fleet["proj-blockq"]["blocking_operator_ids"]
+    assert "bq-deferred" not in fleet["proj-blockq"]["blocking_operator_ids"]
 
 
 def test_blocking_operator_ids_present_on_every_fleet_row(store):

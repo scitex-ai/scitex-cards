@@ -3,7 +3,7 @@
 """Minimal Django settings for the standalone scitex-cards board.
 
 Used when running the board without a parent Django project (Route A in the
-design doc — figrecipe parity, scitex-app optional). No database is configured
+design doc — figrecipe parity, scitex-sdk backed). No database is configured
 because the board is read-only over a YAML store; the task store on disk is the
 only state.
 """
@@ -126,7 +126,7 @@ INSTALLED_APPS = [
     "scitex_cards._django",
 ]
 
-# Optional: scitex-ui shared shell components (static + templates served via
+# Optional: scitex-sdk shared shell components (static + templates served via
 # AppDirectoriesFinder). Absent installs fall back to the bare React SPA.
 try:
     import scitex_sdk.ui as scitex_ui  # noqa: F401

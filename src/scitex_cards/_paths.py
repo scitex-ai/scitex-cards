@@ -254,6 +254,29 @@ def refuse_ambient_store_creation(
 #: store root. Superseded files go to ``.old/<timestamp>/`` instead.
 RUNTIME_DIRNAME = "runtime"
 
+#: Ignore-policy content seeded into every ensured runtime directory.
+#: PS-234 §4b demands the policy exist on disk (``*``, no negations)
+#: while staying out of the Git index — so the package seeds it next
+#: to the mkdir instead of tracking it (a tracked copy fails the same
+#: rule; an absent copy fails it too).
+_RUNTIME_GITIGNORE = "*\n"
+
+
+def _seed_runtime_gitignore(d: Path) -> None:
+    """Best-effort seed of the PS-234 ignore policy into ``d``.
+
+    Never overwrites a present file (a host-local edit wins) and never
+    raises: a missing policy degrades to an audit finding, which must
+    not break the caller that only wanted a directory.
+    """
+    policy = d / ".gitignore"
+    if policy.is_file():
+        return
+    try:
+        policy.write_text(_RUNTIME_GITIGNORE)
+    except OSError:
+        pass
+
 
 def runtime_dir(store: str | Path | None = None, *, create: bool = True) -> Path:
     """Return ``<store_dir>/runtime`` — the home for non-tracked runtime state.
@@ -261,11 +284,14 @@ def runtime_dir(store: str | Path | None = None, *, create: bool = True) -> Path
     ``<store_dir>`` is the parent of the resolved store (the database's
     directory), so the runtime dir tracks whichever scope the store resolved to.
     Created on demand (``create=True``) so callers can write into it without a
-    prior mkdir.
+    prior mkdir. Ensuring the dir also seeds its ``.gitignore`` with ``*``
+    (PS-234 §4b: the policy must exist on disk yet stay out of the index),
+    never overwriting a present file.
     """
     d = resolve_tasks_path(store).parent / RUNTIME_DIRNAME
     if create:
         d.mkdir(parents=True, exist_ok=True)
+        _seed_runtime_gitignore(d)
     return d
 
 

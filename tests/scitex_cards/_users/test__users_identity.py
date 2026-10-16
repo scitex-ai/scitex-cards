@@ -305,7 +305,7 @@ def test_strict_env_falsy(env, val):
 # --------------------------------------------------------------------------- #
 # resolve_identity — store-aware wrapper, env-gated strict                    #
 # --------------------------------------------------------------------------- #
-def test_resolve_identity_registered_hit(tmp_path, env):
+def test_resolve_identity_registered_hit(tmp_path, env, postgres_dsn):
     # Arrange
     env.delete(ENV_STRICT_IDENTITY)
     store = tmp_path / "tasks.yaml"
@@ -320,7 +320,7 @@ def test_resolve_identity_registered_hit(tmp_path, env):
     assert canonical == "scitex-dev"
 
 
-def test_resolve_identity_non_strict_by_default(tmp_path, env):
+def test_resolve_identity_non_strict_by_default(tmp_path, env, postgres_dsn):
     """Unknown + strict OFF (the default) → input returned, no raise."""
     # Arrange
     env.delete(ENV_STRICT_IDENTITY)
@@ -331,7 +331,7 @@ def test_resolve_identity_non_strict_by_default(tmp_path, env):
     assert canonical == "unregistered-xyz"
 
 
-def test_resolve_identity_strict_env_flip_raises(tmp_path, env):
+def test_resolve_identity_strict_env_flip_raises(tmp_path, env, postgres_dsn):
     # Arrange
     env.set(ENV_STRICT_IDENTITY, "1")
     store = tmp_path / "tasks.yaml"
@@ -341,7 +341,7 @@ def test_resolve_identity_strict_env_flip_raises(tmp_path, env):
         resolve_identity("unregistered-xyz", store=store)
 
 
-def test_resolve_identity_alias_via_store(tmp_path, env):
+def test_resolve_identity_alias_via_store(tmp_path, env, postgres_dsn):
     # Arrange
     env.delete(ENV_STRICT_IDENTITY)
     store = tmp_path / "tasks.yaml"
@@ -354,7 +354,7 @@ def test_resolve_identity_alias_via_store(tmp_path, env):
 # --------------------------------------------------------------------------- #
 # resolve_user canonicalised retry (wired seam)                               #
 # --------------------------------------------------------------------------- #
-def test_resolve_user_canonicalises_drifted_name(tmp_path):
+def test_resolve_user_canonicalises_drifted_name(tmp_path, postgres_dsn):
     """'proj-scitex-dev' is NOT in names[], but canonicalises to
     'scitex-dev' — so the drifted name must still find a user."""
     # Arrange
@@ -366,7 +366,7 @@ def test_resolve_user_canonicalises_drifted_name(tmp_path):
     assert resolved is not None
 
 
-def test_the_canonicalised_hit_is_the_registered_user(tmp_path):
+def test_the_canonicalised_hit_is_the_registered_user(tmp_path, postgres_dsn):
     """...and it is the SAME user, not a second record silently created."""
     # Arrange
     store = tmp_path / "tasks.yaml"
@@ -377,7 +377,7 @@ def test_the_canonicalised_hit_is_the_registered_user(tmp_path):
     assert resolved.id == created.id
 
 
-def test_resolve_user_unknown_still_none(tmp_path):
+def test_resolve_user_unknown_still_none(tmp_path, postgres_dsn):
     # Arrange
     store = tmp_path / "tasks.yaml"
     _users.register_user(kind="agent", names=["scitex-dev"], store=store)

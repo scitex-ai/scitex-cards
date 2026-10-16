@@ -7,12 +7,16 @@ Pins the canonical event-payload shape, built-in handler semantics,
 idempotency, and the entry-point-group name.
 
 No mocks (STX-NM / PA-306). AAA pattern, one assertion per test.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): ``_store_with`` seeds the ambient per-test store,
+which is refused without a writable cluster. The pure ``event_validate``
+shape tests stay unguarded by design.
 """
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -180,16 +184,14 @@ def test_event_validate_card_ids_default_to_empty_list():
 # === Built-in push handler — idempotent comment-append =====================
 
 
-def _store_with(tmp_path: Path) -> Path:
-    store = tmp_path / "tasks.yaml"
-    add_task(store=store, id="card-1", title="x", assignee="agent:test-suite")
-    return store
+def _store_with():
+    """Seed card-1 on the ambient per-test store (Ask-2: no tmp_path)."""
+    add_task(id="card-1", title="x", assignee="agent:test-suite")
 
 
-def test_push_appends_comment_to_card(tmp_path: Path, env):
+def test_push_appends_comment_to_card(postgres_dsn):
     # Arrange
-    store = _store_with(tmp_path)
-    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    _store_with()
     event = event_validate(
         {
             "kind": "push",
@@ -206,14 +208,10 @@ def test_push_appends_comment_to_card(tmp_path: Path, env):
     assert summary["card_writes"][0]["action"] == "comment-appended"
 
 
-def test_push_is_idempotent_when_commit_sha_already_recorded(
-    tmp_path: Path,
-    env,
-):
+def test_push_is_idempotent_when_commit_sha_already_recorded(postgres_dsn):
     # Arrange — first push recorded; second one with same commit_sha
     # must be a noop.
-    store = _store_with(tmp_path)
-    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    _store_with()
     event = event_validate(
         {
             "kind": "push",
@@ -231,10 +229,9 @@ def test_push_is_idempotent_when_commit_sha_already_recorded(
     assert summary["card_writes"][0]["action"] == "already-recorded"
 
 
-def test_push_unknown_card_id_is_soft_noop(tmp_path: Path, env):
+def test_push_unknown_card_id_is_soft_noop(postgres_dsn):
     # Arrange — producer hinted at a card that doesn't exist.
-    store = _store_with(tmp_path)
-    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    _store_with()
     event = event_validate(
         {
             "kind": "push",
@@ -253,10 +250,9 @@ def test_push_unknown_card_id_is_soft_noop(tmp_path: Path, env):
 # === Built-in done handler — idempotent done+pr_url ========================
 
 
-def test_done_flips_card_to_done_with_pr_url(tmp_path: Path, env):
+def test_done_flips_card_to_done_with_pr_url(postgres_dsn):
     # Arrange
-    store = _store_with(tmp_path)
-    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    _store_with()
     event = event_validate(
         {
             "kind": "done",
@@ -269,14 +265,13 @@ def test_done_flips_card_to_done_with_pr_url(tmp_path: Path, env):
     # Act
     dispatch_event(event)
     # Assert
-    loaded = [t for t in list_tasks(store=store) if t["id"] == "card-1"][0]
+    loaded = [t for t in list_tasks() if t["id"] == "card-1"][0]
     assert loaded.get("status") == "done"
 
 
-def test_done_records_pr_url_on_card(tmp_path: Path, env):
+def test_done_records_pr_url_on_card(postgres_dsn):
     # Arrange
-    store = _store_with(tmp_path)
-    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    _store_with()
     event = event_validate(
         {
             "kind": "done",
@@ -289,17 +284,13 @@ def test_done_records_pr_url_on_card(tmp_path: Path, env):
     # Act
     dispatch_event(event)
     # Assert
-    loaded = [t for t in list_tasks(store=store) if t["id"] == "card-1"][0]
+    loaded = [t for t in list_tasks() if t["id"] == "card-1"][0]
     assert loaded.get("pr_url") == "https://x.test/pull/187"
 
 
-def test_done_is_idempotent_when_already_done_with_same_pr_url(
-    tmp_path: Path,
-    env,
-):
+def test_done_is_idempotent_when_already_done_with_same_pr_url(postgres_dsn):
     # Arrange — first done recorded; second is a noop.
-    store = _store_with(tmp_path)
-    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    _store_with()
     event = event_validate(
         {
             "kind": "done",
@@ -319,7 +310,7 @@ def test_done_is_idempotent_when_already_done_with_same_pr_url(
 # === Plugin failures are caught + reported, never propagated ==============
 
 
-def test_dispatch_event_handles_plugin_error_gracefully(tmp_path: Path, env):
+def test_dispatch_event_handles_plugin_error_gracefully(postgres_dsn):
     # Arrange — register a real fake entry point whose handler raises,
     # injected through the dispatcher's `entry_points=` seam (no mock /
     # no monkeypatch; the PRODUCTION code path is what's being tested).
@@ -332,8 +323,7 @@ def test_dispatch_event_handles_plugin_error_gracefully(tmp_path: Path, env):
 
             return _bad
 
-    store = _store_with(tmp_path)
-    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    _store_with()
     event = event_validate(
         {
             "kind": "push",
@@ -382,10 +372,9 @@ def test_event_validate_unblock_normalizes_card_ids():
 # === unblock built-in handler — idempotent [unblocked] comment ============
 
 
-def test_unblock_handler_appends_comment_to_dependent(tmp_path: Path, env):
+def test_unblock_handler_appends_comment_to_dependent(postgres_dsn):
     # Arrange
-    store = _store_with(tmp_path)
-    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    _store_with()
     event = event_validate(
         {"kind": "unblock", "unlocker_id": "blocker-x", "card_ids": ["card-1"]}
     )
@@ -395,10 +384,9 @@ def test_unblock_handler_appends_comment_to_dependent(tmp_path: Path, env):
     assert summary["card_writes"][0]["action"] == "comment-appended"
 
 
-def test_unblock_handler_is_idempotent_on_same_unlocker(tmp_path: Path, env):
+def test_unblock_handler_is_idempotent_on_same_unlocker(postgres_dsn):
     # Arrange — re-emitting the same unblock must not double-comment.
-    store = _store_with(tmp_path)
-    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    _store_with()
     event = event_validate(
         {"kind": "unblock", "unlocker_id": "blocker-x", "card_ids": ["card-1"]}
     )
@@ -409,10 +397,9 @@ def test_unblock_handler_is_idempotent_on_same_unlocker(tmp_path: Path, env):
     assert summary["card_writes"][0]["action"] == "already-recorded"
 
 
-def test_unblock_handler_unknown_card_is_soft_noop(tmp_path: Path, env):
+def test_unblock_handler_unknown_card_is_soft_noop(postgres_dsn):
     # Arrange
-    store = _store_with(tmp_path)
-    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    _store_with()
     event = event_validate(
         {
             "kind": "unblock",

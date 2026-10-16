@@ -39,8 +39,8 @@ from scitex_cards._django.handlers.dm import (
     dm_threads_view,
 )
 from scitex_cards._dm import read as dm_read
+from scitex_cards._dm.threads import append_message
 from scitex_cards._inbox_postgres import poll_inbox
-from scitex_cards._threads import append_message
 
 
 @pytest.fixture()
@@ -589,8 +589,15 @@ def test_a_trusted_attribute_still_scopes_the_write(store):
 
 
 @pytest.fixture()
-def hubs_file_label(tmp_path):
-    """A retired per-project path label beside the shared ambient store."""
+def hubs_file_label(tmp_path, postgres_dsn):
+    """A retired per-project path label beside the shared ambient store.
+
+    ``postgres_dsn`` is requested but is not the label target: the views
+    fall through to the ambient per-test store, which is refused without
+    a writable cluster — the fixture fails first, LOUDLY, with the reason
+    and the remedy. Both label tests inherit the guard through this
+    fixture.
+    """
     label = tmp_path / "users" / "alice" / "proj" / "dotfiles" / ".scitex" / "todo" / "tasks.yaml"
     yield str(label)
 

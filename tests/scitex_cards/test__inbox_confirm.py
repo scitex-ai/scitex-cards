@@ -14,6 +14,10 @@ No mocks (STX-NM / PA-306): a real store, real ``_inbox`` records, the real
 that reads the inbox and is then killed by ``os._exit`` before it can confirm.
 Nothing here simulates death with a patched function; the process genuinely
 dies, which is the only honest way to prove the store survived it.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every seed below targets the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -74,8 +78,14 @@ def _raw_records(store, agent=AGENT):
 
 
 @pytest.fixture()
-def inbox(env):
-    """A real store holding three UNSEEN notifications for one raw-name agent."""
+def inbox(env, postgres_dsn):
+    """A real store holding three UNSEEN notifications for one raw-name agent.
+
+    ``postgres_dsn`` is requested but is not the seed target. With no
+    writable PostgreSQL the harness pins the refused placeholder, so the
+    seeding below would raise — the fixture fails first, LOUDLY, with the
+    reason and the remedy. (Same guard as the ``store`` fixtures in _django/.)
+    """
     env.set("SCITEX_CARDS_AGENT_ID", "confirm-tester")
     env.delete("SCITEX_CARDS_HUB_URL")
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]

@@ -20,6 +20,14 @@ Also pinned:
   hub-side (the parked/un-park clearing class; a client that strips nulls
   silently swallows remote clears).
 - A caller passing its own tasks_path/store gets a loud refusal.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 21 round-trip / DM / poll / missing-card checks
+below run their verbs through the loopback hub, which addresses the
+harness-pinned per-test store — refused without a writable cluster, so
+without the guard they fail bare as HTTP 500s with no reason+remedy. The
+5 resolution / no-fallback / typed-error tests stay unguarded by design
+(they raise before any store opens, or pass regardless of it).
 """
 
 from __future__ import annotations
@@ -132,7 +140,7 @@ def test_caller_supplied_store_is_refused(hub):
 # === round trips (read-back DIRECTLY hub-side) =============================
 
 
-def test_add_task_round_trips_the_card_id(hub):
+def test_add_task_round_trips_the_card_id(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     # Act
@@ -141,7 +149,7 @@ def test_add_task_round_trips_the_card_id(hub):
     assert created["id"] == "hb-add"
 
 
-def test_add_task_injects_the_remote_agent_as_created_by(hub):
+def test_add_task_injects_the_remote_agent_as_created_by(hub, postgres_dsn):
     # The caller never set created_by; the CLIENT must have stamped the
     # remote agent's identity — the hub's env must not leak in.
     # Arrange
@@ -153,7 +161,7 @@ def test_add_task_injects_the_remote_agent_as_created_by(hub):
     assert on_disk["created_by"] == "remote-agent"
 
 
-def test_explicit_identity_is_respected_not_overwritten(hub):
+def test_explicit_identity_is_respected_not_overwritten(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     # Act
@@ -163,7 +171,7 @@ def test_explicit_identity_is_respected_not_overwritten(hub):
     assert on_disk["created_by"] == "named-human"
 
 
-def test_update_task_round_trips_the_status(hub):
+def test_update_task_round_trips_the_status(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     _add(backend, "hb-upd")
@@ -174,7 +182,7 @@ def test_update_task_round_trips_the_status(hub):
     assert on_disk["status"] == "in_progress"
 
 
-def test_update_task_round_trips_the_note(hub):
+def test_update_task_round_trips_the_note(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     _add(backend, "hb-upd")
@@ -185,7 +193,7 @@ def test_update_task_round_trips_the_note(hub):
     assert on_disk["note"] == "over the wire"
 
 
-def test_a_note_set_over_the_wire_lands_hub_side(hub):
+def test_a_note_set_over_the_wire_lands_hub_side(hub, postgres_dsn):
     """The precondition the null-sentinel test below clears — pinned on its
     own so a silently-dropped `note=` cannot make that test vacuously pass."""
     # Arrange
@@ -197,7 +205,7 @@ def test_a_note_set_over_the_wire_lands_hub_side(hub):
     assert "note" in on_disk
 
 
-def test_update_null_sentinel_deletes_hub_side(hub):
+def test_update_null_sentinel_deletes_hub_side(hub, postgres_dsn):
     """None must survive serialization as an explicit null and DELETE."""
     # Arrange
     backend = get_backend()
@@ -209,7 +217,7 @@ def test_update_null_sentinel_deletes_hub_side(hub):
     assert "note" not in on_disk
 
 
-def test_comment_task_injects_the_remote_agent_as_author(hub):
+def test_comment_task_injects_the_remote_agent_as_author(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     _add(backend, "hb-com")
@@ -219,7 +227,7 @@ def test_comment_task_injects_the_remote_agent_as_author(hub):
     assert result["comment"]["author"] == "remote-agent"
 
 
-def test_comment_task_round_trips_the_comment_text(hub):
+def test_comment_task_round_trips_the_comment_text(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     _add(backend, "hb-com")
@@ -230,7 +238,7 @@ def test_comment_task_round_trips_the_comment_text(hub):
     assert comments[-1]["text"] == "hello from afar"
 
 
-def test_complete_task_sets_the_status_done(hub):
+def test_complete_task_sets_the_status_done(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     _add(backend, "hb-done")
@@ -241,7 +249,7 @@ def test_complete_task_sets_the_status_done(hub):
     assert on_disk["status"] == "done"
 
 
-def test_complete_task_stamps_the_remote_agent_as_completer(hub):
+def test_complete_task_stamps_the_remote_agent_as_completer(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     _add(backend, "hb-done")
@@ -252,7 +260,7 @@ def test_complete_task_stamps_the_remote_agent_as_completer(hub):
     assert on_disk["_log_meta"]["completed_by"] == "remote-agent"
 
 
-def test_list_tasks_reads_the_hub_store(hub):
+def test_list_tasks_reads_the_hub_store(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     _add(backend, "hb-read")
@@ -262,7 +270,7 @@ def test_list_tasks_reads_the_hub_store(hub):
     assert "hb-read" in listed
 
 
-def test_get_task_reads_the_hub_store(hub):
+def test_get_task_reads_the_hub_store(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     _add(backend, "hb-read")
@@ -272,7 +280,7 @@ def test_get_task_reads_the_hub_store(hub):
     assert fetched["title"] == "Card hb-read"
 
 
-def test_delete_task_removes_the_card_hub_side(hub):
+def test_delete_task_removes_the_card_hub_side(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     _add(backend, "hb-del")
@@ -283,7 +291,7 @@ def test_delete_task_removes_the_card_hub_side(hub):
         _store.get_task(hub["store"], "hb-del")
 
 
-def test_restore_task_puts_the_card_back(hub):
+def test_restore_task_puts_the_card_back(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     _add(backend, "hb-del")
@@ -295,7 +303,7 @@ def test_restore_task_puts_the_card_back(hub):
     assert on_disk["id"] == "hb-del"
 
 
-def test_set_edge_round_trip(hub):
+def test_set_edge_round_trip(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     _add(backend, "hb-e1")
@@ -309,7 +317,7 @@ def test_set_edge_round_trip(hub):
     assert on_disk["depends_on"] == ["hb-e1"]
 
 
-def test_dm_send_stamps_the_sending_agent(hub):
+def test_dm_send_stamps_the_sending_agent(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     # Act
@@ -318,7 +326,7 @@ def test_dm_send_stamps_the_sending_agent(hub):
     assert record["from"] == "remote-agent"
 
 
-def test_dm_list_returns_the_sent_message(hub):
+def test_dm_list_returns_the_sent_message(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     backend.dm_send("remote-agent", "operator", "hub dm")
@@ -328,7 +336,7 @@ def test_dm_list_returns_the_sent_message(hub):
     assert [m["body"] for m in thread["messages"]] == ["hub dm"]
 
 
-def test_poll_notifications_echoes_the_agent(hub):
+def test_poll_notifications_echoes_the_agent(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     # Act
@@ -337,7 +345,7 @@ def test_poll_notifications_echoes_the_agent(hub):
     assert inbox["agent"] == "remote-agent"
 
 
-def test_poll_notifications_returns_a_notifications_list(hub):
+def test_poll_notifications_returns_a_notifications_list(hub, postgres_dsn):
     # Arrange
     backend = get_backend()
     # Act
@@ -349,7 +357,7 @@ def test_poll_notifications_returns_a_notifications_list(hub):
 # === error parity ==========================================================
 
 
-def test_missing_card_raises_the_real_tasknotfound(hub):
+def test_missing_card_raises_the_real_tasknotfound(hub, postgres_dsn):
     # Arrange
     from scitex_cards._store import TaskNotFoundError
 

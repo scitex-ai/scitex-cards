@@ -21,6 +21,10 @@ with two coupled changes, both covered here:
 Real fixtures (no mocks per STX-NM / PA-306); the autouse conftest fixture
 pins `$SCITEX_STORE_DSN` to a fresh, schema-complete scratch database per
 test, so every test here is safely isolated from the live store.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): every test below seeds/reads the ambient per-test
+store, which is refused without a writable cluster.
 """
 
 from __future__ import annotations
@@ -101,7 +105,7 @@ def _refusal_message(doc, store, **kwargs) -> str:
 class TestDeleteTaskTombstones:
     """delete_task marks the row in place; it never physically disappears."""
 
-    def test_deleted_row_survives_in_sql(self, tmp_path):
+    def test_deleted_row_survives_in_sql(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
@@ -111,7 +115,7 @@ class TestDeleteTaskTombstones:
         # the sibling test's claim.
         assert _live_row("a") is not None
 
-    def test_deleted_row_is_marked_cancelled_in_sql(self, tmp_path):
+    def test_deleted_row_is_marked_cancelled_in_sql(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
@@ -123,7 +127,7 @@ class TestDeleteTaskTombstones:
         row = _live_row("a")
         assert row["status"] == "cancelled"
 
-    def test_deleted_row_stamps_deleted_at(self, tmp_path):
+    def test_deleted_row_stamps_deleted_at(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
@@ -134,7 +138,7 @@ class TestDeleteTaskTombstones:
         deleted = next(t for t in doc["tasks"] if t["id"] == "a")
         assert _is_tombstoned(deleted)
 
-    def test_sql_row_count_does_not_drop_after_delete(self, tmp_path):
+    def test_sql_row_count_does_not_drop_after_delete(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
@@ -145,7 +149,7 @@ class TestDeleteTaskTombstones:
         # Assert
         assert _live_task_count() == before
 
-    def test_single_delete_does_not_trip_the_shrink_guard(self, tmp_path):
+    def test_single_delete_does_not_trip_the_shrink_guard(self, tmp_path, postgres_dsn):
         # Arrange — a card write that touches ONE row must never be refused
         # as a "shrink"; that refusal exists for a doc-level collapse only.
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
@@ -166,7 +170,7 @@ class TestDeleteTaskTombstones:
 class TestReadsExcludeTombstones:
     """list_tasks / get_task / set_edge treat a tombstoned row as absent."""
 
-    def test_list_tasks_excludes_the_deleted_row(self, tmp_path):
+    def test_list_tasks_excludes_the_deleted_row(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
@@ -176,7 +180,7 @@ class TestReadsExcludeTombstones:
         # Assert
         assert {t["id"] for t in _store.list_tasks(store, scope="")} == {"b"}
 
-    def test_get_task_raises_not_found_for_a_tombstoned_id(self, tmp_path):
+    def test_get_task_raises_not_found_for_a_tombstoned_id(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
@@ -186,7 +190,7 @@ class TestReadsExcludeTombstones:
         with pytest.raises(_store.TaskNotFoundError):
             _store.get_task(store, task_id="a")
 
-    def test_set_edge_onto_a_tombstoned_target_raises_not_found(self, tmp_path):
+    def test_set_edge_onto_a_tombstoned_target_raises_not_found(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
@@ -206,7 +210,7 @@ class TestReadsExcludeTombstones:
 class TestRestoreUnTombstones:
     """restore_task is the delete Undo; it reverses a tombstone in place."""
 
-    def test_restore_makes_the_row_visible_again(self, tmp_path):
+    def test_restore_makes_the_row_visible_again(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
@@ -216,7 +220,7 @@ class TestRestoreUnTombstones:
         # Assert
         assert _store.get_task(store, task_id="a")["status"] != "cancelled"
 
-    def test_restore_clears_the_tombstone_marker(self, tmp_path):
+    def test_restore_clears_the_tombstone_marker(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
@@ -226,7 +230,7 @@ class TestRestoreUnTombstones:
         # Assert
         assert not _is_tombstoned(_store.get_task(store, task_id="a"))
 
-    def test_restore_onto_a_live_duplicate_id_still_raises(self, tmp_path):
+    def test_restore_onto_a_live_duplicate_id_still_raises(self, tmp_path, postgres_dsn):
         # Arrange — "a" exists and was NEVER deleted; restoring onto it is a
         # genuine conflict, not an undo.
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
@@ -238,7 +242,7 @@ class TestRestoreUnTombstones:
                 store, task={"id": "a", "title": "A", "status": "deferred"}
             )
 
-    def test_restore_does_not_grow_the_sql_row_count(self, tmp_path):
+    def test_restore_does_not_grow_the_sql_row_count(self, tmp_path, postgres_dsn):
         # Arrange — undo a delete must not create a SECOND row for the id.
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
@@ -256,7 +260,7 @@ class TestRestoreUnTombstones:
 class TestDocRewriteShrinkGuard:
     """A doc-level write missing rows the store already has is refused."""
 
-    def test_a_doc_rewrite_missing_a_row_raises(self, tmp_path):
+    def test_a_doc_rewrite_missing_a_row_raises(self, tmp_path, postgres_dsn):
         # Arrange — three live cards; a "doc" that only knows about one of
         # them is exactly the 2170->18 collapse's shape.
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
@@ -270,7 +274,7 @@ class TestDocRewriteShrinkGuard:
         with pytest.raises(StoreShrinkRefusedError):
             _save_doc_unlocked(dict(doc), store, tasks=stale_tasks)
 
-    def test_the_exception_names_the_missing_ids(self, tmp_path):
+    def test_the_exception_names_the_missing_ids(self, tmp_path, postgres_dsn):
         # Arrange
         store = _two_card_store()
         doc = load_doc(store, validate=False)
@@ -280,7 +284,7 @@ class TestDocRewriteShrinkGuard:
         # Assert
         assert "b" in message
 
-    def test_a_refused_write_does_not_touch_the_store(self, tmp_path):
+    def test_a_refused_write_does_not_touch_the_store(self, tmp_path, postgres_dsn):
         # Arrange
         store = _two_card_store()
         doc = load_doc(store, validate=False)
@@ -294,7 +298,7 @@ class TestDocRewriteShrinkGuard:
         # Assert
         assert _live_task_count() == before
 
-    def test_allow_shrink_true_bypasses_the_raise(self, tmp_path):
+    def test_allow_shrink_true_bypasses_the_raise(self, tmp_path, postgres_dsn):
         """`allow_shrink=True` suppresses the refusal.
 
         THE STX-TQ001 FINDING HERE WAS LEFT OPEN DELIBERATELY BY A PREVIOUS
@@ -322,7 +326,7 @@ class TestDocRewriteShrinkGuard:
         # Assert
         assert refused is False
 
-    def test_a_doc_naming_the_id_via_deleted_ids_is_not_refused(self, tmp_path):
+    def test_a_doc_naming_the_id_via_deleted_ids_is_not_refused(self, tmp_path, postgres_dsn):
         # Arrange — the ONE legitimate single-card removal path: the write
         # explicitly names what it intentionally removed.
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
@@ -336,7 +340,7 @@ class TestDocRewriteShrinkGuard:
         # and it genuinely removed the row rather than being quietly ignored.
         assert _live_task_count() == 1
 
-    def test_a_fresh_store_growing_from_zero_is_never_refused(self, tmp_path):
+    def test_a_fresh_store_growing_from_zero_is_never_refused(self, tmp_path, postgres_dsn):
         # Arrange — a brand-new store has nothing stored yet, so there is
         # nothing to be "missing"; growth must never trip the guard.
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
@@ -351,7 +355,7 @@ class TestDocRewriteShrinkGuard:
             "c",
         }
 
-    def test_an_ordinary_single_card_write_still_passes(self, tmp_path):
+    def test_an_ordinary_single_card_write_still_passes(self, tmp_path, postgres_dsn):
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
@@ -391,14 +395,14 @@ def _counts_across_a_realistic_write_sequence() -> list[int]:
 class TestCountNeverDecreasesAcrossASequence:
     """The append-only invariant, exercised over a realistic verb sequence."""
 
-    def test_count_is_monotonically_non_decreasing(self, tmp_path):
+    def test_count_is_monotonically_non_decreasing(self, tmp_path, postgres_dsn):
         # Arrange
         # Act
         counts = _counts_across_a_realistic_write_sequence()
         # Assert
         assert all(b >= a for a, b in zip(counts, counts[1:]))
 
-    def test_the_final_count_matches_the_cards_actually_created(self, tmp_path):
+    def test_the_final_count_matches_the_cards_actually_created(self, tmp_path, postgres_dsn):
         # Arrange
         # Act
         counts = _counts_across_a_realistic_write_sequence()

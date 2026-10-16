@@ -166,14 +166,21 @@ def update_task(
     ``status`` is the exception and CANNOT be cleared — every card must
     carry a decision. ``status=""`` raises with the reason and the valid
     set rather than silently dropping the request. See `_store_enums`.
+    An explicit ``status=None`` is refused the same way: ``None`` is the
+    store's delete signal, and a status-less card has no lane on the
+    board, so it would HIDE the card rather than change it.
 
     Raises
     ------
     TaskNotFoundError
         If no task matches ``task_id``.
     TaskValidationError
-        If the resulting mutation is structurally invalid, or if ``status``
-        was passed the ``""`` clear-sentinel (status cannot be cleared).
+        If the resulting mutation is structurally invalid, if ``status``
+        was passed the ``""`` clear-sentinel, if ``status`` was passed
+        explicitly as ``None`` (status cannot be cleared), or if ``status``
+        is outside ``VALID_STATUSES`` — including the abolished
+        ``"pending"`` (abolished 2026-07-10), which carries the abolition
+        hint naming what to pick instead.
     """
     from . import _task
     from ._store import ENV_AGENT, _read_write_doc, _task_not_found, _utc_now_iso
@@ -188,6 +195,18 @@ def update_task(
     for _name, _why in _CONTROL_KWARGS.items():
         if _name in fields:
             raise TypeError(f"update_task() does not accept {_name!r}: {_why}")
+    # An EXPLICIT ``status=None`` must not reach the pop loop: None is the
+    # store's delete signal, and popping status would mint a status-less
+    # row with no lane on the board — the exact state this verb's contract
+    # forbids ("status cannot be cleared"). The board handler 400s the same
+    # payload; the verb refuses it here so direct Python callers get the
+    # same loud answer. BEFORE the lock so a doomed mutation never takes it.
+    if "status" in fields and fields["status"] is None:
+        raise _task.TaskValidationError(
+            "update_task: status cannot be cleared — every card carries a "
+            "decision. Omit 'status' to leave it untouched, or set one of "
+            f"{_task.VALID_STATUSES}."
+        )
     # `""` on a CLOSED-ENUM field is a DELETE INSTRUCTION, consumed HERE —
     # it must never reach the validator as a value (see _store_enums: the
     # documented "pass '' to clear" contract used to be the one way that
@@ -195,6 +214,25 @@ def update_task(
     # bulk batches). `status` is refused loudly instead: it cannot be
     # cleared. Done BEFORE the lock so a doomed mutation never takes it.
     fields = _resolve_enum_clears(fields, source="update_task")
+    # A present-but-foreign ``status`` must not reach the warn-only save
+    # path: the saver only WARNS on bad values (operator ruling 2026-07-10
+    # — a status value must never cost someone their card), so without this
+    # a direct Python/CLI/MCP caller passing ``status="pending"`` would mint
+    # a row in an abolished status the board handler 400s (see
+    # ``crud._check_status``) and no live view serves. Same source-strict
+    # class as the upsert/reopen/restore gates. BEFORE the lock so a doomed
+    # mutation never takes it; ``""``/whitespace sentinels never reach here
+    # (refused above by ``_resolve_enum_clears``) and ``None`` neither
+    # (refused above as a clear attempt).
+    if "status" in fields and fields["status"] not in _task.VALID_STATUSES:
+        _bad_status = fields["status"]
+        _hint = _task.ABOLISHED_STATUSES.get(_bad_status)
+        if _hint is not None:
+            raise _task.TaskValidationError(f"update_task: {_hint}")
+        raise _task.TaskValidationError(
+            f"update_task: invalid status {_bad_status!r}; "
+            f"must be one of {_task.VALID_STATUSES}"
+        )
     refuse_ineffective_store(store, verb="update_task")
     resolved = _resolved_store(store)
     result: dict | None = None

@@ -13,7 +13,8 @@ two distinct per-owner lines:
 * ``stale-active`` (kind="stale-active"): "close/update the in_progress
   / blocked work you said you were doing".
 * ``pending-backlog`` (kind="pending-backlog"): "start or triage the
-  pending cards you accepted but never began".
+  deferred cards you accepted but never began" (``deferred`` is the
+  backlog state since ``pending`` was abolished 2026-07-10).
 
 Both ride the SAME ``*/10`` ``--nudge-quiet`` cron — no new cron is
 added — and both are fail-soft per owner.

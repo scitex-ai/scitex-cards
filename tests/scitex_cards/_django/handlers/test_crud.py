@@ -131,7 +131,10 @@ def test_create_dedupes_id_on_title_collision(store):
 
 def test_create_rejects_missing_title_with_400(store):
     # Arrange
-    body = {"status": "pending", "assignee": "alice"}
+    # ``deferred`` (valid) so the 400 below can only come from the
+    # missing title — a ``pending`` body would pass this test for the
+    # wrong reason (bad status is its own 400, checked after title).
+    body = {"status": "deferred", "assignee": "alice"}
     # Act
     response = _post("create", store, body)
     # Assert

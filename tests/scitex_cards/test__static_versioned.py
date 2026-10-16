@@ -118,7 +118,7 @@ class TestAnExistingQueryStringIsPreserved:
         "/static/scitex_sdk/ui/css/shell/theme.css",
         "/board/static/scitex_cards/chat/chat.js",
     ],
-    ids=["chat", "menu", "ui-css", "sub-path-mount"],
+    ids=["chat", "menu", "sdk-css", "sub-path-mount"],
 )
 def test_every_real_asset_shape_gets_stamped(url):
     # Arrange

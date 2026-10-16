@@ -19,6 +19,12 @@ below exists. The invariant was already written down in prose, and prose lost
 5-to-1 against the habit of adding a verb, so the rule is enforced by
 ENUMERATION instead: a new verb that persists a card without stamping fails
 this file, whether or not its author ever read the prose.
+
+Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
+(bare-param pattern): the 9 verb tests below seed/read the ambient per-test
+store via ``seed_db_from_doc``, which is refused without a writable
+cluster. The 2 AST enumeration tests stay unguarded by design: they never
+open the store.
 """
 
 import ast
@@ -181,7 +187,7 @@ def test_every_card_mutating_verb_stamps_last_activity():
     assert missing == []
 
 
-def test_complete_task_advances_last_activity():
+def test_complete_task_advances_last_activity(postgres_dsn):
     """The originally reported defect: a completion left no mark on the field
     every reconciler orders by."""
     # Arrange
@@ -192,7 +198,7 @@ def test_complete_task_advances_last_activity():
     assert _activity(store, "a") != ANCIENT
 
 
-def test_resolve_task_advances_last_activity():
+def test_resolve_task_advances_last_activity(postgres_dsn):
     # Arrange
     store = _store([_card(blocker="operator-decision")])
     # Act
@@ -201,7 +207,7 @@ def test_resolve_task_advances_last_activity():
     assert _activity(store, "a") != ANCIENT
 
 
-def test_reopen_task_advances_last_activity():
+def test_reopen_task_advances_last_activity(postgres_dsn):
     """An UN-completion is as much an act as a completion; without the stamp a
     reconciler re-applies the done copy and undoes the reopen."""
     # Arrange
@@ -212,7 +218,7 @@ def test_reopen_task_advances_last_activity():
     assert _activity(store, "a") != ANCIENT
 
 
-def test_restore_task_advances_last_activity():
+def test_restore_task_advances_last_activity(postgres_dsn):
     """`delete_task` stamps when it tombstones, so a restore replaying the
     pre-delete snapshot verbatim would be OLDER than the tombstone it
     reverses — an Undo that a reconciler undoes."""
@@ -225,7 +231,7 @@ def test_restore_task_advances_last_activity():
     assert _activity(store, "a") != ANCIENT
 
 
-def test_restore_task_does_not_mutate_the_callers_undo_payload():
+def test_restore_task_does_not_mutate_the_callers_undo_payload(postgres_dsn):
     """The Undo payload must stay replayable, so the stamp goes on the COPY
     that is written, never on the dict the caller still holds."""
     # Arrange
@@ -238,7 +244,7 @@ def test_restore_task_does_not_mutate_the_callers_undo_payload():
     assert removed.get("last_activity") == before
 
 
-def test_delete_task_clears_the_blocker_it_tombstones():
+def test_delete_task_clears_the_blocker_it_tombstones(postgres_dsn):
     """A `cancelled` card that still names an unresolved gate is incoherent, and
     the validator refuses the WHOLE document over it — so deleting any blocked
     card that named its gate failed outright. `complete_task` learned this rule
@@ -257,7 +263,7 @@ def test_delete_task_clears_the_blocker_it_tombstones():
     assert "blocker" not in next(t for t in load_tasks(store) if t["id"] == "a")
 
 
-def test_set_edge_advances_last_activity_on_the_source():
+def test_set_edge_advances_last_activity_on_the_source(postgres_dsn):
     # Arrange
     store = _store([_card(), _card(id="b", title="B")])
     # Act
@@ -266,7 +272,7 @@ def test_set_edge_advances_last_activity_on_the_source():
     assert _activity(store, "a") != ANCIENT
 
 
-def test_set_edge_advances_last_activity_on_the_awaited_card():
+def test_set_edge_advances_last_activity_on_the_awaited_card(postgres_dsn):
     """Adding the edge subscribes the waiter's owner to the awaited card, so
     the awaited card changed too — and it is the one whose completion fires
     the notification."""
@@ -278,7 +284,7 @@ def test_set_edge_advances_last_activity_on_the_awaited_card():
     assert _activity(store, "b") != ANCIENT
 
 
-def test_set_edge_leaves_last_activity_alone_on_a_no_op_re_add():
+def test_set_edge_leaves_last_activity_alone_on_a_no_op_re_add(postgres_dsn):
     """PRECISION GUARD, the mirror-image failure: stamping a card that did not
     change ages it for nothing, which is the same lie pointing the other way."""
     # Arrange

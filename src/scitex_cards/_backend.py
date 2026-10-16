@@ -44,9 +44,10 @@ from __future__ import annotations
 import os
 from typing import Any, Mapping
 
-from . import _help_wait, _inbox, _store, _threads
+from . import _help_wait, _inbox, _store
 from ._currency import warn_if_stale_once
 from ._dm import read as _dm_read
+from ._dm import threads as _threads
 from ._inbox_confirm import confirm_notifications, warn_ack_on_read
 
 _HUB_URL_ENV = "SCITEX_CARDS_HUB_URL"
@@ -327,7 +328,7 @@ class LocalBackend:
         # new immutable attempt. Reusing the failed xch would ask the consumer
         # to rewrite history; rotating here keeps the durable delivery id while
         # every poller observes the same successor exchange.
-        from ._dm_exchange import rotate_failed_notification_exchange
+        from ._dm.exchange import rotate_failed_notification_exchange
         from ._inbox_receipt import (
             outstanding_records_off_page,
             receipts,
@@ -472,7 +473,7 @@ class LocalBackend:
         # from the incident. Non-raising and warn-once by contract, so the DM
         # still goes out even when the currency check itself is unhappy.
         self._warn_currency()
-        from ._dm_exchange import new_client_request_id, persist_dm
+        from ._dm.exchange import new_client_request_id, persist_dm
 
         return persist_dm(
             sender,

@@ -218,9 +218,10 @@ def test_a_schema_version_upgrade_is_allowed(fresh_store):
 
 @requires_postgres
 def test_updating_a_task_bumps_its_revision(fresh_store):
-    # Arrange
+    # Arrange — `deferred`: `pending` was abolished 2026-07-10 and the
+    # revision probe never touches the status.
     fresh_store.execute(
-        "INSERT INTO tasks(id, title, status, revision) VALUES('t', 'x', 'pending', 1)"
+        "INSERT INTO tasks(id, title, status, revision) VALUES('t', 'x', 'deferred', 1)"
     )
 
     # Act
