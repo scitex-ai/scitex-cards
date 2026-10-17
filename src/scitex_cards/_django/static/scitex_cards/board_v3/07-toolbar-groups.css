@@ -113,11 +113,13 @@
 }
 
 /* Override the earlier layout sheet only inside this toolbar. Status
- * tokens and layout selection/callbacks keep their existing meaning. */
+ * tokens and layout selection/callbacks keep their existing meaning.
+ * Underline-tab restyle (CCT 3881): no fills here either. */
 .stx-cards-filterbar__group--view .filt-layout-btn--on,
 .stx-cards-filterbar__group--view .filt-layout-btn--on:hover {
-  background: var(--stx-brand, var(--text));
-  color: var(--stx-on-brand, var(--text-inverse, var(--bg)));
+  background: transparent;
+  color: var(--text);
+  border-bottom-color: var(--stx-brand, var(--text));
 }
 .stx-cards-filterbar__group--view .filt-layout-btn:focus-visible {
   outline: 2px solid var(--stx-brand, var(--text));

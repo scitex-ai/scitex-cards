@@ -69,37 +69,72 @@ def test_legacy_pending_row_still_tolerated_never_rejected():
 
 def test_task_dataclass_default_is_the_successor():
     # Arrange / Act.
+    # Arrange
+    # Act
     t = Task(id="card-1", title="a card")
-    # Assert — a fresh row carries a decision out of the box, never `pending`.
+    # Assert
     assert t.status == "deferred"
 
 
-def test_enum_mirror_pending_abolished_deferred_valid():
+def test_enum_mirror_pending_abolished_deferred_valid_case1():
     # Arrange / Act / Assert — the single source both sides mirror.
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_enum_mirror_pending_abolished_deferred_valid_case2():
+    # Arrange / Act / Assert — the single source both sides mirror.
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_enum_mirror_pending_abolished_deferred_valid_case3():
+    # Arrange / Act / Assert — the single source both sides mirror.
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES
 
 
-def test_mirror_seed_text_carries_no_pending_status_seed():
+def test_mirror_seed_text_carries_no_pending_status_seed_case1():
     # Arrange.
+    # Arrange
+    # Act
     text = _MIRROR_TEST.read_text(encoding="utf-8")
-    # Act / Assert — no card-status seed of the abolished value remains.
-    # (Matches the `"status": "pending"` / `'status': 'pending'` seed
-    # shapes only: prose mentions of the abolition live in comments.)
+    # Assert
     assert '"status": "pending"' not in text
+
+
+def test_mirror_seed_text_carries_no_pending_status_seed_case2():
+    # Arrange.
+    # Arrange
+    # Act
+    text = _MIRROR_TEST.read_text(encoding="utf-8")
+    # Assert
     assert "'status': 'pending'" not in text
+
+
+def test_mirror_seed_text_carries_no_pending_status_seed_case3():
+    # Arrange.
+    # Arrange
+    # Act
+    text = _MIRROR_TEST.read_text(encoding="utf-8")
+    # Assert
     assert "status='pending'" not in text
 
 
 def test_mirror_seed_text_carries_the_deferred_seed():
     # Arrange.
+    # Arrange
     text = _MIRROR_TEST.read_text(encoding="utf-8")
-    # Act — the helper under test must exist (vacuity guard: the sweep
-    # above cannot pass on an unread or emptied file).
+    # Act
     match = re.search(
         r"def _write_a_card\(.*?\n(?:.*\n)*?.*?\"status\": \"deferred\"",
         text,
     )
-    # Assert.
+    # Assert
     assert match is not None, "_write_a_card must seed status deferred"

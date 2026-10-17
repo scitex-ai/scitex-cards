@@ -33,10 +33,16 @@ _PR = "https://github.com/o/r/pull/1"
 
 
 def test_open_statuses_is_in_progress_only():
+    # Arrange
+    # Act
+    # Assert
     assert OPEN_STATUSES == frozenset({"in_progress"})
 
 
 def test_merged_pr_closes_only_in_progress():
+    # Arrange
+    # Act
+    # Assert
     assert (
         decide_reconcile_action({"status": "in_progress", "pr_url": _PR}, MERGED)
         == ACTION_CLOSE
@@ -44,30 +50,78 @@ def test_merged_pr_closes_only_in_progress():
 
 
 def test_merged_pr_skips_excluded_and_abolished_statuses():
-    for status in ("blocked", "deferred", "pending", "cancelled", "failed", "goal"):
-        assert (
-            decide_reconcile_action({"status": status, "pr_url": _PR}, MERGED)
-            == ACTION_SKIP_NOT_OPEN
-        )
+    # Arrange
+    statuses = ("blocked", "deferred", "pending", "cancelled", "failed", "goal")
+    # Act
+    acted = [
+        status
+        for status in statuses
+        if decide_reconcile_action({"status": status, "pr_url": _PR}, MERGED)
+        != ACTION_SKIP_NOT_OPEN
+    ]
+    # Assert
+    assert not acted, acted
 
 
-def test_module_docstring_names_in_progress_scan_set():
+def test_module_docstring_names_in_progress_scan_set_case1():
+    # Arrange
+    # Act
     doc = reconcile_mod.__doc__ or ""
+    # Assert
     assert "``in_progress``" in doc
+
+
+def test_module_docstring_names_in_progress_scan_set_case2():
+    # Arrange
+    # Act
+    doc = reconcile_mod.__doc__ or ""
+    # Assert
     assert "(and some ``pending``)" not in doc
+
+
+def test_module_docstring_names_in_progress_scan_set_case3():
+    # Arrange
+    # Act
+    doc = reconcile_mod.__doc__ or ""
+    # Assert
     assert "``in_progress`` / ``blocked``" not in doc
 
 
-def test_cli_and_jobspec_prose_name_in_progress_scan_set():
+def test_cli_and_jobspec_prose_name_in_progress_scan_set_case1():
+    # Arrange
+    # Act
     cli_doc = reconcile_cli_mod.__doc__ or ""
-    assert "pending / in_progress / blocked" not in cli_doc
-    assert "``in_progress`` cards" in cli_doc
+    # Assert
     help_text = getattr(reconcile_cli_mod.reconcile_merged_prs_cmd, "help", "") or ""
+    assert "pending / in_progress / blocked" not in cli_doc
+
+
+def test_cli_and_jobspec_prose_name_in_progress_scan_set_case2():
+    # Arrange
+    # Act
+    cli_doc = reconcile_cli_mod.__doc__ or ""
+    # Assert
+    help_text = getattr(reconcile_cli_mod.reconcile_merged_prs_cmd, "help", "") or ""
+    assert "``in_progress`` cards" in cli_doc
+
+
+def test_cli_and_jobspec_prose_name_in_progress_scan_set_case3():
+    # Arrange
+    # Act
+    help_text = getattr(reconcile_cli_mod.reconcile_merged_prs_cmd, "help", "") or ""
+    # Assert
     assert "pending / in_progress / blocked" not in help_text
+
+
+def test_cli_and_jobspec_prose_name_in_progress_scan_set_case4():
+    # Arrange
+    # Act
+    help_text = getattr(reconcile_cli_mod.reconcile_merged_prs_cmd, "help", "") or ""
+    # Assert
     assert "in_progress cards" in help_text
 
 
-def test_unknown_fixture_seeds_a_live_open_status():
+def test_unknown_fixture_seeds_a_live_open_status_case1():
     """The shared ``_store`` fixture must not seed the abolished status.
 
     ``test_unknown_merge_state_never_closes`` pins the UNKNOWN fail-soft
@@ -75,15 +129,47 @@ def test_unknown_fixture_seeds_a_live_open_status():
     in_progress-only). A ``status: pending`` seed passes that test via
     SKIP_NOT_OPEN for the wrong reason, masking the path it claims to pin.
     """
+    # Arrange
     from pathlib import Path
-
+    # Act
     source = Path(__file__).with_name("test__reconcile_prs.py").read_text()
+    # Assert
     assert "unknown-pr-card" in source  # non-vacuity: the fixture is here
+
+
+def test_unknown_fixture_seeds_a_live_open_status_case2():
+    """The shared ``_store`` fixture must not seed the abolished status.
+
+    ``test_unknown_merge_state_never_closes`` pins the UNKNOWN fail-soft
+    path, which only an OPEN card can exercise (OPEN_STATUSES is
+    in_progress-only). A ``status: pending`` seed passes that test via
+    SKIP_NOT_OPEN for the wrong reason, masking the path it claims to pin.
+    """
+    # Arrange
+    from pathlib import Path
+    # Act
+    source = Path(__file__).with_name("test__reconcile_prs.py").read_text()
+    # Assert
     assert "status: pending" not in source
+
+
+def test_unknown_fixture_seeds_a_live_open_status_case3():
+    """The shared ``_store`` fixture must not seed the abolished status.
+
+    ``test_unknown_merge_state_never_closes`` pins the UNKNOWN fail-soft
+    path, which only an OPEN card can exercise (OPEN_STATUSES is
+    in_progress-only). A ``status: pending`` seed passes that test via
+    SKIP_NOT_OPEN for the wrong reason, masking the path it claims to pin.
+    """
+    # Arrange
+    from pathlib import Path
+    # Act
+    source = Path(__file__).with_name("test__reconcile_prs.py").read_text()
+    # Assert
     assert "status: in_progress" in source
 
 
-def test_pending_seed_would_mask_the_fail_soft_path():
+def test_pending_seed_would_mask_the_fail_soft_path_case1():
     """Guard the masking mechanism itself: pending + UNKNOWN short-circuits.
 
     The decision core checks openness BEFORE merge-state, so a legacy
@@ -91,17 +177,33 @@ def test_pending_seed_would_mask_the_fail_soft_path():
     SKIP_UNKNOWN. This is why the fixture must stay ``in_progress`` — the
     two are not interchangeable seeds.
     """
+    # Arrange
+    # Act
+    # Assert
     assert (
         decide_reconcile_action({"status": "pending", "pr_url": _PR}, UNKNOWN)
         == ACTION_SKIP_NOT_OPEN
     )
+
+
+def test_pending_seed_would_mask_the_fail_soft_path_case2():
+    """Guard the masking mechanism itself: pending + UNKNOWN short-circuits.
+
+    The decision core checks openness BEFORE merge-state, so a legacy
+    ``pending`` row with an unknowable PR returns SKIP_NOT_OPEN, never
+    SKIP_UNKNOWN. This is why the fixture must stay ``in_progress`` — the
+    two are not interchangeable seeds.
+    """
+    # Arrange
+    # Act
+    # Assert
     assert (
         decide_reconcile_action({"status": "in_progress", "pr_url": _PR}, UNKNOWN)
         == ACTION_SKIP_UNKNOWN
     )
 
 
-def test_jobspec_prose_names_in_progress_scan_set():
+def test_jobspec_prose_names_in_progress_scan_set_case1():
     """The ``_jobs_provider`` JobSpec comment is the third prose surface.
 
     The module docstring up top promises this surface is pinned ("the
@@ -113,12 +215,73 @@ def test_jobspec_prose_names_in_progress_scan_set():
     PostgreSQL); the non-vacuity anchor is the ``reconcile-merged-prs``
     marker the block has carried since before the repoint.
     """
+    # Arrange
     import inspect
-
     import scitex_cards._jobs_provider as jobs_provider_mod
-
+    # Act
     src = inspect.getsource(jobs_provider_mod.provide_jobs)
+    # Assert
     assert "reconcile-merged-prs" in src  # non-vacuity: the cron block is here
+
+
+def test_jobspec_prose_names_in_progress_scan_set_case2():
+    """The ``_jobs_provider`` JobSpec comment is the third prose surface.
+
+    The module docstring up top promises this surface is pinned ("the
+    ``reconcile-merged-prs`` CLI help, and the ``_jobs_provider`` JobSpec
+    comment"), but the CLI-only test above never reads it — so a future
+    edit could reintroduce the dead ``pending / in_progress / blocked``
+    scan set in the cron spec while every pin stays green. ``inspect``
+    keeps this PG-free (no JobSpec instantiation, no store, no
+    PostgreSQL); the non-vacuity anchor is the ``reconcile-merged-prs``
+    marker the block has carried since before the repoint.
+    """
+    # Arrange
+    import inspect
+    import scitex_cards._jobs_provider as jobs_provider_mod
+    # Act
+    src = inspect.getsource(jobs_provider_mod.provide_jobs)
+    # Assert
     assert "pending / in_progress /" not in src
+
+
+def test_jobspec_prose_names_in_progress_scan_set_case3():
+    """The ``_jobs_provider`` JobSpec comment is the third prose surface.
+
+    The module docstring up top promises this surface is pinned ("the
+    ``reconcile-merged-prs`` CLI help, and the ``_jobs_provider`` JobSpec
+    comment"), but the CLI-only test above never reads it — so a future
+    edit could reintroduce the dead ``pending / in_progress / blocked``
+    scan set in the cron spec while every pin stays green. ``inspect``
+    keeps this PG-free (no JobSpec instantiation, no store, no
+    PostgreSQL); the non-vacuity anchor is the ``reconcile-merged-prs``
+    marker the block has carried since before the repoint.
+    """
+    # Arrange
+    import inspect
+    import scitex_cards._jobs_provider as jobs_provider_mod
+    # Act
+    src = inspect.getsource(jobs_provider_mod.provide_jobs)
+    # Assert
     assert "OPEN_STATUSES" in src
+
+
+def test_jobspec_prose_names_in_progress_scan_set_case4():
+    """The ``_jobs_provider`` JobSpec comment is the third prose surface.
+
+    The module docstring up top promises this surface is pinned ("the
+    ``reconcile-merged-prs`` CLI help, and the ``_jobs_provider`` JobSpec
+    comment"), but the CLI-only test above never reads it — so a future
+    edit could reintroduce the dead ``pending / in_progress / blocked``
+    scan set in the cron spec while every pin stays green. ``inspect``
+    keeps this PG-free (no JobSpec instantiation, no store, no
+    PostgreSQL); the non-vacuity anchor is the ``reconcile-merged-prs``
+    marker the block has carried since before the repoint.
+    """
+    # Arrange
+    import inspect
+    import scitex_cards._jobs_provider as jobs_provider_mod
+    # Act
+    src = inspect.getsource(jobs_provider_mod.provide_jobs)
+    # Assert
     assert "in_progress" in src

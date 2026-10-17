@@ -45,13 +45,30 @@ def test_no_fixture_seeds_the_abolished_status():
     assert seeds == []
 
 
-def test_the_successor_default_seed_is_present():
+def test_the_successor_default_seed_is_present_case1():
     # Arrange
+    # Arrange
+    # Act
     source = _SUBJECT.read_text()
-    # Act + Assert — non-vacuity: the apply fixtures still seed a
-    # status, and the file under test is the migrate-apply suite.
+    # Assert
     assert "status: pending" not in source
+
+
+def test_the_successor_default_seed_is_present_case2():
+    # Arrange
+    # Arrange
+    # Act
+    source = _SUBJECT.read_text()
+    # Assert
     assert "status: deferred" in source
+
+
+def test_the_successor_default_seed_is_present_case3():
+    # Arrange
+    # Arrange
+    # Act
+    source = _SUBJECT.read_text()
+    # Assert
     assert "apply_lane" in source
 
 
@@ -74,19 +91,50 @@ def test_deferred_fixture_loads_silently():
     assert [str(x.message) for x in caught] == []
 
 
-def test_apply_path_is_status_blind():
+def test_apply_path_is_status_blind_case1():
     # Arrange — the migration decision + README/strip path must derive
     # from id / note / title / comments / dir probe, never from status.
+    # Arrange
+    # Act
+    apply_source = inspect.getsource(apply_lane)
+    # Assert
+    classify_source = inspect.getsource(classify_row)
+    assert "status" not in apply_source
+
+
+def test_apply_path_is_status_blind_case2():
+    # Arrange — the migration decision + README/strip path must derive
+    # from id / note / title / comments / dir probe, never from status.
+    # Arrange
+    # Act
     apply_source = inspect.getsource(apply_lane)
     classify_source = inspect.getsource(classify_row)
-    # Act + Assert — no "status" read anywhere in either function body.
-    assert "status" not in apply_source
+    # Assert
     assert "status" not in classify_source
 
 
-def test_status_enum_mirror_holds():
+def test_status_enum_mirror_holds_case1():
     # Arrange + Act + Assert — the abolition itself, so a future
     # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_status_enum_mirror_holds_case2():
+    # Arrange + Act + Assert — the abolition itself, so a future
+    # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_status_enum_mirror_holds_case3():
+    # Arrange + Act + Assert — the abolition itself, so a future
+    # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES

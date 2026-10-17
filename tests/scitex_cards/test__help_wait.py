@@ -420,17 +420,39 @@ class TestHelpWaitRewaitClearsCompletionStamp:
         # Assert
         assert reopened["status"] == "blocked"
 
-    def test_rewait_drops_the_completion_stamp(self, tmp_path, postgres_dsn):
+    def test_rewait_drops_the_completion_stamp_case1(self, tmp_path, postgres_dsn):
+        # Arrange
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         card = _help_wait.help_wait(store, "alice", question="merge or wait?")
-        stamped = _store.complete_task(store, card["id"])
-        assert stamped["_log_meta"]["completed_at"]
         # Act
+        stamped = _store.complete_task(store, card["id"])
+        # Assert
         reopened = _help_wait.help_wait(store, "alice", question="still waiting?")
-        # Assert: no phantom-delivery row — the aggregates believe
-        # `completed_at` alone, so it must be gone from a live row.
+        assert stamped["_log_meta"]["completed_at"]
+
+
+    def test_rewait_drops_the_completion_stamp_case2(self, tmp_path, postgres_dsn):
+        # Arrange
+        # Arrange
+        store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+        # Act
+        card = _help_wait.help_wait(store, "alice", question="merge or wait?")
+        stamped = _store.complete_task(store, card["id"])
+        reopened = _help_wait.help_wait(store, "alice", question="still waiting?")
+        # Assert
         assert "completed_at" not in reopened.get("_log_meta", {})
+
+
+    def test_rewait_drops_the_completion_stamp_case3(self, tmp_path, postgres_dsn):
+        # Arrange
+        # Arrange
+        store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+        # Act
+        card = _help_wait.help_wait(store, "alice", question="merge or wait?")
+        stamped = _store.complete_task(store, card["id"])
+        reopened = _help_wait.help_wait(store, "alice", question="still waiting?")
+        # Assert
         assert "completed_by" not in reopened.get("_log_meta", {})
 
 

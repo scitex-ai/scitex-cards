@@ -31,31 +31,85 @@ def _card(cid: str) -> StaleCard:
     )
 
 
-def test_nudge_doc_names_deferred_backlog():
+def test_nudge_doc_names_deferred_backlog_case1():
+    # Arrange
+    # Act
     doc = nudge_mod.__doc__ or ""
+    # Assert
     assert "deferred cards you accepted but never began" in doc
+
+
+def test_nudge_doc_names_deferred_backlog_case2():
+    # Arrange
+    # Act
+    doc = nudge_mod.__doc__ or ""
+    # Assert
     assert "pending cards you accepted but never began" not in doc
 
 
-def test_nudge_line_renders_deferred():
+def test_nudge_line_renders_deferred_case1():
+    # Arrange
+    # Act
     line = pending_backlog_nudge_line("a", [_card("d1")], pending_hours=24.0)
+    # Assert
     assert "deferred card(s)" in line
+
+
+def test_nudge_line_renders_deferred_case2():
+    # Arrange
+    # Act
+    line = pending_backlog_nudge_line("a", [_card("d1")], pending_hours=24.0)
+    # Assert
     assert "pending card" not in line
+
+
+def test_nudge_line_renders_deferred_case3():
+    # Arrange
+    # Act
+    line = pending_backlog_nudge_line("a", [_card("d1")], pending_hours=24.0)
+    # Assert
     assert "d1" in line
 
 
 def test_doc_and_line_agree_on_deferred():
+    # Arrange
     doc = nudge_mod.__doc__ or ""
+    # Act
     line = pending_backlog_nudge_line("a", [_card("d1")], pending_hours=24.0)
+    # Assert
     assert "deferred" in doc and "deferred" in line
 
 
-def test_pending_stays_abolished():
+def test_pending_stays_abolished_case1():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_pending_stays_abolished_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_pending_stays_abolished_case3():
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES
 
 
-def test_pins_are_nonvacuous():
+def test_pins_are_nonvacuous_case1():
+    # Arrange
+    # Act
+    # Assert
     assert (nudge_mod.__doc__ or "").strip() != ""
+
+
+def test_pins_are_nonvacuous_case2():
+    # Arrange
+    # Act
+    # Assert
     assert callable(pending_backlog_nudge_line)

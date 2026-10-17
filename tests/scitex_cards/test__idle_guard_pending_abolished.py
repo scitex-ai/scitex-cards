@@ -38,36 +38,76 @@ def _t(*, id, status, hours_ago, owner="alice"):
     }
 
 
-def test_doc_names_deferred_backlog():
+def test_doc_names_deferred_backlog_case1():
+    # Arrange
+    # Act
     doc = guard_mod.__doc__ or ""
+    # Assert
     assert "Deferred backlog is surfaced" in doc
+
+
+def test_doc_names_deferred_backlog_case2():
+    # Arrange
+    # Act
+    doc = guard_mod.__doc__ or ""
+    # Assert
     assert "PENDING backlog is surfaced" not in doc
 
 
 def test_deferred_backlog_excluded_from_abandonment_set():
+    # Arrange
     tasks = [
         _t(id="hot", status="in_progress", hours_ago=10),
         _t(id="backlog", status="deferred", hours_ago=99),
     ]
+    # Act
     cards = _idle_guard.stale_in_progress("alice", tasks, now=_NOW, stale_hours=2.0)
+    # Assert
     assert [c.id for c in cards] == ["hot"]
 
 
 def test_legacy_pending_row_also_excluded():
+    # Arrange
     tasks = [
         _t(id="hot", status="in_progress", hours_ago=10),
         _t(id="leg", status="pending", hours_ago=99),
     ]
+    # Act
     cards = _idle_guard.stale_in_progress("alice", tasks, now=_NOW, stale_hours=2.0)
+    # Assert
     assert [c.id for c in cards] == ["hot"]
 
 
-def test_pending_stays_abolished():
+def test_pending_stays_abolished_case1():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_pending_stays_abolished_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_pending_stays_abolished_case3():
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES
 
 
-def test_pins_are_nonvacuous():
+def test_pins_are_nonvacuous_case1():
+    # Arrange
+    # Act
+    # Assert
     assert (guard_mod.__doc__ or "").strip() != ""
+
+
+def test_pins_are_nonvacuous_case2():
+    # Arrange
+    # Act
+    # Assert
     assert callable(_idle_guard.stale_in_progress)

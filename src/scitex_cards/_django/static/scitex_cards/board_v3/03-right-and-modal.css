@@ -2,7 +2,7 @@
  *
  * Extracted from src/scitex_cards/_django/templates/scitex_cards/board_v3.html
  * Owns: .right / .block-you (BLOCKING YOU panel), .detail* (card-click
- *       drawer/modal), .foot, pulse-red/pulse-green keyframes, .toast.
+ *       drawer/modal), .foot, .toast.
  * Sibling file 03b-card-actions.css carries the per-card / project-hide
  * widgets that share the drawer/modal context but blew past 512 lines
  * when bundled here.
@@ -210,17 +210,9 @@
   background: var(--amber, #ffa726);
   border-color: var(--amber, #ffa726);
   color: #000;
+  /* Calm: static warning glow — the armed meaning does not change between
+   * frames, so the infinite pulse bought attention at a perpetual cost. */
   box-shadow: 0 0 14px 3px rgba(255, 167, 38, 0.7);
-  animation: pulse-amber 1.1s ease-in-out infinite;
-}
-@keyframes pulse-amber {
-  0%,
-  100% {
-    box-shadow: 0 0 10px 2px rgba(255, 167, 38, 0.6);
-  }
-  50% {
-    box-shadow: 0 0 18px 5px rgba(255, 167, 38, 0.9);
-  }
 }
 /* Dedicated "Cancel" button shown only while Resolve is armed (lead
    a2a a7e53184: "ideally a 'cancel' button next to Resolve in the drawer").
@@ -254,26 +246,9 @@
 .foot code {
   color: var(--text);
 }
-@keyframes pulse-red {
-  0%,
-  100% {
-    background: var(--red);
-    box-shadow: 0 0 6px 1px rgba(244, 67, 54, 0.6);
-  }
-  50% {
-    background: #ff7043;
-    box-shadow: 0 0 12px 4px rgba(244, 67, 54, 0.8);
-  }
-}
-@keyframes pulse-green {
-  0%,
-  100% {
-    box-shadow: 0 0 4px 1px rgba(76, 175, 80, 0.6);
-  }
-  50% {
-    box-shadow: 0 0 8px 3px rgba(76, 175, 80, 0.8);
-  }
-}
+/* (Calm slice: the infinite pulse-red / pulse-green keyframes lived here;
+ * their last users — .card--blocked, .date-pill--overdue — are static now,
+ * and pulse-green never had one. Removed rather than left to bit-rot.) */
 
 /* Toast (resolve confirmation) */
 .toast {

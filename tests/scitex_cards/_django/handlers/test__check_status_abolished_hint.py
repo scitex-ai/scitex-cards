@@ -42,39 +42,124 @@ def _error(resp) -> str:
     return json.loads(resp.content.decode("utf-8"))["error"]
 
 
-def test_abolished_pending_names_the_abolition_and_the_disposition():
+def test_abolished_pending_names_the_abolition_and_the_disposition_case1():
     # Arrange — the abolished value through the shared gate.
     # Act
+    # Arrange
+    # Act
     resp = crud._check_status({"status": "pending"})
-    # Assert — 400 carrying the disposition hint, not the generic text.
-    assert resp is not None
-    assert resp.status_code == 400
+    # Assert
     text = _error(resp)
+    assert resp is not None
+
+
+def test_abolished_pending_names_the_abolition_and_the_disposition_case2():
+    # Arrange — the abolished value through the shared gate.
+    # Act
+    # Arrange
+    # Act
+    resp = crud._check_status({"status": "pending"})
+    # Assert
+    text = _error(resp)
+    assert resp.status_code == 400
+
+
+def test_abolished_pending_names_the_abolition_and_the_disposition_case3():
+    # Arrange — the abolished value through the shared gate.
+    # Act
+    # Arrange
+    resp = crud._check_status({"status": "pending"})
+    # Act
+    text = _error(resp)
+    # Assert
     assert "abolished" in text
+
+
+def test_abolished_pending_names_the_abolition_and_the_disposition_case4():
+    # Arrange — the abolished value through the shared gate.
+    # Act
+    # Arrange
+    resp = crud._check_status({"status": "pending"})
+    # Act
+    text = _error(resp)
+    # Assert
     assert "must carry a decision" in text
+
+
+def test_abolished_pending_names_the_abolition_and_the_disposition_case5():
+    # Arrange — the abolished value through the shared gate.
+    # Act
+    # Arrange
+    resp = crud._check_status({"status": "pending"})
+    # Act
+    text = _error(resp)
+    # Assert
     assert "in_progress" in text and "deferred" in text
 
 
-def test_unknown_status_keeps_the_generic_message():
+def test_unknown_status_keeps_the_generic_message_case1():
     # Arrange — a value no build knows (not abolished, just unknown).
     # Act
+    # Arrange
+    # Act
     resp = crud._check_status({"status": "archived"})
-    # Assert — still a 400, still the generic enum text, no abolition words.
-    assert resp is not None
-    assert resp.status_code == 400
+    # Assert
     text = _error(resp)
+    assert resp is not None
+
+
+def test_unknown_status_keeps_the_generic_message_case2():
+    # Arrange — a value no build knows (not abolished, just unknown).
+    # Act
+    # Arrange
+    # Act
+    resp = crud._check_status({"status": "archived"})
+    # Assert
+    text = _error(resp)
+    assert resp.status_code == 400
+
+
+def test_unknown_status_keeps_the_generic_message_case3():
+    # Arrange — a value no build knows (not abolished, just unknown).
+    # Act
+    # Arrange
+    resp = crud._check_status({"status": "archived"})
+    # Act
+    text = _error(resp)
+    # Assert
     assert "invalid status 'archived'" in text
+
+
+def test_unknown_status_keeps_the_generic_message_case4():
+    # Arrange — a value no build knows (not abolished, just unknown).
+    # Act
+    # Arrange
+    resp = crud._check_status({"status": "archived"})
+    # Act
+    text = _error(resp)
+    # Assert
     assert "abolished" not in text
 
 
-def test_live_and_absent_statuses_pass_the_gate():
+def test_live_and_absent_statuses_pass_the_gate_case1():
     # Arrange / Act / Assert — the gate stays silent on good input.
+    # Arrange
+    # Act
+    # Assert
     assert crud._check_status({"status": "deferred"}) is None
+
+
+def test_live_and_absent_statuses_pass_the_gate_case2():
+    # Arrange / Act / Assert — the gate stays silent on good input.
+    # Arrange
+    # Act
+    # Assert
     assert crud._check_status({}) is None
 
 
-def test_create_surfaces_the_hint_before_the_store():
+def test_create_surfaces_the_hint_before_the_store_case1():
     # Arrange — a create carrying the abolished status, bogus store path.
+    # Arrange
     request = RequestFactory().post(
         "/create?store=/nonexistent/store-identity",
         data=json.dumps(
@@ -85,13 +170,29 @@ def test_create_surfaces_the_hint_before_the_store():
     board = SimpleNamespace(tasks=[], store_path="/nonexistent/store-identity")
     # Act
     resp = crud.handle_create(request, board)
-    # Assert — 400 with the hint; any response short of the store layer
-    # proves the decision was made without touching the store.
+    # Assert
     assert resp.status_code == 400
+
+
+def test_create_surfaces_the_hint_before_the_store_case2():
+    # Arrange — a create carrying the abolished status, bogus store path.
+    # Arrange
+    request = RequestFactory().post(
+        "/create?store=/nonexistent/store-identity",
+        data=json.dumps(
+            {"title": "Hint card", "assignee": "scitex-cards", "status": "pending"}
+        ),
+        content_type="application/json",
+    )
+    board = SimpleNamespace(tasks=[], store_path="/nonexistent/store-identity")
+    # Act
+    resp = crud.handle_create(request, board)
+    # Assert
     assert "abolished" in _error(resp)
 
 
-def test_update_surfaces_the_hint_before_the_store():
+def test_update_surfaces_the_hint_before_the_store_case1():
+    # Arrange
     # Arrange
     request = RequestFactory().post(
         "/update?store=/nonexistent/store-identity",
@@ -105,10 +206,27 @@ def test_update_surfaces_the_hint_before_the_store():
     resp = crud.handle_update(request, board)
     # Assert
     assert resp.status_code == 400
+
+
+def test_update_surfaces_the_hint_before_the_store_case2():
+    # Arrange
+    # Arrange
+    request = RequestFactory().post(
+        "/update?store=/nonexistent/store-identity",
+        data=json.dumps({"id": "whatever", "status": "pending"}),
+        content_type="application/json",
+    )
+    board = SimpleNamespace(
+        tasks=[{"id": "whatever"}], store_path="/nonexistent/store-identity"
+    )
+    # Act
+    resp = crud.handle_update(request, board)
+    # Assert
     assert "abolished" in _error(resp)
 
 
-def test_reopen_surfaces_the_hint_before_the_store():
+def test_reopen_surfaces_the_hint_before_the_store_case1():
+    # Arrange
     # Arrange
     request = RequestFactory().post(
         "/reopen?store=/nonexistent/store-identity",
@@ -120,10 +238,25 @@ def test_reopen_surfaces_the_hint_before_the_store():
     resp = reopen.handle_reopen(request, board)
     # Assert
     assert resp.status_code == 400
+
+
+def test_reopen_surfaces_the_hint_before_the_store_case2():
+    # Arrange
+    # Arrange
+    request = RequestFactory().post(
+        "/reopen?store=/nonexistent/store-identity",
+        data=json.dumps({"id": "whatever", "prior_status": "pending"}),
+        content_type="application/json",
+    )
+    board = SimpleNamespace(store_path="/nonexistent/store-identity")
+    # Act
+    resp = reopen.handle_reopen(request, board)
+    # Assert
     assert "abolished" in _error(resp)
 
 
-def test_restore_surfaces_the_hint_before_the_store():
+def test_restore_surfaces_the_hint_before_the_store_case1():
+    # Arrange
     # Arrange
     request = RequestFactory().post(
         "/restore?store=/nonexistent/store-identity",
@@ -137,15 +270,40 @@ def test_restore_surfaces_the_hint_before_the_store():
     resp = undo.handle_restore(request, board)
     # Assert
     assert resp.status_code == 400
+
+
+def test_restore_surfaces_the_hint_before_the_store_case2():
+    # Arrange
+    # Arrange
+    request = RequestFactory().post(
+        "/restore?store=/nonexistent/store-identity",
+        data=json.dumps(
+            {"task": {"id": "was-deleted", "title": "Deleted", "status": "pending"}}
+        ),
+        content_type="application/json",
+    )
+    board = SimpleNamespace(store_path="/nonexistent/store-identity")
+    # Act
+    resp = undo.handle_restore(request, board)
+    # Assert
     assert "abolished" in _error(resp)
 
 
-def test_gate_consults_the_abolished_map_before_the_generic_text():
+def test_gate_consults_the_abolished_map_before_the_generic_text_case1():
     # Arrange
+    # Arrange
+    # Act
     src = inspect.getsource(crud._check_status)
-    # Act / Assert — the abolished branch must precede the generic message
-    # so a later edit cannot silently revert to generic-only.
+    # Assert
     assert "ABOLISHED_STATUSES" in src
+
+
+def test_gate_consults_the_abolished_map_before_the_generic_text_case2():
+    # Arrange
+    # Arrange
+    # Act
+    src = inspect.getsource(crud._check_status)
+    # Assert
     assert src.index("ABOLISHED_STATUSES") < src.index("choose one of")
 
 

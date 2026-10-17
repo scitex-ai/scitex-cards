@@ -58,27 +58,55 @@ def _add_help() -> str:
 
 
 def test_kind_row_names_every_valid_kind():
+    # Arrange
+    # Act
     row = _kind_row(_doc_43())
-    for kind in VALID_KINDS:
-        assert f"`{kind}`" in row, f"{kind!r} missing from doc 43 kind row"
+    missing = [kind for kind in VALID_KINDS if f"`{kind}`" not in row]
+    # Assert
+    assert not missing, missing
 
 
 def test_kind_row_names_no_extra_kind():
+    # Arrange
     row = _kind_row(_doc_43())
+    # Act
     values_cell = row.split("|", 2)[2]  # drop the `kind` field-name cell
+    # Assert
     assert set(_KIND_TICK_RE.findall(values_cell)) == set(VALID_KINDS), row
 
 
 def test_stale_three_value_row_is_gone():
+    # Arrange
+    # Act
+    # Assert
     assert _STALE_ROW not in _doc_43()
 
 
-def test_cli_add_kind_accepts_status():
-    assert "status" in VALID_KINDS
+def test_cli_add_kind_accepts_status_case1():
+    # Arrange
+    # Act
+    # Assert
     text = _add_help()
+    assert "status" in VALID_KINDS
+
+
+def test_cli_add_kind_accepts_status_case2():
+    # Arrange
+    # Act
+    text = _add_help()
+    # Assert
     assert "--kind status" in text or "[task|compute|decision|status]" in text
 
 
-def test_detector_is_not_vacuous():
+def test_detector_is_not_vacuous_case1():
+    # Arrange
+    # Act
+    # Assert
     assert set(_KIND_TICK_RE.findall(_STALE_ROW)) != set(VALID_KINDS)
+
+
+def test_detector_is_not_vacuous_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "`status`" not in _STALE_ROW

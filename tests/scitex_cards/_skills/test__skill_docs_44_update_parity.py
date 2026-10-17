@@ -57,33 +57,105 @@ def _stale_markers(text: str) -> list[str]:
 
 
 def test_no_stale_parity_markers_in_doc44():
+    # Arrange
+    # Act
+    # Assert
     assert _stale_markers(_doc44()) == []
 
 
 def test_detector_is_not_vacuous():
+    # Arrange
+    # Act
     fixture = "\n".join(_STALE_MARKERS)
+    # Assert
     assert sorted(_stale_markers(fixture)) == sorted(_STALE_MARKERS)
 
 
-def test_pattern_a_section_exists():
+def test_pattern_a_section_exists_case1():
+    # Arrange
+    # Act
     doc = _doc44()
-    assert doc.startswith("---\n")
+    # Assert
     section = _pattern_a(doc)
+    assert doc.startswith("---\n")
+
+
+def test_pattern_a_section_exists_case2():
+    # Arrange
+    doc = _doc44()
+    # Act
+    section = _pattern_a(doc)
+    # Assert
     assert "scitex-cards update" in section
 
 
-def test_pattern_a_shows_shipped_cli_recipe():
+def test_pattern_a_shows_shipped_cli_recipe_case1():
+    # Arrange
+    # Act
     section = _pattern_a(_doc44())
+    # Assert
     assert "--blocker dependency" in section
+
+
+def test_pattern_a_shows_shipped_cli_recipe_case2():
+    # Arrange
+    # Act
+    section = _pattern_a(_doc44())
+    # Assert
     assert "--depends-on" in section
+
+
+def test_pattern_a_shows_shipped_cli_recipe_case3():
+    # Arrange
+    # Act
+    section = _pattern_a(_doc44())
+    # Assert
     assert "REPLACE" in section
 
 
-def test_update_help_proves_flags_shipped():
+def test_update_help_proves_flags_shipped_case1():
+    # Arrange
+    # Act
     help_text = _help("update")
+    # Assert
     assert "--blocker" in help_text
+
+
+def test_update_help_proves_flags_shipped_case2():
+    # Arrange
+    # Act
+    help_text = _help("update")
+    # Assert
     assert "--depends-on" in help_text
+
+
+def test_update_help_proves_flags_shipped_case3():
+    # Arrange
+    # Act
+    help_text = _help("update")
+    # Assert
     assert "--blocks" in help_text
+
+
+def test_update_help_proves_flags_shipped_case4():
+    # Arrange
+    # Act
+    help_text = _help("update")
+    # Assert
     assert "dependency" in help_text
+
+
+def test_update_help_proves_flags_shipped_case5():
+    # Arrange
+    # Act
+    help_text = _help("update")
+    # Assert
     assert "REPLACE" in help_text
+
+
+def test_update_help_proves_flags_shipped_case6():
+    # Arrange
+    # Act
+    help_text = _help("update")
+    # Assert
     assert "--status [goal|in_progress|blocked|done|deferred|failed|cancelled]" in help_text

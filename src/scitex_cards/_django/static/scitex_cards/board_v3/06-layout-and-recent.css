@@ -26,43 +26,45 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+/* Underline tabs (operator mandate CCT 3881): the Layout switcher uses the
+ * shared underline-tab style, not a segmented control. Selected tab is an
+ * accent underline + stronger text; unselected tabs are quiet text. Class
+ * names, roles and JS hooks unchanged — pure restyle. */
 .filt-layout-seg {
   display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--col-bg);
+  gap: 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .filt-layout-btn {
   background: transparent;
   border: 0;
+  border-bottom: 2px solid transparent;
   color: var(--text-muted);
   font: inherit;
   font-size: 0.82rem;
   /* 5px 12px → 4px 8px (operator 2026-07-10 filterbar-overflow batch):
-   * 4 segment buttons × 8px saved keeps the seg ~32px narrower. */
-  padding: 4px 8px;
+   * 4 tab buttons × 8px saved keeps the row ~32px narrower. */
+  padding: 4px 8px 2px;
   cursor: pointer;
   transition:
-    background 100ms ease,
-    color 100ms ease;
-  border-right: 1px solid var(--border);
-}
-.filt-layout-btn:last-child {
-  border-right: 0;
+    color 100ms ease,
+    border-color 100ms ease;
 }
 .filt-layout-btn:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: transparent;
   color: var(--text);
 }
 .filt-layout-btn--on {
-  background: var(--purple);
-  color: #fff;
+  background: transparent;
+  color: var(--text);
   font-weight: 700;
+  border-bottom-color: var(--stx-brand, var(--text));
 }
 .filt-layout-btn--on:hover {
-  background: var(--purple);
-  color: #fff;
+  background: transparent;
+  color: var(--text);
 }
 
 /* === Recent-count pill (always visible when N > 0) =====================

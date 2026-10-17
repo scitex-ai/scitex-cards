@@ -53,30 +53,71 @@ def _backlog_card(cid, status, *, entry_hours_ago, agent="a"):
     }
 
 
-def test_backlog_statuses_are_deferred_with_pending_alias():
+def test_backlog_statuses_are_deferred_with_pending_alias_case1():
+    # Arrange
+    # Act
+    # Assert
     assert BACKLOG_STATUSES == frozenset({"deferred"})
-    # Deprecated alias for out-of-tree importers — same set, not a live
-    # second scan set.
+
+
+def test_backlog_statuses_are_deferred_with_pending_alias_case2():
+    # Arrange
+    # Act
+    # Assert
     assert PENDING_STATUSES == BACKLOG_STATUSES
 
 
 def test_deferred_row_detected_legacy_pending_row_ignored():
+    # Arrange
     tasks = [
         _backlog_card("d1", "deferred", entry_hours_ago=48),
         _backlog_card("leg", "pending", entry_hours_ago=48),
     ]
+    # Act
     out = detect_pending_backlog(tasks, now=NOW, pending_hours=24.0)
+    # Assert
     assert [c.id for c in out["a"]] == ["d1"]
 
 
-def test_module_docstring_names_deferred_scan_set():
+def test_module_docstring_names_deferred_scan_set_case1():
+    # Arrange
+    # Act
     doc = active_mod.__doc__ or ""
+    # Assert
     assert "``status=deferred``" in doc
+
+
+def test_module_docstring_names_deferred_scan_set_case2():
+    # Arrange
+    # Act
+    doc = active_mod.__doc__ or ""
+    # Assert
     assert "owned ``status=pending`` cards" not in doc
 
 
-def test_backlog_mirror_matches_triage_ssot():
+def test_backlog_mirror_matches_triage_ssot_case1():
+    # Arrange
+    # Act
+    # Assert
     assert BACKLOG_STATUS == "deferred"
+
+
+def test_backlog_mirror_matches_triage_ssot_case2():
+    # Arrange
+    # Act
+    # Assert
     assert BACKLOG_STATUS in VALID_STATUSES
+
+
+def test_backlog_mirror_matches_triage_ssot_case3():
+    # Arrange
+    # Act
+    # Assert
     assert BACKLOG_STATUS not in ABOLISHED_STATUSES
+
+
+def test_backlog_mirror_matches_triage_ssot_case4():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
