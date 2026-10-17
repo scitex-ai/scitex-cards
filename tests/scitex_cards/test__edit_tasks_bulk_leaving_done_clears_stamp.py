@@ -169,8 +169,9 @@ def test_clock_keeps_stamp_when_row_stays_done_case2():
     # Arrange
     task = _stamped("done")
     prior_status = task["status"]
-    # Assert
+    # Act
     cleared = _clear_completion_stamp_on_leaving_done(task, prior_status)
+    # Assert
     assert task["_log_meta"]["completed_at"] == "2026-01-01T00:00:00Z"
 
 
