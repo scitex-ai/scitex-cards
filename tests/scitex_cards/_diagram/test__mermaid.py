@@ -108,13 +108,23 @@ def test_no_abolished_status_keeps_a_style():
     )
 
 
-def test_build_mermaid_renders_cancelled_with_the_muted_grey():
+def test_build_mermaid_renders_cancelled_with_the_muted_grey_case1():
+    # Arrange
     # Arrange
     tasks = [{"id": "old", "title": "Old Plan", "status": "cancelled"}]
     # Act
     src = build_mermaid(tasks)
     # Assert
     assert "classDef cancelled fill:#eceff1" in src
+
+
+def test_build_mermaid_renders_cancelled_with_the_muted_grey_case2():
+    # Arrange
+    # Arrange
+    tasks = [{"id": "old", "title": "Old Plan", "status": "cancelled"}]
+    # Act
+    src = build_mermaid(tasks)
+    # Assert
     assert "class old cancelled" in src
 
 

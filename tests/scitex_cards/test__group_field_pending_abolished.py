@@ -66,23 +66,50 @@ def test_legacy_pending_row_still_tolerated_never_rejected():
 
 def test_task_dataclass_default_is_the_successor():
     # Arrange / Act.
+    # Arrange
+    # Act
     t = Task(id="t-a", title="x")
-    # Assert — a fresh row carries a decision out of the box, never `pending`.
+    # Assert
     assert t.status == "deferred"
 
 
-def test_enum_mirror_pending_abolished_deferred_valid():
+def test_enum_mirror_pending_abolished_deferred_valid_case1():
     # Arrange / Act / Assert — the single source both sides mirror.
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_enum_mirror_pending_abolished_deferred_valid_case2():
+    # Arrange / Act / Assert — the single source both sides mirror.
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_enum_mirror_pending_abolished_deferred_valid_case3():
+    # Arrange / Act / Assert — the single source both sides mirror.
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES
 
 
-def test_no_live_pending_seed_in_group_field_tests():
+def test_no_live_pending_seed_in_group_field_tests_case1():
     # Arrange.
+    # Arrange
+    # Act
     source = _GROUP_FIELD_TEST.read_text(encoding="utf-8")
-    # Act / Assert — no `"status": "pending"` seed remains in the suite;
-    # the sweep is anchored (non-vacuous) by the repointed `"status":
-    # "deferred"` fixtures the suite now carries.
+    # Assert
     assert '"status": "pending"' not in source
+
+
+def test_no_live_pending_seed_in_group_field_tests_case2():
+    # Arrange.
+    # Arrange
+    # Act
+    source = _GROUP_FIELD_TEST.read_text(encoding="utf-8")
+    # Assert
     assert source.count('"status": "deferred"') >= 5

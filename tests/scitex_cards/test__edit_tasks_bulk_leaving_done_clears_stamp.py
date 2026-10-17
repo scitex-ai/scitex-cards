@@ -48,39 +48,73 @@ def _stamped(status: str) -> dict:
 
 def test_edit_tasks_doc_names_the_stamp_clock():
     # Arrange
+    # Arrange
+    # Act
     doc = write_mod.edit_tasks.__doc__ or ""
-    # Act + Assert: the primitive names the one clock, not two inline pops
-    # (the helper's docstring is the contract the bulk author reuses).
+    # Assert
     assert "_clear_completion_stamp_on_leaving_done" in doc
 
 
-def test_edit_tasks_doc_names_prior_status_capture():
+def test_edit_tasks_doc_names_prior_status_capture_case1():
     # Arrange
+    # Arrange
+    # Act
     doc = write_mod.edit_tasks.__doc__ or ""
-    # Act + Assert: the clock keys on the transition, so the prior status
-    # must be captured before the assignment overwrites it.
+    # Assert
     assert "prior_status" in doc
+
+
+def test_edit_tasks_doc_names_prior_status_capture_case2():
+    # Arrange
+    # Arrange
+    # Act
+    doc = write_mod.edit_tasks.__doc__ or ""
+    # Assert
     assert "BEFORE the flip" in doc
 
 
-def test_edit_tasks_doc_names_the_phantom_readers():
+def test_edit_tasks_doc_names_the_phantom_readers_case1():
     # Arrange
+    # Arrange
+    # Act
     doc = write_mod.edit_tasks.__doc__ or ""
-    # Act + Assert: the rationale is pinned to the readers that make the
-    # stamp load-bearing, so a future edit cannot soften it to cosmetics.
+    # Assert
     assert "timing.py" in doc
+
+
+def test_edit_tasks_doc_names_the_phantom_readers_case2():
+    # Arrange
+    # Arrange
+    # Act
+    doc = write_mod.edit_tasks.__doc__ or ""
+    # Assert
     assert "timeline.py" in doc
+
+
+def test_edit_tasks_doc_names_the_phantom_readers_case3():
+    # Arrange
+    # Arrange
+    # Act
+    doc = write_mod.edit_tasks.__doc__ or ""
+    # Assert
     assert "completed_at" in doc
 
 
-def test_edit_tasks_doc_distinguishes_restore_as_done():
+def test_edit_tasks_doc_distinguishes_restore_as_done_case1():
     # Arrange
+    # Arrange
+    # Act
     doc = write_mod.edit_tasks.__doc__ or ""
-    # Act + Assert: the doc must NOT read as "always clear" — a bulk
-    # restore re-inserting snapshots AS done keeps genuine stamps; only
-    # LEAVING done clears. Without this line a reader auto-clearing on
-    # exit would corrupt restores.
+    # Assert
     assert "AS ``done`` keeps its" in doc
+
+
+def test_edit_tasks_doc_distinguishes_restore_as_done_case2():
+    # Arrange
+    # Arrange
+    # Act
+    doc = write_mod.edit_tasks.__doc__ or ""
+    # Assert
     assert "only LEAVING ``done`` clears" in doc
 
 
@@ -96,36 +130,68 @@ def test_bulk_flip_without_clock_keeps_stamp():
     assert task["_log_meta"]["completed_at"] == "2026-01-01T00:00:00Z"
 
 
-def test_clock_clears_bulk_row_leaving_done():
+def test_clock_clears_bulk_row_leaving_done_case1():
+    # Arrange
     # Arrange
     task = _stamped("done")
     prior_status = task["status"]
-    # Act: the obligated bulk pattern — capture before, flip, call clock.
     task["status"] = "deferred"
+    # Act
     cleared = _clear_completion_stamp_on_leaving_done(task, prior_status)
     # Assert
     assert cleared is True
+
+
+def test_clock_clears_bulk_row_leaving_done_case2():
+    # Arrange
+    task = _stamped("done")
+    prior_status = task["status"]
+    # Act
+    task["status"] = "deferred"
+    # Assert
+    cleared = _clear_completion_stamp_on_leaving_done(task, prior_status)
     assert "_log_meta" not in task
 
 
-def test_clock_keeps_stamp_when_row_stays_done():
+def test_clock_keeps_stamp_when_row_stays_done_case1():
     # Arrange: a passing edit on a done card, not an exit.
+    # Arrange
     task = _stamped("done")
     prior_status = task["status"]
     # Act
     cleared = _clear_completion_stamp_on_leaving_done(task, prior_status)
-    # Assert: still done — a passing edit, not an exit.
+    # Assert
     assert cleared is False
+
+
+def test_clock_keeps_stamp_when_row_stays_done_case2():
+    # Arrange: a passing edit on a done card, not an exit.
+    # Arrange
+    task = _stamped("done")
+    prior_status = task["status"]
+    # Act
+    cleared = _clear_completion_stamp_on_leaving_done(task, prior_status)
+    # Assert
     assert task["_log_meta"]["completed_at"] == "2026-01-01T00:00:00Z"
 
 
-def test_clock_noop_when_row_was_never_done():
+def test_clock_noop_when_row_was_never_done_case1():
+    # Arrange
     # Arrange
     task = {"id": "y", "status": "in_progress", "title": "t"}
-    # Act: deferred/in_progress rows carry no stamp to drop.
+    # Act
     cleared = _clear_completion_stamp_on_leaving_done(task, "in_progress")
     # Assert
     assert cleared is False
+
+
+def test_clock_noop_when_row_was_never_done_case2():
+    # Arrange
+    # Arrange
+    # Act
+    task = {"id": "y", "status": "in_progress", "title": "t"}
+    # Assert
+    cleared = _clear_completion_stamp_on_leaving_done(task, "in_progress")
     assert "_log_meta" not in task
 
 
@@ -133,16 +199,37 @@ def test_completed_status_anchor_is_done():
     # Arrange + Act + Assert: non-vacuity anchor — the clock keys on this
     # constant, so the leaving-done pins above are testing the live
     # transition and not a renamed status.
+    # Arrange
+    # Act
+    # Assert
     assert COMPLETED_STATUS == "done"
 
 
-def test_store_write_has_no_model_harness_coupling():
+def test_store_write_has_no_model_harness_coupling_case1():
+    # Arrange
     # Arrange
     import inspect
-
+    # Act
     src = inspect.getsource(write_mod)
-    # Act + Assert: the bulk primitive stays Cards-owned — no SAC, model
-    # harness, or stray model imports for the bulk path to lean on.
+    # Assert
     assert "from sac" not in src
+
+
+def test_store_write_has_no_model_harness_coupling_case2():
+    # Arrange
+    # Arrange
+    import inspect
+    # Act
+    src = inspect.getsource(write_mod)
+    # Assert
     assert "import sac" not in src
+
+
+def test_store_write_has_no_model_harness_coupling_case3():
+    # Arrange
+    # Arrange
+    import inspect
+    # Act
+    src = inspect.getsource(write_mod)
+    # Assert
     assert "harness" not in src

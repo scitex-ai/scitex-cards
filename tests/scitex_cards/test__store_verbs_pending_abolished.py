@@ -52,16 +52,25 @@ def test_no_fixture_seeds_the_abolished_status():
     assert seeds == []
 
 
-def test_the_successor_default_seed_is_present():
+def test_the_successor_default_seed_is_present_case1():
     # Arrange
+    # Arrange
+    # Act
     source = _SUBJECT.read_text()
-    # Act + Assert — non-vacuity: the duplicate-id fixture still seeds a
-    # status, and the file under test is the store-verbs suite.
+    # Assert
     assert '"status": "deferred"' in source
+
+
+def test_the_successor_default_seed_is_present_case2():
+    # Arrange
+    # Arrange
+    # Act
+    source = _SUBJECT.read_text()
+    # Assert
     assert "def test_duplicate_id_raises" in source
 
 
-def test_pending_seed_warns_while_deferred_is_silent():
+def test_pending_seed_warns_while_deferred_is_silent_case1():
     """Guard the non-interchangeability itself: the seeds differ on load.
 
     ``_validate_tasks`` tolerates a ``pending`` row with an abolished-status
@@ -73,7 +82,31 @@ def test_pending_seed_warns_while_deferred_is_silent():
     # Arrange
     pending = [{"id": "a", "title": "A", "status": "pending"}]
     live = [{"id": "a", "title": "A", "status": "deferred"}]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _validate_tasks(pending, source="/some/store.db")
+    pending_warnings = [str(x.message) for x in caught]
     # Act
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _validate_tasks(live, source="/some/store.db")
+    # Assert
+    live_warnings = [str(x.message) for x in caught]
+    assert any("abolished" in text for text in pending_warnings)
+
+
+def test_pending_seed_warns_while_deferred_is_silent_case2():
+    """Guard the non-interchangeability itself: the seeds differ on load.
+
+    ``_validate_tasks`` tolerates a ``pending`` row with an abolished-status
+    warning but passes ``deferred`` silently — so a ``pending`` fixture
+    exercises the tolerated-legacy path, not the live-status path the
+    duplicate-id test claims to pin. This is why the fixture must stay
+    ``deferred``.
+    """
+    # Arrange
+    pending = [{"id": "a", "title": "A", "status": "pending"}]
+    live = [{"id": "a", "title": "A", "status": "deferred"}]
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         _validate_tasks(pending, source="/some/store.db")
@@ -81,32 +114,98 @@ def test_pending_seed_warns_while_deferred_is_silent():
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         _validate_tasks(live, source="/some/store.db")
+    # Act
     live_warnings = [str(x.message) for x in caught]
     # Assert
-    assert any("abolished" in text for text in pending_warnings)
     assert live_warnings == []
 
 
-def test_duplicate_matches_on_id_not_status():
+def test_duplicate_matches_on_id_not_status_case1():
     # Arrange — the duplicate guard must not gate on the status enum. The
     # window is the guard itself (the `existing` lookup through the
     # "already present" raise), NOT the whole function tail: the
     # status-default for status-less mappings lives two statements above
     # the guard and is pinned separately (restore_task_status file) — the
     # guard's own contract is id + tombstone only.
+    # Arrange
     source = _SRC.read_text()
     tail = source.split("already present")[0].split("def restore_task")[1]
+    # Act
     block = tail.split("existing = next(")[1]
-    # Act + Assert — id + tombstone only; no status read in the guard.
+    # Assert
     assert 't.get("id") == tid' in block
+
+
+def test_duplicate_matches_on_id_not_status_case2():
+    # Arrange — the duplicate guard must not gate on the status enum. The
+    # window is the guard itself (the `existing` lookup through the
+    # "already present" raise), NOT the whole function tail: the
+    # status-default for status-less mappings lives two statements above
+    # the guard and is pinned separately (restore_task_status file) — the
+    # guard's own contract is id + tombstone only.
+    # Arrange
+    source = _SRC.read_text()
+    tail = source.split("already present")[0].split("def restore_task")[1]
+    # Act
+    block = tail.split("existing = next(")[1]
+    # Assert
     assert "_is_tombstoned" in block
+
+
+def test_duplicate_matches_on_id_not_status_case3():
+    # Arrange — the duplicate guard must not gate on the status enum. The
+    # window is the guard itself (the `existing` lookup through the
+    # "already present" raise), NOT the whole function tail: the
+    # status-default for status-less mappings lives two statements above
+    # the guard and is pinned separately (restore_task_status file) — the
+    # guard's own contract is id + tombstone only.
+    # Arrange
+    source = _SRC.read_text()
+    tail = source.split("already present")[0].split("def restore_task")[1]
+    # Act
+    block = tail.split("existing = next(")[1]
+    # Assert
     assert '"status"' not in block
+
+
+def test_duplicate_matches_on_id_not_status_case4():
+    # Arrange — the duplicate guard must not gate on the status enum. The
+    # window is the guard itself (the `existing` lookup through the
+    # "already present" raise), NOT the whole function tail: the
+    # status-default for status-less mappings lives two statements above
+    # the guard and is pinned separately (restore_task_status file) — the
+    # guard's own contract is id + tombstone only.
+    # Arrange
+    source = _SRC.read_text()
+    tail = source.split("already present")[0].split("def restore_task")[1]
+    # Act
+    block = tail.split("existing = next(")[1]
+    # Assert
     assert "'status'" not in block
 
 
-def test_status_enum_mirror_holds():
+def test_status_enum_mirror_holds_case1():
     # Arrange + Act + Assert — the abolition itself, so a future
     # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_status_enum_mirror_holds_case2():
+    # Arrange + Act + Assert — the abolition itself, so a future
+    # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_status_enum_mirror_holds_case3():
+    # Arrange + Act + Assert — the abolition itself, so a future
+    # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES

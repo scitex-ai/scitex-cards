@@ -38,11 +38,21 @@ def test_example_mentions_no_abolished_status_literal():
     assert holders == []
 
 
-def test_example_predicate_is_the_live_backlog_shape():
+def test_example_predicate_is_the_live_backlog_shape_case1():
     # Arrange
+    # Arrange
+    # Act
     block = _example_block()
-    # Act / Assert — the taught predicate claims unblocked backlog rows.
+    # Assert
     assert 't.get("status") == "deferred"' in block
+
+
+def test_example_predicate_is_the_live_backlog_shape_case2():
+    # Arrange
+    # Arrange
+    # Act
+    block = _example_block()
+    # Assert
     assert 't["status"] = "in_progress"' in block
 
 

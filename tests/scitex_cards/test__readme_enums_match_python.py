@@ -66,40 +66,80 @@ def _table_row(text: str, first_cell: str) -> str:
     raise AssertionError(f"row {first_cell!r} not found in README tables")
 
 
-def test_readme_status_enum_mirrors_valid_statuses():
+def test_readme_status_enum_mirrors_valid_statuses_case1():
+    # Arrange
     text = _readme()
     row = _table_row(text, "`status`")
+    # Act
     tokens = set(_BACKTICK_RE.findall(row)) - {"status"}
+    # Assert
     assert tokens == set(VALID_STATUSES), (
         f"README status enum drifted: {sorted(tokens)} != "
         f"{sorted(VALID_STATUSES)}"
     )
-    # Vacuity guard: the mirror must cover the live 7-value enum.
+
+
+def test_readme_status_enum_mirrors_valid_statuses_case2():
+    # Arrange
+    text = _readme()
+    row = _table_row(text, "`status`")
+    # Act
+    tokens = set(_BACKTICK_RE.findall(row)) - {"status"}
+    # Assert
     assert len(tokens) >= 7, f"status enum pin vacuous: {sorted(tokens)}"
 
 
 def test_readme_schema_section_names_no_abolished_status():
+    # Arrange
     text = _readme()
     # Scope to the schema section so the legitimate ``pending-backlog``
     # noun elsewhere in the file (mermaid example, no backticks) cannot
     # satisfy or break this pin.
+    # Act
     section = text.split("## Task store schema")[1].split("## Part of SciTeX")[0]
-    for abolished in ABOLISHED_STATUSES:
-        assert f"`{abolished}`" not in section, (
-            f"README schema section still teaches abolished `{abolished}`"
-        )
+    taught = [
+        abolished
+        for abolished in ABOLISHED_STATUSES
+        if f"`{abolished}`" in section
+    ]
+    # Assert
+    assert not taught, (
+        f"README schema section still teaches abolished {taught}"
+    )
 
 
 def test_readme_kind_row_covers_valid_kinds():
+    # Arrange
     text = _readme()
     row = _table_row(text, "`kind`")
+    # Act
     tokens = set(_BACKTICK_RE.findall(row)) - {"kind"}
+    # Assert
     assert set(VALID_KINDS) <= tokens, (
         f"README kind row omits live kinds: {sorted(set(VALID_KINDS) - tokens)}"
     )
 
 
-def test_readme_color_table_covers_all_live_statuses():
+def test_readme_color_table_covers_all_live_statuses_case1():
+    # Arrange
+    text = _readme()
+    section = text.split("### status -> color")[1].split("## Part of SciTeX")[0]
+    rows = [ln for ln in section.splitlines() if ln.strip().startswith("| `")]
+    tokens = set()
+    # Act
+    for row in rows:
+        cells = [c.strip() for c in row.strip().strip("|").split("|")]
+        tokens.update(_BACKTICK_RE.findall(cells[0]))
+    # Assert
+    cancelled = _table_row(text, "`cancelled`")
+    assert tokens == set(VALID_STATUSES), (
+        f"README color table drifted: {sorted(tokens)} != "
+        f"{sorted(VALID_STATUSES)}"
+    )
+
+
+def test_readme_color_table_covers_all_live_statuses_case2():
+    # Arrange
     text = _readme()
     section = text.split("### status -> color")[1].split("## Part of SciTeX")[0]
     rows = [ln for ln in section.splitlines() if ln.strip().startswith("| `")]
@@ -107,25 +147,52 @@ def test_readme_color_table_covers_all_live_statuses():
     for row in rows:
         cells = [c.strip() for c in row.strip().strip("|").split("|")]
         tokens.update(_BACKTICK_RE.findall(cells[0]))
-    assert tokens == set(VALID_STATUSES), (
-        f"README color table drifted: {sorted(tokens)} != "
-        f"{sorted(VALID_STATUSES)}"
-    )
+    # Act
     cancelled = _table_row(text, "`cancelled`")
+    # Assert
     assert STATUS_STYLE["cancelled"][0].lower() in cancelled.lower(), (
         f"cancelled colour must match STATUS_STYLE {STATUS_STYLE['cancelled']}: "
         f"{cancelled.strip()}"
     )
 
 
-def test_detector_is_not_vacuous():
+def test_detector_is_not_vacuous_case1():
+    # Arrange
+    fixture_kind = "| `kind` | no | `task` (default) \\| `compute` — writer |"
     fixture_status = (
         "| `status` | yes | `goal` \\| `pending` \\| `in_progress` "
         "\\| `blocked` \\| `done` \\| `deferred` \\| `failed` |"
     )
+    # Act
     tokens = set(_BACKTICK_RE.findall(fixture_status)) - {"status"}
-    assert tokens != set(VALID_STATUSES)
-    assert "`pending`" in fixture_status
-    fixture_kind = "| `kind` | no | `task` (default) \\| `compute` — writer |"
+    # Assert
     kind_tokens = set(_BACKTICK_RE.findall(fixture_kind)) - {"kind"}
+    assert tokens != set(VALID_STATUSES)
+
+
+def test_detector_is_not_vacuous_case2():
+    # Arrange
+    fixture_kind = "| `kind` | no | `task` (default) \\| `compute` — writer |"
+    # Act
+    fixture_status = (
+        "| `status` | yes | `goal` \\| `pending` \\| `in_progress` "
+        "\\| `blocked` \\| `done` \\| `deferred` \\| `failed` |"
+    )
+    # Assert
+    kind_tokens = set(_BACKTICK_RE.findall(fixture_kind)) - {"kind"}
+    tokens = set(_BACKTICK_RE.findall(fixture_status)) - {"status"}
+    assert "`pending`" in fixture_status
+
+
+def test_detector_is_not_vacuous_case3():
+    # Arrange
+    fixture_status = (
+    "| `status` | yes | `goal` \\| `pending` \\| `in_progress` "
+    "\\| `blocked` \\| `done` \\| `deferred` \\| `failed` |"
+    )
+    tokens = set(_BACKTICK_RE.findall(fixture_status)) - {"status"}
+    fixture_kind = "| `kind` | no | `task` (default) \\| `compute` — writer |"
+    # Act
+    kind_tokens = set(_BACKTICK_RE.findall(fixture_kind)) - {"kind"}
+    # Assert
     assert not (set(VALID_KINDS) <= kind_tokens)

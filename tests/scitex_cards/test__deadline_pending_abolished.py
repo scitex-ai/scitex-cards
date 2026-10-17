@@ -34,40 +34,74 @@ _FIXTURE_TEXT = Path(__file__).with_name("test__deadline.py").read_text(
 )
 
 
-def test_fixture_text_seeds_no_abolished_status():
+def test_fixture_text_seeds_no_abolished_status_case1():
     # Both fixture spellings: the ACCEPT YAML seeds (`status: pending`)
     # and the REJECT validator dicts (`"status": "pending"`).
+    # Arrange
+    # Act
+    # Assert
     assert "status: pending" not in _FIXTURE_TEXT
+
+
+def test_fixture_text_seeds_no_abolished_status_case2():
+    # Both fixture spellings: the ACCEPT YAML seeds (`status: pending`)
+    # and the REJECT validator dicts (`"status": "pending"`).
+    # Arrange
+    # Act
+    # Assert
     assert '"status": "pending"' not in _FIXTURE_TEXT
-    # Non-vacuity anchors: the successor default is actually seeded in
-    # both spellings, so the sweep above is not passing on an empty file.
+
+
+def test_fixture_text_seeds_no_abolished_status_case3():
+    # Both fixture spellings: the ACCEPT YAML seeds (`status: pending`)
+    # and the REJECT validator dicts (`"status": "pending"`).
+    # Arrange
+    # Act
+    # Assert
     assert "status: deferred" in _FIXTURE_TEXT
+
+
+def test_fixture_text_seeds_no_abolished_status_case4():
+    # Both fixture spellings: the ACCEPT YAML seeds (`status: pending`)
+    # and the REJECT validator dicts (`"status": "pending"`).
+    # Arrange
+    # Act
+    # Assert
     assert '"status": "deferred"' in _FIXTURE_TEXT
 
 
-def test_pending_seed_warns_abolished_while_deferred_is_silent():
+def test_pending_seed_warns_abolished():
     # Mechanism guard: the two statuses are NOT interchangeable seeds —
     # ``pending`` warns abolished (tolerated), ``deferred`` validates clean.
-    for status, expect_warning in (("pending", True), ("deferred", False)):
-        tasks = [
-            {
-                "id": "a",
-                "title": "A",
-                "status": status,
-                "deadline": "2026-06-15",
-            }
-        ]
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            _validate_tasks(tasks, source="<t>", strict=False)
-        abolished = [w for w in caught if "abolished" in str(w.message)]
-        assert (len(abolished) > 0) is expect_warning
+    # --- pending warns abolished (tolerated legacy path) ---
+    # Arrange
+    tasks = [{"id": "a", "title": "A", "status": "pending", "deadline": "2026-06-15"}]
+    # Act
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _validate_tasks(tasks, source="<t>", strict=False)
+    abolished = [w for w in caught if "abolished" in str(w.message)]
+    # Assert
+    assert len(abolished) > 0
 
 
-def test_deferred_fixtures_still_reject_bad_deadlines():
-    # Behavior pin: the repointed REJECT fixtures still raise the same
-    # deadline errors — the status swap changed nothing about validation.
-    bad = [
+def test_deferred_seed_validates_silent():
+    # Mechanism guard: the two statuses are NOT interchangeable seeds —
+    # ``pending`` warns abolished (tolerated), ``deferred`` validates clean.
+    # Arrange
+    tasks = [{"id": "a", "title": "A", "status": "deferred", "deadline": "2026-06-15"}]
+    # Act
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _validate_tasks(tasks, source="<t>", strict=False)
+    abolished = [w for w in caught if "abolished" in str(w.message)]
+    # Assert
+    assert abolished == []
+
+
+@pytest.mark.parametrize(
+    ("extra", "match"),
+    [
         ({"deadline": ""}, "invalid deadline"),
         ({"deadline": 20260615}, "invalid deadline"),
         ({"deadline": "next Tuesday"}, "unparseable deadline"),
@@ -76,16 +110,23 @@ def test_deferred_fixtures_still_reject_bad_deadlines():
             {"deadline": "2026-06-10", "scheduled": "2026-06-15"},
             "before scheduled",
         ),
-    ]
-    for extra, match in bad:
-        tasks = [{"id": "a", "title": "A", "status": "deferred", **extra}]
-        with pytest.raises(TaskValidationError, match=match):
-            _validate_tasks(tasks, source="<t>", strict=False)
+    ],
+)
+def test_deferred_fixtures_still_reject_bad_deadlines(extra, match):
+    # Behavior pin: the repointed REJECT fixtures still raise the same
+    # deadline errors — the status swap changed nothing about validation.
+    # Arrange
+    tasks = [{"id": "a", "title": "A", "status": "deferred", **extra}]
+    # Act
+    # Assert
+    with pytest.raises(TaskValidationError, match=match):
+        _validate_tasks(tasks, source="<t>", strict=False)
 
 
 def test_deferred_clean_fixture_loads_without_warning():
     # A well-formed deferred row with deadline+scheduled validates silent —
     # the ACCEPT-shape fixtures are meaningful, not just non-rejecting.
+    # Arrange
     tasks = [
         {
             "id": "a",
@@ -95,13 +136,30 @@ def test_deferred_clean_fixture_loads_without_warning():
             "scheduled": "2026-06-15",
         }
     ]
+    # Act
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         _validate_tasks(tasks, source="<t>", strict=False)
+    # Assert
     assert [w for w in caught if "abolished" in str(w.message)] == []
 
 
-def test_enum_mirror_pending_abolished_deferred_valid():
+def test_enum_mirror_pending_abolished_deferred_valid_case1():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_enum_mirror_pending_abolished_deferred_valid_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_enum_mirror_pending_abolished_deferred_valid_case3():
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES

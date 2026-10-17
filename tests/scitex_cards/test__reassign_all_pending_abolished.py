@@ -46,16 +46,25 @@ def test_no_fixture_seeds_the_abolished_status():
     assert seeds == []
 
 
-def test_the_successor_default_seed_is_present():
+def test_the_successor_default_seed_is_present_case1():
     # Arrange
+    # Arrange
+    # Act
     source = _SUBJECT.read_text()
-    # Act + Assert — non-vacuity: the legacy-owner fixture still seeds a
-    # status, and the file under test is the reassign_all suite.
+    # Assert
     assert '"status": "deferred"' in source
+
+
+def test_the_successor_default_seed_is_present_case2():
+    # Arrange
+    # Arrange
+    # Act
+    source = _SUBJECT.read_text()
+    # Assert
     assert "def test_matches_legacy_assignee_only_owner" in source
 
 
-def test_pending_seed_warns_while_deferred_is_silent():
+def test_pending_seed_warns_while_deferred_is_silent_case1():
     """Guard the non-interchangeability itself: the seeds differ on load.
 
     ``_validate_tasks`` tolerates a ``pending`` row with an abolished-status
@@ -67,7 +76,31 @@ def test_pending_seed_warns_while_deferred_is_silent():
     # Arrange
     pending = [{"id": "a", "title": "A", "status": "pending"}]
     live = [{"id": "a", "title": "A", "status": "deferred"}]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _validate_tasks(pending, source="/some/store.db")
+    pending_warnings = [str(x.message) for x in caught]
     # Act
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _validate_tasks(live, source="/some/store.db")
+    # Assert
+    live_warnings = [str(x.message) for x in caught]
+    assert any("abolished" in text for text in pending_warnings)
+
+
+def test_pending_seed_warns_while_deferred_is_silent_case2():
+    """Guard the non-interchangeability itself: the seeds differ on load.
+
+    ``_validate_tasks`` tolerates a ``pending`` row with an abolished-status
+    warning but passes ``deferred`` silently — so a ``pending`` fixture
+    exercises the tolerated-legacy path, not the live-status path the
+    owner-matching tests claim to pin. This is why the fixture must stay
+    ``deferred``.
+    """
+    # Arrange
+    pending = [{"id": "a", "title": "A", "status": "pending"}]
+    live = [{"id": "a", "title": "A", "status": "deferred"}]
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         _validate_tasks(pending, source="/some/store.db")
@@ -75,26 +108,74 @@ def test_pending_seed_warns_while_deferred_is_silent():
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         _validate_tasks(live, source="/some/store.db")
+    # Act
     live_warnings = [str(x.message) for x in caught]
     # Assert
-    assert any("abolished" in text for text in pending_warnings)
     assert live_warnings == []
 
 
-def test_bulk_move_matches_on_owner_not_status():
+def test_bulk_move_matches_on_owner_not_status_case1():
     # Arrange — the owner-match loop must not gate on the status enum.
+    # Arrange
     source = _SRC.read_text()
+    # Act
     loop = source.split("for task in tasks:")[1].split("_model._save_doc_unlocked")[0]
-    # Act + Assert — owner fields only; no status read in the match path.
+    # Assert
     assert 'task.get("agent")' in loop
+
+
+def test_bulk_move_matches_on_owner_not_status_case2():
+    # Arrange — the owner-match loop must not gate on the status enum.
+    # Arrange
+    source = _SRC.read_text()
+    # Act
+    loop = source.split("for task in tasks:")[1].split("_model._save_doc_unlocked")[0]
+    # Assert
     assert 'task.get("assignee")' in loop
+
+
+def test_bulk_move_matches_on_owner_not_status_case3():
+    # Arrange — the owner-match loop must not gate on the status enum.
+    # Arrange
+    source = _SRC.read_text()
+    # Act
+    loop = source.split("for task in tasks:")[1].split("_model._save_doc_unlocked")[0]
+    # Assert
     assert '"status"' not in loop
+
+
+def test_bulk_move_matches_on_owner_not_status_case4():
+    # Arrange — the owner-match loop must not gate on the status enum.
+    # Arrange
+    source = _SRC.read_text()
+    # Act
+    loop = source.split("for task in tasks:")[1].split("_model._save_doc_unlocked")[0]
+    # Assert
     assert "'status'" not in loop
 
 
-def test_status_enum_mirror_holds():
+def test_status_enum_mirror_holds_case1():
     # Arrange + Act + Assert — the abolition itself, so a future
     # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_status_enum_mirror_holds_case2():
+    # Arrange + Act + Assert — the abolition itself, so a future
+    # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_status_enum_mirror_holds_case3():
+    # Arrange + Act + Assert — the abolition itself, so a future
+    # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES

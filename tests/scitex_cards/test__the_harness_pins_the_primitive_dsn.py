@@ -120,6 +120,7 @@ def test_the_primitive_dsn_variable_is_pinned_per_test(root_conftest):
     observed = os.environ.get(ENV_STORE_DSN)
     # Assert
     _assert_set_either_way(observed)
+    assert observed is not None
 
 
 def test_a_pinned_dsn_is_scoped_to_a_throwaway_schema(root_conftest):
@@ -206,6 +207,7 @@ def test_the_card_store_variable_is_still_pinned_too():
     observed = os.environ.get("SCITEX_STORE_DSN")
     # Assert
     _assert_set_either_way(observed)
+    assert observed is not None
 
 
 # EOF

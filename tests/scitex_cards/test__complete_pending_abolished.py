@@ -31,31 +31,91 @@ _SOURCE = (
 )
 
 
-def test_comment_names_the_true_transition():
+def test_comment_names_the_true_transition_case1():
+    # Arrange
+    # Act
+    # Assert
     assert "non-done→done transition" in _SOURCE
+
+
+def test_comment_names_the_true_transition_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "Only on a real pending→done transition." not in _SOURCE
 
 
 def test_comment_records_the_abolition():
+    # Arrange
+    # Act
+    # Assert
     assert "``pending`` was abolished 2026-07-10" in _SOURCE
 
 
-def test_emit_still_gated_on_a_real_transition():
+def test_emit_still_gated_on_a_real_transition_case1():
+    # Arrange
+    # Act
     src = inspect.getsource(complete_task)
-    # Idempotent re-complete returns early — no emit on a non-transition.
+    # Assert
     assert 'if task.get("status") == "done":' in src
-    # The unblock drive + completed event fire only when a row moved.
+
+
+def test_emit_still_gated_on_a_real_transition_case2():
+    # Arrange
+    # Act
+    src = inspect.getsource(complete_task)
+    # Assert
     assert "if transitioned:" in src
+
+
+def test_emit_still_gated_on_a_real_transition_case3():
+    # Arrange
+    # Act
+    src = inspect.getsource(complete_task)
+    # Assert
     assert "_emit_unblock_for_dependents(resolved, task_id" in src
 
 
-def test_status_enum_mirror():
+def test_status_enum_mirror_case1():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_status_enum_mirror_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_status_enum_mirror_case3():
+    # Arrange
+    # Act
+    # Assert
     assert "done" in VALID_STATUSES
-    # Non-vacuity: the abolished entry names the successor decision states,
-    # so the mirror above is not checking an empty string.
+
+
+def test_status_enum_mirror_case4():
+    # Arrange
+    # Act
     hint = ABOLISHED_STATUSES["pending"]
+    # Assert
     assert "deferred" in hint
+
+
+def test_status_enum_mirror_case5():
+    # Arrange
+    # Act
+    hint = ABOLISHED_STATUSES["pending"]
+    # Assert
     assert "in_progress" in hint
+
+
+def test_status_enum_mirror_case6():
+    # Arrange
+    # Act
+    hint = ABOLISHED_STATUSES["pending"]
+    # Assert
     assert "blocked" in hint

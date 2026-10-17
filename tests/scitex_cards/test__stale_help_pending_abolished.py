@@ -30,22 +30,65 @@ def _help() -> str:
     return out.output
 
 
-def test_list_stale_help_names_no_abolished_status():
+def test_list_stale_help_names_no_abolished_status_case1():
+    # Arrange
+    # Act
     text = _help()
+    # Assert
     assert "PENDING cards" not in text
+
+
+def test_list_stale_help_names_no_abolished_status_case2():
+    # Arrange
+    # Act
+    text = _help()
+    # Assert
     assert "--status pending" not in text
 
 
-def test_list_stale_help_names_the_deferred_backlog():
+def test_list_stale_help_names_the_deferred_backlog_case1():
+    # Arrange
+    # Act
     text = _help()
-    assert "deferred-backlog" in text
-    # Direct command object agrees with the routed `main` rendering.
+    # Assert
     direct = list_stale_cmd.get_help(click.Context(list_stale_cmd))
+    assert "deferred-backlog" in text
+
+
+def test_list_stale_help_names_the_deferred_backlog_case2():
+    # Arrange
+    # Act
+    text = _help()
+    direct = list_stale_cmd.get_help(click.Context(list_stale_cmd))
+    # Assert
     assert "deferred-backlog" in direct
+
+
+def test_list_stale_help_names_the_deferred_backlog_case3():
+    # Arrange
+    # Act
+    text = _help()
+    direct = list_stale_cmd.get_help(click.Context(list_stale_cmd))
+    # Assert
     assert "PENDING cards" not in direct
 
 
-def test_pending_stays_abolished():
+def test_pending_stays_abolished_case1():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_pending_stays_abolished_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_pending_stays_abolished_case3():
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES

@@ -64,7 +64,7 @@ def test_create_with_blank_status_answers_400():
     assert resp.status_code == 400
 
 
-def test_blank_status_error_names_the_valid_set():
+def test_blank_status_error_names_the_shape():
     # Arrange
     # Act
     resp = _post_create({"title": "t", "assignee": "a", "status": ""})
@@ -72,8 +72,17 @@ def test_blank_status_error_names_the_valid_set():
     # the same invalid-status shape the abolished-value gate returns.
     error = json.loads(resp.content.decode("utf-8"))["error"]
     assert "invalid status" in error and "''" in error
-    for live in VALID_STATUSES:
-        assert live in error
+
+
+def test_blank_status_error_names_the_valid_set():
+    # Arrange
+    # Act
+    resp = _post_create({"title": "t", "assignee": "a", "status": ""})
+    # Assert — the error says what went wrong and what to pick instead,
+    # the same invalid-status shape the abolished-value gate returns.
+    error = json.loads(resp.content.decode("utf-8"))["error"]
+    missing = [live for live in VALID_STATUSES if live not in error]
+    assert not missing, missing
 
 
 def test_blank_gate_fires_before_any_store_access():
@@ -99,24 +108,69 @@ def test_blank_gate_sits_before_the_verb():
     assert gate_at < src.index("add_task(")
 
 
-def test_missing_and_null_status_still_pass_the_gate():
+def test_missing_and_null_status_still_pass_the_gate_case1():
     # Arrange — the gate must NOT swallow the honest default: a missing
     # or null status falls through to `payload.get("status") or
     # "deferred"` in the delegation below. The sibling create pin file
     # covers the absent/deferred cases; this pins the null twin, which
     # shares the `or "deferred"` default line.
     # Act + Assert — direct gate units: no store, no PostgreSQL.
+    # Arrange
+    # Act
+    # Assert
     assert crud._check_status({}) is None
+
+
+def test_missing_and_null_status_still_pass_the_gate_case2():
+    # Arrange — the gate must NOT swallow the honest default: a missing
+    # or null status falls through to `payload.get("status") or
+    # "deferred"` in the delegation below. The sibling create pin file
+    # covers the absent/deferred cases; this pins the null twin, which
+    # shares the `or "deferred"` default line.
+    # Act + Assert — direct gate units: no store, no PostgreSQL.
+    # Arrange
+    # Act
+    # Assert
     assert crud._check_status({"status": None}) is None
+
+
+def test_missing_and_null_status_still_pass_the_gate_case3():
+    # Arrange — the gate must NOT swallow the honest default: a missing
+    # or null status falls through to `payload.get("status") or
+    # "deferred"` in the delegation below. The sibling create pin file
+    # covers the absent/deferred cases; this pins the null twin, which
+    # shares the `or "deferred"` default line.
+    # Act + Assert — direct gate units: no store, no PostgreSQL.
+    # Arrange
+    # Act
+    # Assert
     assert crud._check_status({"status": "deferred"}) is None
 
 
-def test_detector_is_not_vacuous():
+def test_detector_is_not_vacuous_case1():
     # Arrange — the wording pins above must be capable of distinguishing
     # the gate's answer from the verb/store answers.
+    # Arrange
+    # Act
     gate_text = "invalid status ''; choose one of [...]"
-    verb_text = "add_task: status cannot be None"
-    # Act + Assert
+    # Assert
     assert gate_text.startswith("invalid status")
+
+
+def test_detector_is_not_vacuous_case2():
+    # Arrange — the wording pins above must be capable of distinguishing
+    # the gate's answer from the verb/store answers.
+    # Arrange
+    # Act
+    verb_text = "add_task: status cannot be None"
+    # Assert
     assert not verb_text.startswith("invalid status")
+
+
+def test_detector_is_not_vacuous_case3():
+    # Arrange — the wording pins above must be capable of distinguishing
+    # the gate's answer from the verb/store answers.
+    # Arrange
+    # Act
+    # Assert
     assert "_check_status(payload)" in inspect.getsource(crud.handle_create)

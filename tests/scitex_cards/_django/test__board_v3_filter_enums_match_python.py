@@ -86,10 +86,11 @@ def _stale_layout_block(source: str) -> str:
     return source[start:end]
 
 
-def test_the_filter_status_array_mirrors_the_python_status_enum(
+def test_the_filter_status_array_is_present_in_the_template(
     template_source,
 ):
-    # Arrange + Act
+    # Arrange
+    # Act
     found = _status_arrays(template_source)
     # Assert — non-vacuity first: the template shape must still carry a
     # recognisable status-enum literal, else this pin evaporates.
@@ -97,37 +98,71 @@ def test_the_filter_status_array_mirrors_the_python_status_enum(
         "no status-enum literal found in board_v3.html — the template "
         "shape moved under this pin"
     )
-    for members in found:
-        assert members == set(VALID_STATUSES), (
-            f"board_v3.html filter offers {sorted(members)}, not the live "
-            f"{sorted(VALID_STATUSES)}"
-        )
+
+
+def test_the_filter_status_array_mirrors_the_python_status_enum(
+    template_source,
+):
+    # Arrange
+    # Act
+    found = _status_arrays(template_source)
+    drifted = [sorted(members) for members in found if members != set(VALID_STATUSES)]
+    # Assert
+    assert not drifted, (
+        f"board_v3.html filter offers {drifted}, not the live "
+        f"{sorted(VALID_STATUSES)}"
+    )
+
+
+def test_the_filter_status_array_literal_is_present(template_source):
+    # Arrange
+    # Act
+    found = _status_arrays(template_source)
+    # Assert
+    assert found, "no status-enum literal found in board_v3.html"
 
 
 def test_the_filter_status_array_carries_no_abolished_status(template_source):
-    # Arrange + Act
+    # Arrange
+    # Act
     found = _status_arrays(template_source)
-    assert found, "no status-enum literal found in board_v3.html"
+    offered = [
+        sorted(members & set(ABOLISHED_STATUSES))
+        for members in found
+        if not members.isdisjoint(ABOLISHED_STATUSES)
+    ]
     # Assert
-    for members in found:
-        assert members.isdisjoint(ABOLISHED_STATUSES), (
-            f"board_v3.html filter offers abolished status(es) "
-            f"{sorted(members & set(ABOLISHED_STATUSES))}"
-        )
+    assert not offered, (
+        f"board_v3.html filter offers abolished status(es) {offered}"
+    )
 
 
-def test_the_stale_review_comment_names_the_deferred_backlog(
+def test_the_stale_review_comment_names_the_deferred_backlog_case1(
     template_source,
 ):
     # The section pulls GET /stale, which serves the deferred backlog —
     # naming PENDING here re-teaches the dead filter the server just shed.
     # Arrange + Act
+    # Arrange
+    # Act
     block = _stale_layout_block(template_source)
     # Assert
     assert "PENDING" not in block, (
         "the Stale Review layout comment still names PENDING cards while "
         "GET /stale serves the deferred backlog"
     )
+
+
+def test_the_stale_review_comment_names_the_deferred_backlog_case2(
+    template_source,
+):
+    # The section pulls GET /stale, which serves the deferred backlog —
+    # naming PENDING here re-teaches the dead filter the server just shed.
+    # Arrange + Act
+    # Arrange
+    # Act
+    block = _stale_layout_block(template_source)
+    # Assert
     assert "deferred" in block, (
         "the Stale Review layout comment names no deferred backlog — "
         "the pin would pass on an emptied block"

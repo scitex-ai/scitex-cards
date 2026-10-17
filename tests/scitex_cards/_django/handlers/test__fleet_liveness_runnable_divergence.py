@@ -47,13 +47,23 @@ def _deferred_only():
     ]
 
 
-def test_fleet_counts_a_deferred_only_agent_as_nothing_runnable():
+def test_fleet_counts_a_deferred_only_agent_as_nothing_runnable_case1():
+    # Arrange
     # Arrange
     tasks = _deferred_only()
     # Act
     (row,) = _build_fleet(tasks)
-    # Assert: current board behavior (see _DECISION before changing).
+    # Assert
     assert row["runnable_count"] == 0
+
+
+def test_fleet_counts_a_deferred_only_agent_as_nothing_runnable_case2():
+    # Arrange
+    # Arrange
+    tasks = _deferred_only()
+    # Act
+    (row,) = _build_fleet(tasks)
+    # Assert
     assert row["status"] == "idle"
 
 
@@ -66,28 +76,72 @@ def test_dispatcher_hands_out_the_same_deferred_card():
     assert [t["id"] for t in picked] == ["d1"]
 
 
-def test_the_two_surfaces_disagree_on_deferred():
+def test_the_two_surfaces_disagree_on_deferred_case1():
+    # Arrange
+    # Arrange
+    tasks = _deferred_only()
+    # Act
+    (row,) = _build_fleet(tasks)
+    # Assert
+    picked = runnable_tasks(tasks).tasks
+    assert row["runnable_count"] == 0
+
+
+def test_the_two_surfaces_disagree_on_deferred_case2():
+    # Arrange
     # Arrange
     tasks = _deferred_only()
     # Act
     (row,) = _build_fleet(tasks)
     picked = runnable_tasks(tasks).tasks
-    # Assert: the divergence itself — trips when either side moves.
-    assert row["runnable_count"] == 0
+    # Assert
     assert len(picked) == 1
 
 
-def test_deferred_sits_in_both_sets():
-    # Arrange + Act: the two set memberships that compose the divergence.
+def test_deferred_sits_in_both_sets_case1():
+    # Arrange + Act: the two set memberships that compose the divergence
+    # are asserted together below.
+    # Arrange
+    # Act
     # Assert
     assert "deferred" in _LIVENESS_NONRUNNABLE
+
+
+def test_deferred_sits_in_both_sets_case2():
+    # Arrange + Act: the two set memberships that compose the divergence
+    # are asserted together below.
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in RUNNABLE_STATUSES
 
 
-def test_in_progress_agreed_runnable_by_both_surfaces():
+def test_in_progress_agreed_runnable_by_both_surfaces_case1():
     # Arrange: non-vacuity control — the surfaces agree here, so a
     # refactor that breaks _build_fleet/runnable_tasks wholesale cannot
     # hide behind the divergence pins above.
+    # Arrange
+    tasks = [
+        {
+            "id": "w1",
+            "title": "Live card",
+            "agent": "alice",
+            "status": "in_progress",
+            "priority": 1,
+        }
+    ]
+    # Act
+    (row,) = _build_fleet(tasks)
+    # Assert
+    picked = runnable_tasks(tasks).tasks
+    assert row["runnable_count"] == 1
+
+
+def test_in_progress_agreed_runnable_by_both_surfaces_case2():
+    # Arrange: non-vacuity control — the surfaces agree here, so a
+    # refactor that breaks _build_fleet/runnable_tasks wholesale cannot
+    # hide behind the divergence pins above.
+    # Arrange
     tasks = [
         {
             "id": "w1",
@@ -101,7 +155,6 @@ def test_in_progress_agreed_runnable_by_both_surfaces():
     (row,) = _build_fleet(tasks)
     picked = runnable_tasks(tasks).tasks
     # Assert
-    assert row["runnable_count"] == 1
     assert [t["id"] for t in picked] == ["w1"]
 
 

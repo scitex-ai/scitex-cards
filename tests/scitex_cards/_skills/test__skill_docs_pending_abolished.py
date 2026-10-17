@@ -71,87 +71,217 @@ def _skill_docs() -> dict[str, str]:
     }
 
 
-def test_no_forbidden_pending_spelling_in_any_skill_doc():
+def test_skill_docs_resolve_for_forbidden_spelling_scan():
+    # Arrange
+    # Act
     docs = _skill_docs()
+    # Assert
     assert docs, "no bundled skill docs found — resolver broken?"
-    for name, text in docs.items():
-        for rx in _FORBIDDEN_RES:
-            assert rx.search(text) is None, f"{name}: {rx.pattern!r} still present"
 
 
-def test_status_colon_pending_only_in_the_dated_worked_example():
+def test_no_forbidden_pending_spelling_in_any_skill_doc():
+    # Arrange
+    # Act
     docs = _skill_docs()
+    bad = [
+        (name, rx.pattern)
+        for name, text in docs.items()
+        for rx in _FORBIDDEN_RES
+        if rx.search(text) is not None
+    ]
+    # Assert
+    assert not bad, bad
+
+
+def test_status_colon_pending_only_in_the_dated_worked_example_case1():
+    # Arrange
+    docs = _skill_docs()
+    # Act
     holders = [n for n, t in docs.items() if _STATUS_COLON_RE.search(t)]
+    # Assert
     assert holders == [_HISTORICAL_EXEMPTION], holders
-    # And the exemption really is the dated pre-abolition record, not a
-    # live instruction that drifted.
+
+
+def test_status_colon_pending_only_in_the_dated_worked_example_case2():
+    # Arrange
+    # Act
+    docs = _skill_docs()
+    # Assert
+    holders = [n for n, t in docs.items() if _STATUS_COLON_RE.search(t)]
     assert "2026-06-08" in docs[_HISTORICAL_EXEMPTION]
 
 
-def test_detector_is_not_vacuous():
+def test_detector_is_not_vacuous_case1():
+    # Arrange
+    # Act
     fixture = (
         "scitex-cards list-tasks --assignee <you> --status pending\n"
         '_store.update_task(p, id, status="pending")\n'
         "- 135 `status: pending` (= RUNNABLE)\n"
         "flip the blocked task\n   to `pending` + clear `blocker`\n"
     )
+    # Assert
     assert any(rx.search(fixture) for rx in _FORBIDDEN_RES)
+
+
+def test_detector_is_not_vacuous_case2():
+    # Arrange
+    # Act
+    fixture = (
+        "scitex-cards list-tasks --assignee <you> --status pending\n"
+        '_store.update_task(p, id, status="pending")\n'
+        "- 135 `status: pending` (= RUNNABLE)\n"
+        "flip the blocked task\n   to `pending` + clear `blocker`\n"
+    )
+    # Assert
     assert _STATUS_COLON_RE.search(fixture)
+
+
+def test_detector_is_not_vacuous_case3():
+    # Arrange
+    # Act
+    fixture = (
+        "scitex-cards list-tasks --assignee <you> --status pending\n"
+        '_store.update_task(p, id, status="pending")\n'
+        "- 135 `status: pending` (= RUNNABLE)\n"
+        "flip the blocked task\n   to `pending` + clear `blocker`\n"
+    )
+    # Assert
     assert _FLIP_TO_PENDING_RE.search(fixture)
 
 
 def test_no_live_flip_to_pending_instruction_in_any_skill_doc():
+    # Arrange
     docs = _skill_docs()
+    # Act
     holders = [n for n, t in docs.items() if _FLIP_TO_PENDING_RE.search(t)]
+    # Assert
     assert holders == [], holders
 
 
-def test_harvest_unblock_names_the_successor_state():
+def test_harvest_unblock_names_the_successor_state_case1():
+    # Arrange
     docs = _skill_docs()
     harvest = docs["40_task-harvest.md"]
-    # The live Phase-1 procedure sits BEFORE the dated worked example —
-    # pin the successor there so the exemption section cannot satisfy it.
-    # Whitespace is normalized: the abolition note wraps across lines.
+    # Act
     live_procedure = harvest.split("## Worked example")[0]
-    assert "to `deferred`" in live_procedure
+    # Assert
     flat = " ".join(live_procedure.split())
+    assert "to `deferred`" in live_procedure
+
+
+def test_harvest_unblock_names_the_successor_state_case2():
+    # Arrange
+    docs = _skill_docs()
+    harvest = docs["40_task-harvest.md"]
+    live_procedure = harvest.split("## Worked example")[0]
+    # Act
+    flat = " ".join(live_procedure.split())
+    # Assert
     assert "`pending` was abolished 2026-07-10" in flat
 
 
-def test_harvest_worked_example_flags_the_abolished_status():
+def test_harvest_worked_example_flags_the_abolished_status_case1():
+    # Arrange
+    docs = _skill_docs()
+    # Act
+    example = docs["40_task-harvest.md"].split("## Worked example")[1]
+    # Assert
+    flat = " ".join(example.split())
+    assert "do NOT copy" in example
+
+
+def test_harvest_worked_example_flags_the_abolished_status_case2():
+    # Arrange
+    docs = _skill_docs()
+    # Act
+    example = docs["40_task-harvest.md"].split("## Worked example")[1]
+    # Assert
+    flat = " ".join(example.split())
+    assert "`deferred` today" in example
+
+
+def test_harvest_worked_example_flags_the_abolished_status_case3():
+    # Arrange
     docs = _skill_docs()
     example = docs["40_task-harvest.md"].split("## Worked example")[1]
+    # Act
     flat = " ".join(example.split())
-    # A reader landing mid-example must learn, at the point of use, that
-    # the `pending` rows are a pre-abolition record — not copy-pasteable.
-    assert "do NOT copy" in example
-    assert "`deferred` today" in example
+    # Assert
     assert "2026-06-08" in flat
 
 
 def test_redirect_copy_suggests_the_successor_default():
+    # Arrange
+    # Act
     docs = _skill_docs()
+    # Assert
     assert "--status deferred" in docs["22_pretooluse-hook-redirect.md"]
 
 
-def test_reopen_recipe_names_the_canonical_transition():
+def test_reopen_recipe_names_the_canonical_transition_case1():
+    # Arrange
     docs = _skill_docs()
+    # Act
     reopen_section = docs["43_consuming-agent-schema-and-crud.md"].split("### RE-OPEN")[1]
+    # Assert
     assert "--status blocked" in reopen_section
+
+
+def test_reopen_recipe_names_the_canonical_transition_case2():
+    # Arrange
+    docs = _skill_docs()
+    # Act
+    reopen_section = docs["43_consuming-agent-schema-and-crud.md"].split("### RE-OPEN")[1]
+    # Assert
     assert "--blocker operator-decision" in reopen_section
+
+
+def test_reopen_recipe_names_the_canonical_transition_case3():
+    # Arrange
+    docs = _skill_docs()
+    # Act
+    reopen_section = docs["43_consuming-agent-schema-and-crud.md"].split("### RE-OPEN")[1]
+    # Assert
     assert "reopen_task" in reopen_section
 
 
-def test_schema_enum_mirrors_valid_statuses():
+_ENUM_ROW_DOCS = ("03_python-api.md", "43_consuming-agent-schema-and-crud.md")
+
+
+def test_schema_enum_row_omits_pending():
+    # Arrange
     docs = _skill_docs()
-    for name in ("03_python-api.md", "43_consuming-agent-schema-and-crud.md"):
-        row = _enum_row(docs[name])
-        assert "`pending`" not in row, name
-        assert "`cancelled`" in row, name
+    # Act
+    rows = {name: _enum_row(docs[name]) for name in _ENUM_ROW_DOCS}
+    bad = [name for name, row in rows.items() if "`pending`" in row]
+    # Assert
+    assert not bad, bad
+
+
+def test_schema_enum_row_keeps_cancelled():
+    # Arrange
+    docs = _skill_docs()
+    # Act
+    rows = {name: _enum_row(docs[name]) for name in _ENUM_ROW_DOCS}
+    bad = [name for name, row in rows.items() if "`cancelled`" not in row]
+    # Assert
+    assert not bad, bad
+
+
+def test_schema_enum_abolition_note_lives_beside_row():
     # The abolition note lives as prose beside the row (not inside it),
     # so an agent meeting a legacy row learns the successors.
-    for name in ("03_python-api.md", "43_consuming-agent-schema-and-crud.md"):
-        assert "`pending` was abolished 2026-07-10" in docs[name], name
+    # Arrange
+    docs = _skill_docs()
+    # Act
+    bad = [
+        name
+        for name in _ENUM_ROW_DOCS
+        if "`pending` was abolished 2026-07-10" not in docs[name]
+    ]
+    # Assert
+    assert not bad, bad
 
 
 def _enum_row(text: str) -> str:
@@ -164,18 +294,49 @@ def _enum_row(text: str) -> str:
     raise AssertionError("no status enum row found")
 
 
-def test_consumption_loop_predicate_names_the_backlog_state():
+def test_consumption_loop_predicate_names_the_backlog_state_case1():
+    # Arrange
     docs = _skill_docs()
+    # Act
     loop = docs["32_agent-self-consumption-loop.md"]
+    # Assert
     assert "{deferred, in_progress}" in loop
+
+
+def test_consumption_loop_predicate_names_the_backlog_state_case2():
+    # Arrange
+    docs = _skill_docs()
+    # Act
+    loop = docs["32_agent-self-consumption-loop.md"]
+    # Assert
     assert "{pending, in_progress}" not in loop
 
 
+def test_cli_status_help_exits_zero_for_add_and_update():
+    # Arrange
+    verbs = ("add", "update")
+    # Act
+    bad = [
+        verb
+        for verb in verbs
+        if CliRunner().invoke(main, [verb, "--help"]).exit_code != 0
+    ]
+    # Assert
+    assert not bad, bad
+
+
 def test_cli_status_choice_rejects_pending():
-    for verb in ("add", "update"):
-        out = CliRunner().invoke(main, [verb, "--help"])
-        assert out.exit_code == 0, out.output
-        assert "pending" not in _choice_line(out.output, "--status"), verb
+    # Arrange
+    verbs = ("add", "update")
+    # Act
+    outs = {verb: CliRunner().invoke(main, [verb, "--help"]) for verb in verbs}
+    bad = [
+        verb
+        for verb, out in outs.items()
+        if "pending" in _choice_line(out.output, "--status")
+    ]
+    # Assert
+    assert not bad, bad
 
 
 def _choice_line(help_text: str, flag: str) -> str:
@@ -185,13 +346,38 @@ def _choice_line(help_text: str, flag: str) -> str:
     raise AssertionError(f"{flag} not in help")
 
 
-def test_add_defaults_to_the_successor_state():
+def test_add_defaults_to_the_successor_state_case1():
+    # Arrange
+    # Act
     out = CliRunner().invoke(main, ["add", "--help"])
+    # Assert
     assert out.exit_code == 0, out.output
+
+
+def test_add_defaults_to_the_successor_state_case2():
+    # Arrange
+    # Act
+    out = CliRunner().invoke(main, ["add", "--help"])
+    # Assert
     assert "[default: deferred]" in out.output
 
 
-def test_pending_stays_abolished():
+def test_pending_stays_abolished_case1():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_pending_stays_abolished_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_pending_stays_abolished_case3():
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES

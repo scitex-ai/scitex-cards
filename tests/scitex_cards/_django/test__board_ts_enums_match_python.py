@@ -255,21 +255,43 @@ def test_an_abolished_status_is_not_offered_by_the_spa_editor(board_store_source
     )
 
 
-def test_the_spa_new_task_default_is_a_live_status(node_detail_source):
+def test_the_spa_new_task_default_is_a_live_status_case1(node_detail_source):
     # Arrange
-    from scitex_cards._task import ABOLISHED_STATUSES
-
+    # Arrange
     # Act
     match = re.search(
         r"useState\(node\?\.status \?\? [\"']([^\"']+)[\"']\)", node_detail_source
     )
     # Assert
-    assert match is not None, "new-task default status literal not found"
     default_status = match.group(1)
+    assert match is not None, "new-task default status literal not found"
+
+
+def test_the_spa_new_task_default_is_a_live_status_case2(node_detail_source):
+    # Arrange
+    # Arrange
+    match = re.search(
+        r"useState\(node\?\.status \?\? [\"']([^\"']+)[\"']\)", node_detail_source
+    )
+    # Act
+    default_status = match.group(1)
+    # Assert
     assert default_status in VALID_STATUSES, (
         f"NodeDetailPanel defaults new tasks to {default_status!r}, "
         "which the store does not accept"
     )
+
+
+def test_the_spa_new_task_default_is_a_live_status_case3(node_detail_source):
+    # Arrange
+    # Arrange
+    from scitex_cards._task import ABOLISHED_STATUSES
+    match = re.search(
+        r"useState\(node\?\.status \?\? [\"']([^\"']+)[\"']\)", node_detail_source
+    )
+    # Act
+    default_status = match.group(1)
+    # Assert
     assert default_status not in ABOLISHED_STATUSES, (
         f"NodeDetailPanel defaults new tasks to abolished {default_status!r}"
     )
@@ -342,7 +364,59 @@ def test_an_abolished_status_has_no_progress_chip(cards_board_source):
     )
 
 
+def test_the_spa_calendar_doc_example_names_blocked(
+    calendar_view_source, recent_view_source
+):
+    # CalendarView + RecentView doc headers teach the qualifier syntax with a
+    # `status:<value>` example. The repoint (pending -> blocked) is
+    # comment-only, so without this pin a `status:pending` example returns
+    # with every pin green and filters every view to zero rows.
+    # Arrange
+    # Act
+    # Assert
+    assert "status:blocked" in calendar_view_source, (
+        "CalendarView doc example drifted away from its pinned successor"
+    )
+
+
+def test_the_spa_recent_doc_example_names_blocked(
+    calendar_view_source, recent_view_source
+):
+    # CalendarView + RecentView doc headers teach the qualifier syntax with a
+    # `status:<value>` example. The repoint (pending -> blocked) is
+    # comment-only, so without this pin a `status:pending` example returns
+    # with every pin green and filters every view to zero rows.
+    # Arrange
+    # Act
+    # Assert
+    assert "status:blocked" in recent_view_source, (
+        "RecentView doc example drifted away from its pinned successor"
+    )
+
+
 def test_the_spa_view_doc_examples_name_live_statuses(
+    calendar_view_source, recent_view_source
+):
+    # CalendarView + RecentView doc headers teach the qualifier syntax with a
+    # `status:<value>` example. The repoint (pending -> blocked) is
+    # comment-only, so without this pin a `status:pending` example returns
+    # with every pin green and filters every view to zero rows.
+    # Arrange
+    # Act
+    calendar_values = _status_qualifier_values(calendar_view_source)
+    recent_values = _status_qualifier_values(recent_view_source)
+    bad = [
+        value
+        for value in (*calendar_values, *recent_values)
+        if value not in VALID_STATUSES
+    ]
+    # Assert
+    assert not bad, (
+        f"SPA view doc examples name {bad}, which the store refuses"
+    )
+
+
+def test_the_spa_view_doc_examples_name_no_abolished_status(
     calendar_view_source, recent_view_source
 ):
     # CalendarView + RecentView doc headers teach the qualifier syntax with a
@@ -355,33 +429,40 @@ def test_the_spa_view_doc_examples_name_live_statuses(
     # Act
     calendar_values = _status_qualifier_values(calendar_view_source)
     recent_values = _status_qualifier_values(recent_view_source)
+    bad = [
+        value
+        for value in (*calendar_values, *recent_values)
+        if value in ABOLISHED_STATUSES
+    ]
     # Assert
-    assert "status:blocked" in calendar_view_source, (
-        "CalendarView doc example drifted away from its pinned successor"
-    )
-    assert "status:blocked" in recent_view_source, (
-        "RecentView doc example drifted away from its pinned successor"
-    )
-    for value in (*calendar_values, *recent_values):
-        assert value in VALID_STATUSES, (
-            f"SPA view doc example names {value!r}, which the store refuses"
-        )
-        assert value not in ABOLISHED_STATUSES, (
-            f"SPA view doc example names abolished {value!r}"
-        )
+    assert not bad, f"SPA view doc examples name abolished {bad}"
 
 
-def test_the_spa_layout_lifecycle_signal_names_live_statuses(layout_source):
+def test_the_spa_layout_lifecycle_signal_names_live_statuses_case1(layout_source):
     # `layout.ts` documents which lifecycle signal the parent depth cue
     # preserves. The repoint (pending -> deferred) is comment-only, so
     # without this pin `pending` returns here with every pin green.
     # Arrange
-    from scitex_cards._task import ABOLISHED_STATUSES
-
+    # Arrange
     # Act
     match = re.search(r"lifecycle signal \((.*?)\)", layout_source)
     # Assert
+    named = {
+        token.strip().strip("…").strip()
+        for token in match.group(1).split("/")
+    } - {"", "…"}
     assert match is not None, "layout.ts lifecycle-signal prose not found"
+
+
+def test_the_spa_layout_lifecycle_signal_names_live_statuses_case2(layout_source):
+    # `layout.ts` documents which lifecycle signal the parent depth cue
+    # preserves. The repoint (pending -> deferred) is comment-only, so
+    # without this pin `pending` returns here with every pin green.
+    # Arrange
+    # Arrange
+    # Act
+    # Assert
+    match = re.search(r"lifecycle signal \((.*?)\)", layout_source)
     named = {
         token.strip().strip("…").strip()
         for token in match.group(1).split("/")
@@ -389,10 +470,41 @@ def test_the_spa_layout_lifecycle_signal_names_live_statuses(layout_source):
     assert "deferred / done / blocked / goal" in layout_source, (
         "layout.ts lifecycle signal drifted away from its pinned repoint"
     )
+
+
+def test_the_spa_layout_lifecycle_signal_names_live_statuses_case3(layout_source):
+    # `layout.ts` documents which lifecycle signal the parent depth cue
+    # preserves. The repoint (pending -> deferred) is comment-only, so
+    # without this pin `pending` returns here with every pin green.
+    # Arrange
+    # Arrange
+    match = re.search(r"lifecycle signal \((.*?)\)", layout_source)
+    # Act
+    named = {
+        token.strip().strip("…").strip()
+        for token in match.group(1).split("/")
+    } - {"", "…"}
+    # Assert
     assert named.issubset(set(VALID_STATUSES)), (
         f"layout.ts lifecycle signal names {sorted(named - set(VALID_STATUSES))}, "
         "which the store does not accept"
     )
+
+
+def test_the_spa_layout_lifecycle_signal_names_live_statuses_case4(layout_source):
+    # `layout.ts` documents which lifecycle signal the parent depth cue
+    # preserves. The repoint (pending -> deferred) is comment-only, so
+    # without this pin `pending` returns here with every pin green.
+    # Arrange
+    # Arrange
+    from scitex_cards._task import ABOLISHED_STATUSES
+    match = re.search(r"lifecycle signal \((.*?)\)", layout_source)
+    # Act
+    named = {
+        token.strip().strip("…").strip()
+        for token in match.group(1).split("/")
+    } - {"", "…"}
+    # Assert
     assert named.isdisjoint(ABOLISHED_STATUSES), (
         f"layout.ts lifecycle signal names abolished "
         f"{sorted(named & set(ABOLISHED_STATUSES))}"
