@@ -751,6 +751,7 @@ every `#agents .agent` rule still matches through the new wrapper.
       <input id="agent-filter" type="search" autocomplete="off"
              placeholder="Filter agents&hellip;" aria-label="Filter agents"
              aria-controls="agent-list">
+      <button id="dm-new" type="button" aria-label="New conversation">New</button>
     </div>
     <div id="agent-list"><div class="empty">Loading conversations&hellip;</div></div>
     <div id="dm-empty">
@@ -944,6 +945,7 @@ if the symbol is missing, so an old SDK costs behaviour, not the page.
 <script defer src="{% static 'scitex_cards/chat/chat_attach.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_drawer.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_filter.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_new.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_markdown.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_longtext.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_compose.js' %}"></script>
