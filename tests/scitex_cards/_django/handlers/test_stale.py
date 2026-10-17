@@ -298,6 +298,7 @@ def test_archive_clears_completion_stamp_case1(store):
     # archiving it must not mint a cancelled row throughput still counts
     # as delivered (fleet/timing.py + timeline.py read completed_at alone).
     # Arrange
+    tasks = _load(store)
     row = tasks["done-card"]
     body = {"id": "done-card", "reason": "superseded after all"}
     # Act
