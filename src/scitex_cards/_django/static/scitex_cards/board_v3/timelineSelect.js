@@ -265,15 +265,15 @@
       _esc(card.title || id) +
       "</div>" +
       item(
-        "📋 Copy contents",
+        "Copy contents",
         "STX.timelineSelect._menuCopyOne('" + idJs + "')",
       ) +
-      item("🔎 Open details", "STX.timelineSelect._menuOpen('" + idJs + "')");
+      item("Open details", "STX.timelineSelect._menuOpen('" + idJs + "')");
     if (SELECTED.size > 0) {
       html +=
         '<div class="card-ctx-sep"></div>' +
         item(
-          "📋 Copy " + SELECTED.size + " selected",
+          "Copy " + SELECTED.size + " selected",
           "STX.timelineSelect._menuCopySelected()",
         );
     }

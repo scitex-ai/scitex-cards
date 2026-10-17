@@ -2,6 +2,12 @@
 Shared page HEADER — the identity band rendered by BOTH top-level pages
 (board_v3.html and chat.html), from this one file.
 
+CCT 3878: row 1 is the shared SDK header (`.stx-app-header`: switcher +
+title + version + project-selector slot + actions, SDK grammar/classes/css),
+row 2 is the cards band (scope). App-specific content starts below.
+The switcher leads the SDK row itself, so it stays leftmost overall —
+that standing instruction is positional, not row-bound.
+
 WHY IT IS A PARTIAL. Operator, 2026-07-29 (TG): the two pages' headers not
 lining up is uncomfortable. They did not line up because each page rolled its
 own header — the board's `.filterbar` was `padding: 8px 14px; min-height: 48px`
@@ -55,14 +61,19 @@ independently follows `app_scope` (default user), and renders nothing for an
 unsupported user-scoped app or a viewer who is not signed in. The slot is inside
 the guarded partial and appears only when that canonical tag emits markup.
 {% endcomment %}
-<div class="stx-cards-header{% if api_base != '/' %} stx-cards-header--mounted{% endif %}">
+<header class="stx-app-header cards-app-header">
   {% include "scitex_cards/_page_switcher.html" with active=active %}
-  <h1>{{ page_title }}</h1>
-  <span class="stx-cards-header__ver">v{{ scitex_cards_version|default:"?" }}</span>
+  <h1 class="stx-app-header__title">{{ page_title }}</h1>
+  <span class="stx-app-header__version" title="scitex-cards package serving this page">v{{ scitex_cards_version|default:"?" }}</span>
+  <div class="stx-app-header__slot--project-selector">
+    {% if cards_project_picker_available %}
+      {% include "scitex_cards/_project_picker.html" with current=cards_current_project_id picker_scope=app_scope picker_slot=True %}
+    {% endif %}
+  </div>
+  <div class="stx-app-header__actions"></div>
+</header>
+<div class="stx-cards-header{% if api_base != '/' %} stx-cards-header--mounted{% endif %}">
   <span class="stx-cards-header__scope" data-user-scope="{{ cards_user }}">
     {{ cards_user }}
   </span>
-  {% if cards_project_picker_available %}
-    {% include "scitex_cards/_project_picker.html" with current=cards_current_project_id picker_scope=app_scope picker_slot=True %}
-  {% endif %}
 </div>

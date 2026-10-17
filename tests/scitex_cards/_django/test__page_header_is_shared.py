@@ -118,10 +118,15 @@ def _band(html: str) -> str:
 
 
 def _switcher_side(html: str) -> str:
-    """Which end of the header the switcher sits at, read off the markup."""
-    band = _band(html)
-    switcher = band.find('class="stx-cards-switcher"')
-    heading = band.find("<h1>")
+    """Which end of the header the switcher sits at, read off the markup.
+
+    CCT 3878 moved the heading into the SDK header row above the band, so
+    the band no longer contains both marks — compare across the whole page:
+    the switcher must precede the heading (leftmost overall). That
+    positional instruction is row-independent.
+    """
+    switcher = html.find('class="stx-cards-switcher"')
+    heading = html.find("<h1")
     if switcher == -1 or heading == -1:
         return "absent"
     return "left" if switcher < heading else "right"
