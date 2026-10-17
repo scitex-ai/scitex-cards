@@ -101,3 +101,73 @@
     display: inline-flex;
   }
 }
+
+/* New-agent dialog (CCT 3853): buzz-search + room jump. */
+#agent-filter-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+#agent-filter-row #agent-filter {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* CCT 3884: the New button mirrors the '+ Add Task' peach CTA (same
+ * size/placement language — brand fill, on-brand text, 600 weight). */
+#agent-filter-row #dm-new {
+  border-color: var(--stx-brand, var(--text));
+  background: var(--stx-brand, var(--text));
+  color: var(--stx-on-brand, var(--text-inverse, var(--bg)));
+  font-weight: 600;
+  box-shadow: none;
+  flex-shrink: 0;
+}
+#agent-filter-row #dm-new:hover {
+  opacity: 0.9;
+}
+.dm-new-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  z-index: 60;
+}
+.dm-new-box {
+  background: var(--bg, #fff);
+  border-radius: 8px;
+  padding: 12px;
+  width: min(420px, 92vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dm-new-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.dm-new-results {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dm-new-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  cursor: pointer;
+}
+.dm-new-meta {
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+.dm-new-empty,
+.dm-new-hint {
+  font-size: 0.85em;
+  opacity: 0.75;
+}

@@ -11,6 +11,13 @@ per-AGENT direct-message thread stored in the ``threads.json`` sidecar
 
 Endpoints::
 
+    GET  /dm/agents[?q=]
+      -> 200 + {"agents": [{"id", "name", "host", "status", "has_thread"}]}
+         Buzz-search over the Agents-app directory (CCT 3853): the agent
+         list is CONSUMED via the loose agent-directory port, never kept.
+         ``has_thread`` marks agents the current reader already has a room
+         with. No provider → ``[]``; the store is optional here.
+
     GET  /dm/threads
       -> 200 + {"agents": [{"name", "kind", "unread", "last_ts",
                             "last_body"}, ...]}
@@ -315,6 +322,83 @@ def _typed_store_refusals(view):
             )
 
     return _wrapped
+
+
+@_typed_store_refusals
+def dm_agents_view(
+    request: HttpRequest, directory=None
+) -> HttpResponse:
+    """GET the Agents-app directory for the DM New-button buzz-search.
+
+    ``?q=`` substring-matches ``host@name`` ids and short names
+    (exact → prefix → substring, capped at 20 rows). Each row carries
+    ``has_thread`` — whether the CURRENT reader already has a DM thread
+    with that agent — so the picker jumps to the existing room and only
+    an agent without one opens an empty pane (the row itself is created
+    lazily by the first POST, never by opening).
+
+    The agent list is CONSUMED, not kept: it comes from the loose
+    :class:`scitex_cards._ports.AgentDirectoryPort` provider (the Agents
+    app is SSOT for agent runtime) via
+    :func:`scitex_cards._ports.resolve_agent_directory`. No provider
+    installed → ``[]`` with 200, never a 500 — the drawer works
+    standalone. ``directory`` is the injectable seam for that resolution
+    (tests pass a fake; production resolves the entry-point provider).
+
+    The store is OPTIONAL here, unlike :func:`dm_threads_view`: the
+    directory needs no store, and ``has_thread`` merely degrades to
+    ``False`` when no store resolves.
+    """
+    if request.method != "GET":
+        return JsonResponse(
+            {"error": "method-not-allowed", "method": request.method}, status=405
+        )
+    try:
+        from scitex_cards._ports import dedup_agents, resolve_agent_directory
+
+        if directory is None:
+            directory = resolve_agent_directory()
+        agents = dedup_agents(directory.list_agents())
+    except Exception:  # noqa: BLE001 — directory optional; drawer must not 500
+        agents = []
+    peers: set[str] = set()
+    try:
+        store = _store_of(request)
+        reader = _author_of(request)
+        for summary in _dm_read.threads_summary(reader, store=store).values():
+            a, b = summary["peers"]
+            if reader in (a, b):
+                peers.add(b if a == reader else a)
+    except Exception:  # noqa: BLE001 — standalone board; has_thread all False
+        peers = set()
+    q = (request.GET.get("q") or "").strip().lower()
+    rows = []
+    for agent in agents:
+        aid = agent.host_at_name
+        if q and q not in aid.lower() and q not in agent.name.lower():
+            continue
+        rows.append(
+            {
+                "id": aid,
+                "name": agent.name,
+                "host": agent.host,
+                "status": agent.status,
+                "has_thread": aid in peers or agent.name in peers,
+            }
+        )
+
+    def _rank(row: dict) -> tuple[int, str]:
+        if not q:
+            return (0, row["id"])
+        rid = row["id"].lower()
+        if rid == q or row["name"].lower() == q:
+            return (0, row["id"])
+        if rid.startswith(q):
+            return (1, row["id"])
+        return (2, row["id"])
+
+    rows.sort(key=_rank)
+    return JsonResponse({"agents": rows[:20]})
 
 
 @_typed_store_refusals
@@ -645,6 +729,7 @@ def dm_reaction_view(request: HttpRequest, peer: str) -> HttpResponse:
 
 
 __all__ = [
+    "dm_agents_view",
     "dm_exchange_view",
     "dm_reaction_view",
     "dm_thread_view",
