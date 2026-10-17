@@ -25,7 +25,7 @@ from scitex_dev.status import StatusCode, ledger_record
 from scitex_dev.store import ANY_REVISION
 
 import scitex_cards
-from scitex_cards import _dm_exchange
+from scitex_cards._dm import exchange as _dm_exchange
 from scitex_cards._cli import _dm as subject
 from scitex_cards._cli import main
 from scitex_cards._dm.read import messages_in

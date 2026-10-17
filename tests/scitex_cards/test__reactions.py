@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the DM reaction event log (:mod:`scitex_cards._reactions`).
+"""Tests for the DM reaction event log (:mod:`scitex_cards._dm.reactions`).
 
 The contract these pin:
 
@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from scitex_cards import _reactions
-from scitex_cards._threads import append_message, get_thread, thread_key
+from scitex_cards._dm import reactions as _reactions
+from scitex_cards._dm.threads import append_message, get_thread, thread_key
 
 THREAD = "dm:agent-x::operator"
 

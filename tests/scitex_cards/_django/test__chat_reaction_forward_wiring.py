@@ -31,7 +31,7 @@ from django.urls import resolve  # noqa: E402
 
 from scitex_cards._django import views  # noqa: E402
 from scitex_cards._django.handlers.dm import dm_reaction_view  # noqa: E402
-from scitex_cards._reactions import REACTION_EMOJI  # noqa: E402
+from scitex_cards._dm.reactions import REACTION_EMOJI  # noqa: E402
 
 _URLCONF = "scitex_cards._django.urls"
 

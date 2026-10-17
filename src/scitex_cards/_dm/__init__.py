@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """The direct-message rail: storage, read path, write path, identity.
 
-Grouped out of the package root on 2026-08-10. These eight modules shared a
+Grouped out of the package root on 2026-08-10. These thirteen modules shared a
 prefix and a responsibility while sitting flat among 134 siblings, which
 PS-108b flags at a threshold of 15 — and which had become a gate on adding
 ANY new module to this package.

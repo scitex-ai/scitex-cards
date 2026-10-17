@@ -282,6 +282,13 @@ def _build_graph(board) -> dict:
 #: ``board.mtime`` alone: a DB write never moves the identity file's mtime, so
 #: an mtime-only key served the STALE graph after a reorder. ``board.sig``
 #: moves on any DB change, so the graph self-invalidates with the board.
+#:
+#: Entries are ``(body_bytes, etag, atime)`` — the SERIALIZED response, not
+#: the payload dict. ``JsonResponse(payload)`` re-dumps ~25 MB on every hit
+#: (~100 ms of pure CPU per poll); serving the cached bytes skips both the
+#: rebuild AND the re-serialization. The ETag is the sha256 of the exact
+#: bytes served, so a matching ``If-None-Match`` answers 304 with no body —
+#: the frontend's ``fetch("/graph")`` revalidates transparently.
 _GRAPH_PAYLOAD_CACHE: dict = {}
 _GRAPH_PAYLOAD_CACHE_TTL_S = 3_600.0  # 1h, mirrors BoardState's TTL.
 
@@ -293,7 +300,7 @@ def _graph_cache_gc() -> None:
     now = time.time()
     stale = [
         k
-        for k, (_, ts) in _GRAPH_PAYLOAD_CACHE.items()
+        for k, (_, _, ts) in _GRAPH_PAYLOAD_CACHE.items()
         if now - ts > _GRAPH_PAYLOAD_CACHE_TTL_S
     ]
     for k in stale:
@@ -308,27 +315,42 @@ def _graph_cache_reset() -> None:
 def handle_graph(request, board):
     """GET graph -> structured nodes + edges + status colors.
 
-    Cached by ``(store_path, board.mtime, board.sig)``; on hit, returns the
-    prior payload directly. ``board.sig`` is the DB's read-stable content
+    Cached by ``(store_path, board.mtime, board.sig)``; on hit, serves the
+    cached SERIALIZED bytes directly — no ``_build_graph`` rebuild and no
+    ``JsonResponse`` re-dump. ``board.sig`` is the DB's read-stable content
     version, so any write rolls the cache forward by one rebuild — including a
     DB write that never touches the identity file's mtime, which an mtime-only
     key missed. The auto-update SSE wire (PR-C in the lead-approved Stage 2
     plan) will additionally PUSH the new payload — this cache is the same
     derivation, just stored.
+
+    Answers 304 to a matching ``If-None-Match`` (ETag = sha256 of the exact
+    bytes served), so a polling client pays nothing for an unchanged board.
+    The frontend's ``fetch("/graph")`` revalidates transparently.
     """
+    import hashlib
     import time
 
     _graph_cache_gc()
     key = (str(board.store_path), board.mtime, board.sig)
     hit = _GRAPH_PAYLOAD_CACHE.get(key)
     if hit is not None:
-        payload, _ = hit
+        body, etag, _ = hit
         # Touch the access time so the GC doesn't sweep a hot key.
-        _GRAPH_PAYLOAD_CACHE[key] = (payload, time.time())
-        return JsonResponse(payload)
-    payload = _build_graph(board)
-    _GRAPH_PAYLOAD_CACHE[key] = (payload, time.time())
-    return JsonResponse(payload)
+        _GRAPH_PAYLOAD_CACHE[key] = (body, etag, time.time())
+    else:
+        payload = _build_graph(board)
+        body = JsonResponse(payload).content
+        etag = f'W/"{hashlib.sha256(body).hexdigest()[:32]}"'
+        _GRAPH_PAYLOAD_CACHE[key] = (body, etag, time.time())
+    incoming = (request.headers.get("If-None-Match") or "").strip()
+    if incoming and etag in {t.strip() for t in incoming.split(",")}:
+        not_modified = HttpResponse(status=304)
+        not_modified["ETag"] = etag
+        return not_modified
+    response = HttpResponse(body, content_type="application/json")
+    response["ETag"] = etag
+    return response
 
 
 def _selected_tasks(request, tasks: list) -> list:

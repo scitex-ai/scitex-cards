@@ -104,6 +104,16 @@ class BoardState:
     #: a sig simply never matches a cache probe, which fails CLOSED (rebuild)
     #: rather than serving something stale.
     sig: tuple = ()
+    #: CHEAP CACHE IDENTITY — :func:`scitex_cards._db.tasks_content_fingerprint`.
+    #:
+    #: ``sig`` answers "did ANYTHING in the store change" at the cost of a
+    #: full document read (~2.5 s), and heartbeat tables move it constantly.
+    #: This answers "did the BOARD's content change" (``tasks`` rows +
+    #: sidecar stat, the latter compared separately) in ~0.1 s, so
+    #: :func:`get_board` can validate its cache without paying for the
+    #: answer. Populated at build time; None means "unknown — compare via
+    #: ``sig``", which fails CLOSED exactly like a missing ``sig``.
+    card_fp: Optional[str] = None
     # P10 (lead a2a 2026-06-12) — user-defined project clusters loaded
     # from the same store. Empty list when the store has no ``groups:`` key
     # (back-compat). See :mod:`scitex_cards._groups`.
@@ -216,7 +226,7 @@ def _swr_enabled() -> bool:
 
 
 def _kick_board_refresh(
-    key, resolved, effective_mtime, effective_sig, load=None
+    key, resolved, effective_mtime, effective_sig, load=None, card_fp=None
 ) -> None:
     """Rebuild this board off the request path, once at a time.
 
@@ -225,6 +235,12 @@ def _kick_board_refresh(
     never be able to blank the operator's board. ``effective_sig`` is the sig
     the foreground read already computed, stamped on the fresh board verbatim
     so the NEXT read hits instead of re-kicking.
+
+    ``effective_mtime``/``effective_sig`` may be None (the fingerprint fast
+    path): the background thread then computes them itself via
+    ``store_generation`` — slow, but off the request path, which is the
+    property stale-while-revalidate exists to provide. ``card_fp`` stamps
+    the fresh board's cheap identity the same way.
     """
     with _refresh_guard:
         if key in _refreshing:
@@ -241,14 +257,38 @@ def _kick_board_refresh(
             # cached, serve it silently forever on /graph and /timeline. A
             # background refresh must never be able to blank the board; the way
             # to guarantee that is to have no empty-fallback here at all.
+            mtime = effective_mtime
+            sig = effective_sig
+            fp = card_fp
+            if sig is None:
+                # Fingerprint fast-path kick: the foreground request skipped
+                # the expensive identity work to answer fast, so this thread
+                # does it. Slow, but this thread is not the response.
+                from scitex_cards._store_write import store_generation
+
+                from ._revision import store_change_stamp
+
+                generation = store_generation(resolved)
+                mtime = store_change_stamp(generation)
+                sig = (
+                    generation,
+                    _stat_sig(resolved)
+                    if resolved.exists()
+                    else (0, 0, 0),
+                )
+            if fp is None:
+                from scitex_cards._db import tasks_content_fingerprint
+
+                fp = tasks_content_fingerprint()
             tasks = (load or _load_global_tasks)(resolved)
             task_ids = {t["id"] for t in tasks if isinstance(t, dict) and t.get("id")}
             groups = _load_sidecar_groups(resolved, task_ids)
             fresh = BoardState(
                 tasks=tasks,
                 store_path=resolved,
-                mtime=effective_mtime,
-                sig=effective_sig,
+                mtime=mtime,
+                sig=sig,
+                card_fp=fp,
                 groups=groups,
                 lane_paths=[],
                 empty_store=not tasks,
@@ -470,15 +510,55 @@ def get_board(
     # still invalidates, matching the old self-invalidation). Both read-stable:
     # store_generation hashes the logical doc (not the .db bytes WAL rewrites),
     # and a plain read never writes the identity file. See BoardState.sig.
+    # CACHE IDENTITY, FAST PATH FIRST. ``store_generation`` below hashes the
+    # whole exported document (~2.5 s) merely to ask "did the board change" —
+    # and on a fleet with second-scale ``users.last_seen`` heartbeats the
+    # answer was always "yes", so the cache never hit and every board read
+    # paid two full store reads. ``tasks_content_fingerprint`` asks the same
+    # question of the board's ACTUAL content (the ``tasks`` rows; heartbeat
+    # tables excluded) in ~0.1 s via one small SQL aggregate. On a hit we
+    # return WITHOUT computing ``store_generation`` at all — the cached
+    # board's ``sig``/``mtime`` are reused verbatim as the opaque wire
+    # tokens, which is exact because equal fingerprints mean equal content.
+    # On a miss (or when the fingerprint is unavailable) the legacy slow
+    # path below runs unchanged: never stale, just slow.
+    from scitex_cards._db import tasks_content_fingerprint  # noqa: PLC0415
+
+    sidecar_stat = _stat_sig(resolved) if sidecar_exists else (0, 0, 0)
+    card_fp = tasks_content_fingerprint()
+
+    key = str(resolved)
+    cached = _board_cache.get(key)
+    if card_fp is not None and cached is not None:
+        board, _ = cached
+        if (
+            board.card_fp == card_fp
+            and board.sig
+            and board.sig[1] == sidecar_stat
+        ):
+            _board_cache[key] = (board, time.time())
+            return board
+        # Miss with a live fingerprint: the cards (or the sidecar groups)
+        # moved. Same stale-while-revalidate contract as the legacy path,
+        # but the rebuild's expensive identity work happens in the
+        # background thread — this request returns the stale board NOW
+        # instead of paying ~2.5 s up front for ``store_generation``.
+        if allow_stale and _swr_enabled():
+            _kick_board_refresh(
+                key, resolved, None, None, load=load, card_fp=card_fp
+            )
+            return board
+        # Blocking caller (or SWR disabled): fall through to the legacy
+        # path, which rebuilds synchronously. ``card_fp`` is reused below
+        # so the fresh board is stamped without a second fingerprint query.
+
     generation = store_generation(resolved)
     effective_mtime = store_change_stamp(generation)
     effective_sig = (
         generation,
-        _stat_sig(resolved) if sidecar_exists else (0, 0, 0),
+        sidecar_stat,
     )
 
-    key = str(resolved)
-    cached = _board_cache.get(key)
     if cached is not None:
         board, _ = cached
         if board.sig and board.sig == effective_sig:
@@ -520,6 +600,11 @@ def get_board(
         store_path=resolved,
         mtime=effective_mtime,
         sig=effective_sig,
+        # Cheap identity for the NEXT request's fast-path probe — the
+        # ``card_fp`` computed above, describing these same rows. None when
+        # the fingerprint was unavailable: the next read falls back to the
+        # ``sig`` comparison, slow but exact.
+        card_fp=card_fp,
         groups=groups,
         lane_paths=[],
         # READ, not inferred: we got here, so the store was read; it is empty

@@ -233,7 +233,7 @@ def dm_send(
     from ._backend import get_backend
 
     if not client_request_id:
-        from ._dm_exchange import new_client_request_id
+        from ._dm.exchange import new_client_request_id
 
         client_request_id = new_client_request_id()
     return get_backend().dm_send(
@@ -296,7 +296,7 @@ def dm_send_document(
     # operator-side uploads produce and what the chat pane already renders.
     # No second convention, and an older client still shows something.
     label = (caption or "").strip() or meta["filename"]
-    from ._dm_exchange import new_client_request_id
+    from ._dm.exchange import new_client_request_id
 
     record = get_backend().dm_send(
         resolved_sender,

@@ -109,7 +109,7 @@ def current_user(request: Any) -> str:
         name = (getattr(user, "get_username", lambda: "")() or "").strip()
         if name:
             return name
-    from scitex_cards._threads import OPERATOR_NAME
+    from scitex_cards._dm.threads import OPERATOR_NAME
 
     return OPERATOR_NAME
 
