@@ -291,8 +291,8 @@
           match the filters but none of them are connected to each other.</p>
           <p class="graph-empty__hint">Encode dependencies in <code>tasks.yaml</code> like this:
           <code>depends_on: [other-task-id]</code>, <code>blocks: [downstream-id]</code>,
-          or <code>parent: hub-task-id</code>. The <strong>⏱ Timeline</strong> and
-          <strong>🗒 Wall</strong> layouts show every card, connected or not.</p>
+          or <code>parent: hub-task-id</code>. The <strong>Timeline</strong> and
+          <strong>Wall</strong> layouts show every card, connected or not.</p>
         </div>
       </div>`;
   }
@@ -374,8 +374,8 @@
           Asking for it would come back as mermaid's own "maximum text size"
           notice rather than a graph, so it was not attempted.</p>
           <p class="graph-empty__hint">Narrow the filters — by project, status
-          or search — and the diagram comes back. The <strong>⏱ Timeline</strong>
-          and <strong>🗒 Wall</strong> layouts show every card, connected or
+          or search — and the diagram comes back. The <strong>Timeline</strong>
+          and <strong>Wall</strong> layouts show every card, connected or
           not.</p>
         </div>
       </div>`;

@@ -176,7 +176,7 @@ def test_default_board_awaiting_queue_uses_the_readable_label(decision):
     with override_settings(DEBUG=False, SCITEX_UI_ELEMENT_INSPECTOR=decision):
         html = _render(request, "board_v3.html", view_path="board/")
     # Assert
-    assert "<span>🚧 awaiting your decision</span>" in html
+    assert "<span>awaiting your decision</span>" in html
 
 
 def test_populated_blocker_filter_preserves_values_and_friendly_labels():

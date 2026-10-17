@@ -228,12 +228,16 @@ def test_the_page_heading_does_not_change_between_board_and_dm(chat_html):
     request was "not chat, use DM wording"; this one is about the heading
     CHANGING. Both hold once the band names the product and the switcher names
     the page.
+
+    CCT 3878: the heading moved into the shared SDK header row and carries
+    its selector class — the TEXT contract (product name, identical on both
+    pages) is what this pins, not the bare tag.
     """
     # Arrange
     html = chat_html
 
     # Act
-    heading = "<h1>SciTeX Cards</h1>" in html
+    heading = '<h1 class="stx-app-header__title">SciTeX Cards</h1>' in html
 
     # Assert
     assert heading

@@ -325,3 +325,14 @@ def test_absent_cards_decision_defaults_error_columns_transport_false():
         observed = _columns_chrome(_render(request, include_decision=False))
     # Assert
     assert observed == ["false"]
+
+
+def test_footer_dev_strings_hide_behind_info_gate():
+    # Arrange — internal chrome ON (explicit true beats debug false).
+    request = RequestFactory().get("/apps/cards/board")
+    request.user = SimpleNamespace(is_authenticated=True, is_staff=False)
+    # Act
+    with override_settings(DEBUG=False, SCITEX_UI_ELEMENT_INSPECTOR=True):
+        html = _render(request)
+    # Assert — markers stay in the DOM (pinned above) but render collapsed.
+    assert '<details class="foot-info">' in html

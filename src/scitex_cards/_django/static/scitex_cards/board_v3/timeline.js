@@ -427,7 +427,10 @@
           (meta ? '<div class="tl-card-meta">' + meta + "</div>" : "") +
           commentHtml +
           (comments.length
-            ? '<div class="tl-card-count">💬 ' + comments.length + "</div>"
+            ? '<div class="tl-card-count">' +
+              comments.length +
+              (comments.length === 1 ? " comment" : " comments") +
+              "</div>"
             : "") +
           "</div>"
         );
