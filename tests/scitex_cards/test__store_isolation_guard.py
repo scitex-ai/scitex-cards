@@ -181,7 +181,7 @@ def test_env_db_still_names_the_winning_precedence_tier():
     )
 
 
-def test_no_throwaway_cluster_leaves_a_target_every_door_refuses():
+def test_no_throwaway_cluster_target_is_set():
     """Ask-1/ask-3 contract: "unset" must never be what a test resolves.
 
     When no writable PostgreSQL was opened, ``$SCITEX_STORE_DSN`` must name a
@@ -210,21 +210,39 @@ def test_no_throwaway_cluster_leaves_a_target_every_door_refuses():
         "harness must pin the refused placeholder, never pop the variable: "
         "an absent variable resolves to the LIVE board."
     )
+
+
+def test_no_throwaway_cluster_target_is_refused_everywhere():
+    """Ask-1/ask-3 contract: the pinned target resolves nowhere live.
+
+    No cluster: the placeholder. The resolver must refuse it too, not
+    fall through to the fleet default behind our back. A cluster was
+    opened: the pin must be the ephemeral scoped DSN.
+    """
+    # Arrange
+    import os
+
     from scitex_cards._store_url import reject_non_postgres_target
 
+    # Act
+    target = os.environ.get(ENV_STORE_DSN)
     try:
         reject_non_postgres_target(target)
     except Exception:
-        # No cluster: the placeholder. The resolver must refuse it too, not
-        # fall through to the fleet default behind our back.
-        with pytest.raises(Exception, match="DSN|store"):
+        try:
             resolve_store_target(None)
+        except Exception as exc:
+            refused = "DSN" in str(exc) or "store" in str(exc)
+        else:
+            refused = False
     else:
         # A cluster was opened: the pin must be the ephemeral scoped DSN.
-        assert "search_path%3D" in target, (
-            "the pinned store target is a valid DSN but carries no "
-            "search_path scoping — it resolves to the live schema."
-        )
+        refused = "search_path%3D" in target
+    # Assert
+    assert refused, (
+        f"${ENV_STORE_DSN}={target!r} resolves somewhere it must not: "
+        "the placeholder must be refused and a cluster pin must be scoped."
+    )
 
 
 # EOF

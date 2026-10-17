@@ -51,9 +51,10 @@ def _close_source() -> str:
 
 def test_archive_pops_the_blocker_gate():
     # Arrange
+    # Arrange
+    # Act
     src = _archive_source()
-    # Act + Assert: leaving `blocked` clears the gate in place — the same
-    # pop `handle_reopen` uses, not a divergent copy.
+    # Assert
     assert 'task.pop("blocker", None)' in src
 
 
@@ -68,48 +69,80 @@ def test_archive_gate_clear_runs_before_the_save():
     assert pop_at < src.index("_save_doc_unlocked(doc")
 
 
-def test_archive_doc_records_the_gate_clear():
+def test_archive_doc_records_the_gate_clear_case1():
+    # Arrange
     # Arrange
     from scitex_cards._django.handlers import stale as stale_handler
-
+    # Act
     doc = stale_handler.handle_archive.__doc__ or ""
-    # Act + Assert
+    # Assert
     assert "blocker" in doc
+
+
+def test_archive_doc_records_the_gate_clear_case2():
+    # Arrange
+    # Arrange
+    from scitex_cards._django.handlers import stale as stale_handler
+    # Act
+    doc = stale_handler.handle_archive.__doc__ or ""
+    # Assert
     assert "cancelled" in doc
 
 
 def test_close_passes_the_blocker_clear_sentinel():
     # Arrange
+    # Arrange
+    # Act
     src = _close_source()
-    # Act + Assert: `""` is the documented clear-sentinel
-    # (`_store_enums.resolve_enum_clears` pops the key, never writes `""`),
-    # so closing a gated card clears the gate inside `update_task`.
+    # Assert
     assert 'blocker=""' in src
 
 
-def test_close_clear_runs_inside_the_update_call():
+def test_close_clear_runs_inside_the_update_call_case1():
+    # Arrange
     # Arrange
     src = _close_source()
-    # Act: the sentinel must ride the same `update_task` call that flips
-    # the status — a clear in any other call would not share the write.
+    # Act
     call_at = src.index("update_task(")
     # Assert
     assert 'status="cancelled"' in src[call_at:]
+
+
+def test_close_clear_runs_inside_the_update_call_case2():
+    # Arrange
+    # Arrange
+    src = _close_source()
+    # Act
+    call_at = src.index("update_task(")
+    # Assert
     assert 'blocker=""' in src[call_at:]
 
 
-def test_close_doc_contract_still_names_cancelled():
+def test_close_doc_contract_still_names_cancelled_case1():
     # Arrange: the registered CLI contract lives on the spec wrapper
     # (summary + description), not on the callback docstring.
+    # Arrange
     from scitex_cards._cli import _close as close_mod
-
     cmd = close_mod.close_cmd
+    # Act
     contract = " ".join(
         s for s in (getattr(cmd, "help", None), getattr(cmd, "short_help", None)) if s
     )
-    # Act + Assert: the verb contract is unchanged (the NON-SUCCESS
-    # terminal-state verb, `close --reason`); only the gate handling moved.
+    # Assert
     assert "terminal-state" in contract
+
+
+def test_close_doc_contract_still_names_cancelled_case2():
+    # Arrange: the registered CLI contract lives on the spec wrapper
+    # (summary + description), not on the callback docstring.
+    # Arrange
+    from scitex_cards._cli import _close as close_mod
+    cmd = close_mod.close_cmd
+    # Act
+    contract = " ".join(
+        s for s in (getattr(cmd, "help", None), getattr(cmd, "short_help", None)) if s
+    )
+    # Assert
     assert "close --reason" in contract
 
 
@@ -127,10 +160,11 @@ def test_validator_refuses_a_real_blocker_on_a_cancelled_row():
             "blocker": "operator-decision",
         }
     ]
-    # Act + Assert: rule (b) raises — this refusal is WHY the pop exists.
+    # Act
     try:
         _validate_tasks(rows, source="probe")
     except TaskValidationError as exc:
+        # Assert: rule (b) raises — this refusal is WHY the pop exists.
         assert "operator-decision" in str(exc)
     else:  # pragma: no cover — the pin is vacuous if this ever passes
         raise AssertionError("validator accepted blocker-on-cancelled")
@@ -138,10 +172,11 @@ def test_validator_refuses_a_real_blocker_on_a_cancelled_row():
 
 def test_validator_accepts_a_cancelled_row_with_no_gate():
     # Arrange: the post-fix shape — gate popped, terminal status kept.
+    # Arrange
     from scitex_cards._validate import _validate_tasks
-
+    # Act
     rows = [{"id": "was-blocked", "title": "gated card", "status": "cancelled"}]
-    # Act + Assert: no raise (returns None on success).
+    # Assert
     assert _validate_tasks(rows, source="probe") is None
 
 
@@ -158,12 +193,23 @@ def test_blocker_empty_string_resolves_to_a_pop_not_a_write():
     assert resolved == {"status": "cancelled", "blocker": None}
 
 
-def test_blocker_sentinel_is_a_noop_on_gateless_rows():
+def test_blocker_sentinel_is_a_noop_on_gateless_rows_case1():
     # Arrange: the common close path (a deferred card was never gated) —
     # popping an absent key must not add one.
+    # Arrange
     task = {"id": "was-deferred", "status": "cancelled"}
-    # Act: the same operation `update_task` performs for a None field.
+    # Act
     task.pop("blocker", None)
     # Assert
     assert "blocker" not in task
+
+
+def test_blocker_sentinel_is_a_noop_on_gateless_rows_case2():
+    # Arrange: the common close path (a deferred card was never gated) —
+    # popping an absent key must not add one.
+    # Arrange
+    task = {"id": "was-deferred", "status": "cancelled"}
+    # Act
+    task.pop("blocker", None)
+    # Assert
     assert task["status"] == "cancelled"

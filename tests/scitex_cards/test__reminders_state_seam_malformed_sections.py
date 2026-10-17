@@ -25,10 +25,11 @@ import inspect
 from scitex_cards._reminders import sweep_reminders
 
 
-def test_none_sections_do_not_raise_and_normalise_in_place():
+def test_none_sections_do_not_raise_and_normalise_in_place_case1():
     # Arrange — a default-built box whose sections are explicitly None.
+    # Arrange
     box: dict = {"owners": None, "cards": None}
-    # Act — an empty sweep, which must never raise on bookkeeping.
+    # Act
     out = sweep_reminders(
         [],
         state=box,
@@ -38,15 +39,33 @@ def test_none_sections_do_not_raise_and_normalise_in_place():
         operator="operator",
         interval_minutes=5.0,
     )
-    # Assert — the documented empty result, and the box healed in place.
+    # Assert
     assert out == {"digested": [], "escalated": [], "creator_escalated": [], "skipped": []}
+
+
+def test_none_sections_do_not_raise_and_normalise_in_place_case2():
+    # Arrange — a default-built box whose sections are explicitly None.
+    # Arrange
+    # Act
+    box: dict = {"owners": None, "cards": None}
+    # Assert
+    out = sweep_reminders(
+        [],
+        state=box,
+        enqueue=lambda *a, **k: {"ok": True},
+        resolve_key=lambda name: name,
+        resolve_user=lambda name: None,
+        operator="operator",
+        interval_minutes=5.0,
+    )
     assert box == {"owners": {}, "cards": {}}
 
 
-def test_missing_sections_are_created():
+def test_missing_sections_are_created_case1():
     # Arrange — a fresh box with neither section.
+    # Arrange
     box: dict = {}
-    # Act.
+    # Act
     out = sweep_reminders(
         [],
         state=box,
@@ -56,16 +75,51 @@ def test_missing_sections_are_created():
         operator="operator",
         interval_minutes=5.0,
     )
-    # Assert — sections exist as dicts, result empty.
+    # Assert
     assert out["digested"] == [] and out["escalated"] == []
+
+
+def test_missing_sections_are_created_case2():
+    # Arrange — a fresh box with neither section.
+    # Arrange
+    # Act
+    box: dict = {}
+    # Assert
+    out = sweep_reminders(
+        [],
+        state=box,
+        enqueue=lambda *a, **k: {"ok": True},
+        resolve_key=lambda name: name,
+        resolve_user=lambda name: None,
+        operator="operator",
+        interval_minutes=5.0,
+    )
     assert isinstance(box.get("owners"), dict)
+
+
+def test_missing_sections_are_created_case3():
+    # Arrange — a fresh box with neither section.
+    # Arrange
+    # Act
+    box: dict = {}
+    # Assert
+    out = sweep_reminders(
+        [],
+        state=box,
+        enqueue=lambda *a, **k: {"ok": True},
+        resolve_key=lambda name: name,
+        resolve_user=lambda name: None,
+        operator="operator",
+        interval_minutes=5.0,
+    )
     assert isinstance(box.get("cards"), dict)
 
 
-def test_non_dict_sections_become_empty_dicts():
+def test_non_dict_sections_become_empty_dicts_case1():
     # Arrange — sections of the wrong type (a list and a string).
+    # Arrange
     box: dict = {"owners": ["alice"], "cards": "stale"}
-    # Act.
+    # Act
     out = sweep_reminders(
         [],
         state=box,
@@ -75,15 +129,33 @@ def test_non_dict_sections_become_empty_dicts():
         operator="operator",
         interval_minutes=5.0,
     )
-    # Assert — coerced, never raised.
+    # Assert
     assert out["skipped"] == []
+
+
+def test_non_dict_sections_become_empty_dicts_case2():
+    # Arrange — sections of the wrong type (a list and a string).
+    # Arrange
+    # Act
+    box: dict = {"owners": ["alice"], "cards": "stale"}
+    # Assert
+    out = sweep_reminders(
+        [],
+        state=box,
+        enqueue=lambda *a, **k: {"ok": True},
+        resolve_key=lambda name: name,
+        resolve_user=lambda name: None,
+        operator="operator",
+        interval_minutes=5.0,
+    )
     assert box == {"owners": {}, "cards": {}}
 
 
-def test_well_formed_box_threads_unchanged():
+def test_well_formed_box_threads_unchanged_case1():
     # Arrange — a healthy box must not be disturbed by the tolerance.
+    # Arrange
     box: dict = {"owners": {}, "cards": {}}
-    # Act.
+    # Act
     out = sweep_reminders(
         [],
         state=box,
@@ -93,26 +165,63 @@ def test_well_formed_box_threads_unchanged():
         operator="operator",
         interval_minutes=5.0,
     )
-    # Assert — same empty result, sections still empty dicts.
+    # Assert
     assert out == {"digested": [], "escalated": [], "creator_escalated": [], "skipped": []}
+
+
+def test_well_formed_box_threads_unchanged_case2():
+    # Arrange — a healthy box must not be disturbed by the tolerance.
+    # Arrange
+    # Act
+    box: dict = {"owners": {}, "cards": {}}
+    # Assert
+    out = sweep_reminders(
+        [],
+        state=box,
+        enqueue=lambda *a, **k: {"ok": True},
+        resolve_key=lambda name: name,
+        resolve_user=lambda name: None,
+        operator="operator",
+        interval_minutes=5.0,
+    )
     assert box["owners"] == {} and box["cards"] == {}
 
 
-def test_docstring_names_the_malformed_section_tolerance():
+def test_docstring_names_the_malformed_section_tolerance_case1():
     # Arrange — the live contract text.
+    # Arrange
+    # Act
     doc = sweep_reminders.__doc__ or ""
-    # Assert — the tolerance is documented, not just coded.
+    # Assert
     assert "malformed" in doc
+
+
+def test_docstring_names_the_malformed_section_tolerance_case2():
+    # Arrange — the live contract text.
+    # Arrange
+    # Act
+    doc = sweep_reminders.__doc__ or ""
+    # Assert
     assert "never raises" in doc
 
 
-def test_source_orders_normalisation_before_first_section_read():
+def test_source_orders_normalisation_before_first_section_read_case1():
     # Arrange — the live source.
+    # Arrange
+    # Act
     src = inspect.getsource(sweep_reminders)
-    # Assert — the isinstance guards precede the first section index.
+    # Assert
     assert src.index('if not isinstance(state.get("owners"), dict)') < src.index(
         'owner_state: dict[str, dict] = state["owners"]'
     )
+
+
+def test_source_orders_normalisation_before_first_section_read_case2():
+    # Arrange — the live source.
+    # Arrange
+    # Act
+    src = inspect.getsource(sweep_reminders)
+    # Assert
     assert src.index('if not isinstance(state.get("cards"), dict)') < src.index(
         'card_state: dict[str, dict] = state["cards"]'
     )

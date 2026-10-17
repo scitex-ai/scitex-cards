@@ -36,43 +36,99 @@ def _utc(*args):
     return _dt.datetime(*args, tzinfo=_dt.timezone.utc)
 
 
-def test_fixture_text_seeds_no_abolished_status():
+def test_fixture_text_seeds_no_abolished_status_case1():
+    # Arrange
+    # Act
+    # Assert
     assert '"status": "pending"' not in _FIXTURE_TEXT
+
+
+def test_fixture_text_seeds_no_abolished_status_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "'status': 'pending'" not in _FIXTURE_TEXT
-    # Non-vacuity anchor: the successor default is actually seeded, so the
-    # sweep above is not passing on an empty file.
+
+
+def test_fixture_text_seeds_no_abolished_status_case3():
+    # Arrange
+    # Act
+    # Assert
     assert '"status": "deferred"' in _FIXTURE_TEXT
 
 
 def test_deferred_past_deadline_is_overdue():
+    # Arrange
+    # Act
     task = {
         "id": "a",
         "title": "A",
         "status": "deferred",
         "deadline": "2026-06-11",
     }
+    # Assert
     assert is_overdue(task, now=_utc(2026, 6, 12, 12, 0, 0)) is True
 
 
-def test_terminal_statuses_stay_not_overdue_while_deferred_is():
+def test_terminal_statuses_stay_not_overdue():
+    # Arrange
     past = "2026-06-01"
     now = _utc(2026, 6, 12, 12, 0, 0)
-    for status in ("done", "failed", "cancelled", "goal"):
-        task = {"id": "a", "title": "A", "status": status, "deadline": past}
-        assert is_overdue(task, now=now) is False, status
+    # Act
+    still_overdue = [
+        status
+        for status in ("done", "failed", "cancelled", "goal")
+        if is_overdue(
+            {"id": "a", "title": "A", "status": status, "deadline": past}, now=now
+        )
+        is not False
+    ]
+    # Assert
+    assert still_overdue == [], still_overdue
+
+
+def test_deferred_past_deadline_stays_overdue():
+    # Arrange
+    past = "2026-06-01"
+    now = _utc(2026, 6, 12, 12, 0, 0)
     open_task = {"id": "a", "title": "A", "status": "deferred", "deadline": past}
+    # Act
+    # Assert
     assert is_overdue(open_task, now=now) is True
 
 
-def test_status_enum_mirror():
+def test_status_enum_mirror_case1():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_status_enum_mirror_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_status_enum_mirror_case3():
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES
-    # Non-vacuity: the abolished entry names the successor decision states.
+
+
+def test_status_enum_mirror_case4():
+    # Arrange
+    # Act
     hint = ABOLISHED_STATUSES["pending"]
+    # Assert
     assert "deferred" in hint
 
 
 def test_overdue_doc_names_deferred_as_not_terminal():
+    # Arrange
+    # Act
     doc = deadlines_mod.is_overdue.__doc__ or ""
+    # Assert
     assert "`deferred` is NOT" in doc

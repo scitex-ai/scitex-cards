@@ -238,18 +238,20 @@ class TestEmptyTaskList:
 class TestOrgStatusMirror:
     def test_status_map_keys_equal_valid_statuses(self):
         # Arrange
+        # Arrange
         from scitex_cards._org import STATUS_TO_ORG
+        # Act
         from scitex_cards._task import VALID_STATUSES
-
-        # Act + Assert: the export covers exactly the live statuses.
+        # Assert
         assert set(STATUS_TO_ORG) == set(VALID_STATUSES)
 
     def test_abolished_statuses_absent_from_map(self):
         # Arrange
+        # Arrange
         from scitex_cards._org import STATUS_TO_ORG
+        # Act
         from scitex_cards._task import ABOLISHED_STATUSES
-
-        # Act + Assert: no dead key survives the abolition.
+        # Assert
         assert not (set(STATUS_TO_ORG) & set(ABOLISHED_STATUSES))
 
     def test_legacy_pending_row_falls_back_to_card(self):

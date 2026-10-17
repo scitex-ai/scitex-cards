@@ -85,70 +85,191 @@ def _stale_markers(text: str) -> list[str]:
 
 
 def test_no_stale_gap_markers_in_doc41():
+    # Arrange
+    # Act
+    # Assert
     assert _stale_markers(_doc41()) == []
 
 
 def test_detector_is_not_vacuous():
+    # Arrange
+    # Act
     fixture = "\n".join(_STALE_MARKERS)
+    # Assert
     assert sorted(_stale_markers(fixture)) == sorted(_STALE_MARKERS)
 
 
 def test_add_section_names_every_shipped_flag():
+    # Arrange
     doc = _doc41()
+    # Act
     section = doc.split("### `scitex-cards add`")[1].split("### ")[0]
     has_today = next(
         line for line in section.splitlines() if line.startswith("Has today")
     )
-    for flag in _ADD_SHIPPED_FLAGS:
-        assert flag in has_today, flag
+    missing = [flag for flag in _ADD_SHIPPED_FLAGS if flag not in has_today]
+    # Assert
+    assert not missing, missing
+
+
+def test_add_section_notes_unlanded_tasks_flag():
+    # Arrange
+    doc = _doc41()
+    # Act
+    section = doc.split("### `scitex-cards add`")[1].split("### ")[0]
+    has_today = next(
+        line for line in section.splitlines() if line.startswith("Has today")
+    )
+    # Assert
     assert "--tasks` never landed" in has_today
+
+
+def test_add_section_notes_shipped_was_missing():
+    # Arrange
+    doc = _doc41()
+    # Act
+    section = doc.split("### `scitex-cards add`")[1].split("### ")[0]
+    # Assert
     assert "Shipped (was Missing" in section
 
 
-def test_add_help_proves_shipped_and_tasks_absent():
+def test_add_help_names_every_shipped_flag():
+    # Arrange
+    # Act
     help_text = _help("add")
-    for flag in _ADD_SHIPPED_FLAGS:
-        assert flag in help_text, flag
+    missing = [flag for flag in _ADD_SHIPPED_FLAGS if flag not in help_text]
+    # Assert
+    assert not missing, missing
+
+
+def test_add_help_proves_tasks_absent():
+    # Arrange
+    # Act
+    help_text = _help("add")
+    # Assert
     assert "--tasks" not in help_text
 
 
 def test_list_section_names_every_shipped_filter():
+    # Arrange
     doc = _doc41()
+    # Act
     section = doc.split("### `scitex-cards list-tasks`")[1].split("### ")[0]
     has_today = next(
         line for line in section.splitlines() if line.startswith("Has today")
     )
-    for flag in _LIST_SHIPPED_FLAGS:
-        assert flag in has_today, flag
+    missing = [flag for flag in _LIST_SHIPPED_FLAGS if flag not in has_today]
+    # Assert
+    assert not missing, missing
+
+
+def test_list_section_notes_repeatable_status_filter():
+    # Arrange
+    doc = _doc41()
+    # Act
+    section = doc.split("### `scitex-cards list-tasks`")[1].split("### ")[0]
+    has_today = next(
+        line for line in section.splitlines() if line.startswith("Has today")
+    )
+    # Assert
     assert "--status` (repeatable" in has_today
+
+
+def test_list_section_notes_shipped_filters_were_missing():
+    # Arrange
+    doc = _doc41()
+    # Act
+    section = doc.split("### `scitex-cards list-tasks`")[1].split("### ")[0]
+    # Assert
     assert "Shipped filters (was Missing" in section
 
 
-def test_list_help_proves_filters_shipped():
+def test_list_help_names_every_shipped_filter():
+    # Arrange
+    # Act
     help_text = _help("list-tasks")
-    for flag in _LIST_SHIPPED_FLAGS:
-        assert flag in help_text, flag
+    missing = [flag for flag in _LIST_SHIPPED_FLAGS if flag not in help_text]
+    # Assert
+    assert not missing, missing
 
 
-def test_update_edges_shipped_with_replace():
+def test_update_edges_shipped_with_replace_case1():
+    # Arrange
     doc = _doc41()
+    # Act
     section = doc.split("### `scitex-cards update`")[1].split("### ")[0]
+    # Assert
     assert "SHIPPED on `update` with REPLACE" in section
+
+
+def test_update_edges_shipped_with_replace_case2():
+    # Arrange
+    doc = _doc41()
+    # Act
+    section = doc.split("### `scitex-cards update`")[1].split("### ")[0]
+    # Assert
     assert "`+/-` delta semantics\nremain the follow-up" in section
 
 
-def test_update_help_proves_edges_replace():
+def test_update_help_proves_edges_replace_case1():
+    # Arrange
+    # Act
     help_text = _help("update")
+    # Assert
     assert "--depends-on" in help_text
+
+
+def test_update_help_proves_edges_replace_case2():
+    # Arrange
+    # Act
+    help_text = _help("update")
+    # Assert
     assert "--blocks" in help_text
+
+
+def test_update_help_proves_edges_replace_case3():
+    # Arrange
+    # Act
+    help_text = _help("update")
+    # Assert
     assert "REPLACE" in help_text
 
 
-def test_summary_stays_honest():
+def test_summary_stays_honest_case1():
+    # Arrange
+    doc = _doc41()
+    # Act
+    section = doc.split("### `scitex-cards summary`")[1].split("## ")[0]
+    # Assert
+    help_text = _help("summary")
+    assert "`--scope`, `--assignee`" in section
+
+
+def test_summary_stays_honest_case2():
+    # Arrange
+    doc = _doc41()
+    # Act
+    section = doc.split("### `scitex-cards summary`")[1].split("## ")[0]
+    # Assert
+    help_text = _help("summary")
+    assert "remains the follow-up now that `list-tasks` has landed" in section
+
+
+def test_summary_stays_honest_case3():
+    # Arrange
+    # Act
     doc = _doc41()
     section = doc.split("### `scitex-cards summary`")[1].split("## ")[0]
-    assert "`--scope`, `--assignee`" in section
-    assert "remains the follow-up now that `list-tasks` has landed" in section
     help_text = _help("summary")
+    # Assert
     assert "--scope" in help_text
+
+
+def test_summary_stays_honest_case4():
+    # Arrange
+    # Act
+    doc = _doc41()
+    section = doc.split("### `scitex-cards summary`")[1].split("## ")[0]
+    help_text = _help("summary")
+    # Assert
     assert "--assignee" in help_text

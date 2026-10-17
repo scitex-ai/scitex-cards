@@ -43,51 +43,71 @@ def _close_source() -> str:
 
 def test_gotcha_names_cancelled_not_deferred():
     # Arrange
+    # Arrange
+    # Act
     text = _runbook()
-    # Act + Assert: the gotcha teaches the terminal close target.
+    # Assert
     assert "Close writes `cancelled` (terminal), not `deferred`" in text
 
 
 def test_old_deferred_sentinel_plan_absent():
     # Arrange
+    # Arrange
+    # Act
     text = _runbook()
-    # Act + Assert: the superseded sentinel plan is gone.
+    # Assert
     assert "Close uses `deferred` today" not in text
 
 
 def test_gotcha_points_at_the_close_section():
     # Arrange
+    # Arrange
+    # Act
     text = _runbook()
-    # Act + Assert: the gotcha defers to §3, the section that records
-    # the reason, so the two cannot drift apart silently.
+    # Assert
     assert "see §3 above" in text
 
 
 def test_close_verb_code_mirror():
     # Arrange
+    # Arrange
+    # Act
     src = _close_source()
-    # Act + Assert: the verb really writes the status the gotcha names
-    # (call-site spelling with trailing comma — prose mentions of the
-    # word do not match).
+    # Assert
     assert 'status="cancelled",' in src
 
 
-def test_close_target_is_terminal_and_live():
+def test_close_target_is_terminal_and_live_case1():
     # Arrange
+    # Arrange
+    # Act
     from scitex_cards._task import VALID_STATUSES
-    from scitex_cards._throughput import TERMINAL_STATUSES
-    # Act + Assert: the documented target is a live terminal state and
-    # the old sentinel is OPEN, so stamping closed_at on it is honest.
+    # Assert
     assert "cancelled" in VALID_STATUSES
+
+
+def test_close_target_is_terminal_and_live_case2():
+    # Arrange
+    # Arrange
+    # Act
+    from scitex_cards._throughput import TERMINAL_STATUSES
     # Assert
     assert "cancelled" in TERMINAL_STATUSES
+
+
+def test_close_target_is_terminal_and_live_case3():
+    # Arrange
+    # Arrange
+    # Act
+    from scitex_cards._throughput import TERMINAL_STATUSES
     # Assert
     assert "deferred" not in TERMINAL_STATUSES
 
 
 def test_runbook_holds_the_skill_line_budget():
     # Arrange
+    # Arrange
+    # Act
     text = _runbook()
-    # Act + Assert: SK-401 caps skill docs at 200 lines — the repoint
-    # must stay line-neutral.
+    # Assert
     assert len(text.splitlines()) <= 200

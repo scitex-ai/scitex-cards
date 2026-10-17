@@ -141,7 +141,28 @@ def _mount_policy() -> dict:
     return policy
 
 
-def test_manifest_mount_policy_declares_the_file_jail():
+def test_manifest_mount_policy_declares_the_file_jail_case1():
+    """Positive control: the board touches files AND names the jail to hold it.
+
+    The manifest description promises writes (card comments, DM send and
+    reactions, file uploads) and ``writable_routes`` lists the upload route —
+    so ``touches_files`` must be true or the hub has no reason to jail
+    anything, and the ``jail`` block must carry every key the hub reads
+    (``scope`` / ``working_dir_param`` / ``path_params``). A pin that only
+    asserted values would pass vacuously on a block that lost a key.
+    """
+    # Arrange
+    # Act
+    policy = _mount_policy()
+    # Assert
+    jail = policy.get("jail")
+    assert policy.get("touches_files") is True, (
+        "mount_policy.touches_files is not true — the board writes (comments, "
+        "DM send/reactions, uploads) and must be jailed as a file-touching app."
+    )
+
+
+def test_manifest_mount_policy_declares_the_file_jail_case2():
     """Positive control: the board touches files AND names the jail to hold it.
 
     The manifest description promises writes (card comments, DM send and
@@ -156,10 +177,6 @@ def test_manifest_mount_policy_declares_the_file_jail():
     # Act
     jail = policy.get("jail")
     # Assert
-    assert policy.get("touches_files") is True, (
-        "mount_policy.touches_files is not true — the board writes (comments, "
-        "DM send/reactions, uploads) and must be jailed as a file-touching app."
-    )
     assert isinstance(jail, dict) and set(
         ("scope", "working_dir_param", "path_params")
     ) <= set(jail), (
@@ -196,7 +213,7 @@ def test_manifest_jail_is_user_scoped_and_agrees_with_the_boundary():
     )
 
 
-def test_manifest_jail_names_the_constrained_working_dir_param():
+def test_manifest_jail_names_the_constrained_working_dir_param_case1():
     """The jail names the exact param the hub must constrain — and its shape.
 
     ``working_dir_param`` is the request param the hub pins inside the user's
@@ -215,6 +232,22 @@ def test_manifest_jail_names_the_constrained_working_dir_param():
         "— the hub jails exactly this param; renaming it here without the hub "
         "unpins every file write."
     )
+
+
+def test_manifest_jail_names_the_constrained_working_dir_param_case2():
+    """The jail names the exact param the hub must constrain — and its shape.
+
+    ``working_dir_param`` is the request param the hub pins inside the user's
+    jail; an empty or renamed value constrains nothing while looking
+    configured. ``path_params`` must stay a list (today empty: no other path
+    param carries a filesystem location) so the hub's iteration cannot break
+    on a future string-or-null edit.
+    """
+    # Arrange
+    policy = _mount_policy()
+    # Act
+    jail = policy.get("jail", {})
+    # Assert
     assert isinstance(jail.get("path_params"), list), (
         f"mount_policy.jail.path_params is {jail.get('path_params')!r}, not a "
         "list — the hub iterates it to constrain path-carrying params."
@@ -307,7 +340,7 @@ def test_dm_author_of_delegates_to_the_user_scope_boundary():
     )
 
 
-def test_manifest_description_names_the_canonical_statuses_and_no_abolished_one():
+def test_manifest_description_names_the_canonical_statuses_and_no_abolished_one_case1():
     """The board legend must match the statuses the store actually accepts.
 
     ``status 'pending'`` was abolished 2026-07-10 (``_task.ABOLISHED_STATUSES``)
@@ -319,7 +352,6 @@ def test_manifest_description_names_the_canonical_statuses_and_no_abolished_one(
     """
     # Arrange
     from scitex_cards._task import ABOLISHED_STATUSES, VALID_STATUSES
-
     manifest = (
         Path(_user_scope.__file__).resolve().parent / "manifest.json"
     )
@@ -328,12 +360,34 @@ def test_manifest_description_names_the_canonical_statuses_and_no_abolished_one(
     )
     # Act
     missing = [s for s in VALID_STATUSES if s not in description]
-    resurrected = [s for s in ABOLISHED_STATUSES if s in description]
     # Assert
     assert not missing, (
         f"manifest description omits canonical statuses: {missing!r} — "
         "the board legend must name every status the store accepts."
     )
+
+
+def test_manifest_description_names_the_canonical_statuses_and_no_abolished_one_case2():
+    """The board legend must match the statuses the store actually accepts.
+
+    ``status 'pending'`` was abolished 2026-07-10 (``_task.ABOLISHED_STATUSES``)
+    and the canonical set is ``_task.VALID_STATUSES`` (7 values, ``cancelled``
+    included). The manifest description is the legend the hub shows for the
+    board — naming an abolished status there teaches readers a value every
+    write door refuses, and omitting ``cancelled`` hides a terminal state the
+    board really renders.
+    """
+    # Arrange
+    from scitex_cards._task import ABOLISHED_STATUSES, VALID_STATUSES
+    manifest = (
+        Path(_user_scope.__file__).resolve().parent / "manifest.json"
+    )
+    description = json.loads(manifest.read_text(encoding="utf-8")).get(
+        "description", ""
+    )
+    # Act
+    resurrected = [s for s in ABOLISHED_STATUSES if s in description]
+    # Assert
     assert not resurrected, (
         f"manifest description names abolished statuses: {resurrected!r} — "
         "abolished 2026-07-10, refused by every write door since."

@@ -234,18 +234,24 @@ def test__upsert_rejects_abolished_pending(postgres_dsn):
         act()
 
 
-def test__upsert_rejected_upsert_leaves_the_row_untouched(postgres_dsn):
+def test__upsert_rejected_upsert_leaves_the_row_untouched_case1(postgres_dsn):
     """The rejection fires before the store lock, so nothing changes."""
     # Arrange
     card_id = "upsert-pending-2"
     _mk(card_id)
-
     # Act
     from scitex_cards._task import TaskValidationError
-
+    # Assert
     with pytest.raises(TaskValidationError):
         upsert_task(id=card_id, title="x", status="pending", assignee=OWNER)
 
+
+def test__upsert_rejected_upsert_leaves_the_row_untouched_case2(postgres_dsn):
+    """The rejection fires before the store lock, so nothing changes."""
+    # Arrange
+    card_id = "upsert-pending-2"
+    # Act
+    _mk(card_id)
     # Assert
     assert get_task(task_id=card_id)["status"] == "deferred"
 

@@ -103,12 +103,14 @@ def test_runtime_policy_state_is_covered_or_has_nothing_to_govern():
     # is no runtime dir on disk and nothing indexed — the exact state in
     # which the checker itself stays silent (fresh clone).
     # Arrange
+    # Arrange
     runtime = _runtime_dir()
     policy = runtime / ".gitignore"
+    # Act
     covered = policy.is_file() and _policy_covers_all(
         policy.read_text(encoding="utf-8")
     )
-    # Act + Assert
+    # Assert
     assert covered or (not runtime.exists() and not _indexed_runtime_entries())
 
 
@@ -117,8 +119,10 @@ def test_no_runtime_entries_in_the_git_index():
     # had to leave the index (staged deletions). Red at HEAD (2 entries),
     # green in the worktree and post-merge.
     # Arrange
+    # Arrange
+    # Act
     indexed = _indexed_runtime_entries()
-    # Act + Assert
+    # Assert
     assert indexed == []
 
 
@@ -126,24 +130,40 @@ def test_root_gitignore_ignores_runtime_contents():
     # The parent policy keeps seed files (and any future runtime payload)
     # out of `git status` even though they live on disk.
     # Arrange
+    # Arrange
+    # Act
     lines = (_repo_root() / ".gitignore").read_text(encoding="utf-8").splitlines()
-    # Act + Assert
+    # Assert
     assert ".scitex/cards/runtime/*" in lines
 
 
-def test_root_gitignore_has_no_seed_file_exceptions():
+def test_root_gitignore_has_no_seed_file_exceptions_case1():
     # The old per-seed `!` re-inclusions are gone (they were tracked only
     # because they predated the runtime move). Red at HEAD (both present).
     # Arrange
+    # Arrange
+    # Act
     text = (_repo_root() / ".gitignore").read_text(encoding="utf-8")
-    # Act + Assert
+    # Assert
     assert "!.scitex/cards/runtime/.gitkeep" not in text
+
+
+def test_root_gitignore_has_no_seed_file_exceptions_case2():
+    # The old per-seed `!` re-inclusions are gone (they were tracked only
+    # because they predated the runtime move). Red at HEAD (both present).
+    # Arrange
+    # Arrange
+    # Act
+    text = (_repo_root() / ".gitignore").read_text(encoding="utf-8")
+    # Assert
     assert "!.scitex/cards/runtime/README.md" not in text
 
 
 def test_seed_gitkeep_path_is_ignored():
     # Wherever the kept local seed file exists, Git must not see it.
     # Arrange + Act (pattern match; holds with or without the file on disk)
+    # Arrange
+    # Act
     ignored = _path_is_ignored(".scitex/cards/runtime/.gitkeep")
     # Assert
     assert ignored
@@ -151,6 +171,8 @@ def test_seed_gitkeep_path_is_ignored():
 
 def test_seed_readme_path_is_ignored():
     # Arrange + Act (pattern match; holds with or without the file on disk)
+    # Arrange
+    # Act
     ignored = _path_is_ignored(".scitex/cards/runtime/README.md")
     # Assert
     assert ignored
@@ -161,6 +183,8 @@ def test_policy_path_stays_untracked_by_design():
     # refuses it, so it lives on disk untracked and the checker reads it
     # there. If someone force-tracks it, the index pin above goes red.
     # Arrange + Act (pattern match; holds with or without the file on disk)
+    # Arrange
+    # Act
     ignored = _path_is_ignored(".scitex/cards/runtime/.gitignore")
     # Assert
     assert ignored
@@ -168,20 +192,26 @@ def test_policy_path_stays_untracked_by_design():
 
 def test_catchall_detector_accepts_star():
     # Arrange
+    # Arrange
+    # Act
     text = "*\n"
-    # Act + Assert: the lone catch-all covers everything.
+    # Assert
     assert _policy_covers_all(text)
 
 
 def test_catchall_detector_rejects_exception_after_catchall():
     # Arrange
+    # Arrange
+    # Act
     text = "*\n!.gitkeep\n"
-    # Act + Assert: a later `!` re-opens the door (checker fails this).
+    # Assert
     assert not _policy_covers_all(text)
 
 
 def test_catchall_detector_rejects_empty_policy():
     # Arrange
+    # Arrange
+    # Act
     text = ""
-    # Act + Assert: no catch-all line covers nothing.
+    # Assert
     assert not _policy_covers_all(text)

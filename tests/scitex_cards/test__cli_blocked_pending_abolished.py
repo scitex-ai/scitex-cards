@@ -59,40 +59,117 @@ def _tasks() -> list[dict]:
     ]
 
 
-def test_blocked_candidate_set_is_deferred_in_progress_blocked():
+def test_blocked_candidate_set_is_deferred_in_progress_blocked_case1():
+    # Arrange
     out = blocked_tasks(_tasks())
+    # Act
     by_id = {bt.id: bt for bt in out.tasks}
+    # Assert
     assert by_id["dn"].reason == "depends-on"
+
+
+def test_blocked_candidate_set_is_deferred_in_progress_blocked_case2():
+    # Arrange
+    out = blocked_tasks(_tasks())
+    # Act
+    by_id = {bt.id: bt for bt in out.tasks}
+    # Assert
     assert list(by_id["dn"].chain) == ["up"]
+
+
+def test_blocked_candidate_set_is_deferred_in_progress_blocked_case3():
+    # Arrange
+    out = blocked_tasks(_tasks())
+    # Act
+    by_id = {bt.id: bt for bt in out.tasks}
+    # Assert
     assert by_id["b"].reason == "explicit-blocker"
-    # The healthy upstream is runnable, so it is not a blocked task.
+
+
+def test_blocked_candidate_set_is_deferred_in_progress_blocked_case4():
+    # Arrange
+    out = blocked_tasks(_tasks())
+    # Act
+    by_id = {bt.id: bt for bt in out.tasks}
+    # Assert
     assert "up" not in by_id
 
 
-def test_legacy_pending_row_is_excluded_from_blocked():
+def test_legacy_pending_row_is_excluded_from_blocked_case1():
+    # Arrange
+    # Act
     out = blocked_tasks(_tasks())
+    # Assert
     assert "leg" not in {bt.id for bt in out.tasks}
+
+
+def test_legacy_pending_row_is_excluded_from_blocked_case2():
+    # Arrange
+    # Act
+    # Assert
+    out = blocked_tasks(_tasks())
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_legacy_pending_row_is_excluded_from_blocked_case3():
+    # Arrange
+    # Act
+    # Assert
+    out = blocked_tasks(_tasks())
     assert "pending" not in VALID_STATUSES
 
 
-def test_blocked_help_names_deferred_not_pending():
+def test_blocked_help_names_deferred_not_pending_case1():
+    # Arrange
+    # Act
     text = blocked_cmd.get_help(click.Context(blocked_cmd))
+    # Assert
     assert "{deferred, in_progress, blocked}" in text
+
+
+def test_blocked_help_names_deferred_not_pending_case2():
+    # Arrange
+    # Act
+    text = blocked_cmd.get_help(click.Context(blocked_cmd))
+    # Assert
     assert "{pending, in_progress, blocked}" not in text
 
 
-def test_blocked_docstring_names_true_excluded_set():
+def test_blocked_docstring_is_present():
+    # Arrange
+    # Act
     doc = blocked_tasks.__doc__
+    # Assert
     assert doc is not None
-    # Deferred is a candidate, so it must not appear among the excluded.
+
+
+def test_blocked_docstring_names_deferred_included():
+    # Arrange
+    # Act
+    doc = blocked_tasks.__doc__
+    # Assert — Deferred is a candidate, so it must not appear among the excluded.
     assert "deferred`` IS included" in doc
+
+
+def test_blocked_docstring_excludes_the_finished_set():
+    # Arrange
+    # Act
+    doc = blocked_tasks.__doc__
+    # Assert
     assert "{done, deferred, failed, goal} are" not in doc
-    for finished in ("done", "failed", "goal", "cancelled"):
-        assert finished in doc
 
 
-def test_finished_statuses_excluded_from_blocked():
+def test_blocked_docstring_names_true_excluded_set():
+    # Arrange
+    # Act
+    doc = blocked_tasks.__doc__
+    missing = [finished for finished in ("done", "failed", "goal", "cancelled") if finished not in doc]
+    # Assert
+    assert not missing, missing
+
+
+def test_finished_statuses_excluded_from_blocked_ids():
+    # Arrange
     rows = [
         {"id": "d", "title": "D", "status": "done", "blocker": "waiting on X"},
         {"id": "f", "title": "F", "status": "failed", "blocker": "waiting on X"},
@@ -118,8 +195,43 @@ def test_finished_statuses_excluded_from_blocked():
         },
         {"id": "up", "title": "Up", "status": "in_progress"},
     ]
+    # Act
     out = blocked_tasks(rows)
     ids = {bt.id for bt in out.tasks}
+    # Assert
     assert ids == {"dn"}
-    for finished in ("d", "f", "g", "c"):
-        assert finished not in ids
+
+
+def test_finished_statuses_excluded_from_blocked():
+    # Arrange
+    rows = [
+        {"id": "d", "title": "D", "status": "done", "blocker": "waiting on X"},
+        {"id": "f", "title": "F", "status": "failed", "blocker": "waiting on X"},
+        {
+            "id": "g",
+            "title": "G",
+            "status": "goal",
+            "depends_on": ["missing-upstream"],
+        },
+        {
+            "id": "c",
+            "title": "C",
+            "status": "cancelled",
+            "blocker": "waiting on X",
+        },
+        # Non-vacuity anchor: a deferred card with an unresolved dep IS
+        # reported, so an empty result cannot pass the exclusions above.
+        {
+            "id": "dn",
+            "title": "Down",
+            "status": "deferred",
+            "depends_on": ["up"],
+        },
+        {"id": "up", "title": "Up", "status": "in_progress"},
+    ]
+    # Act
+    out = blocked_tasks(rows)
+    ids = {bt.id for bt in out.tasks}
+    leaked = [finished for finished in ("d", "f", "g", "c") if finished in ids]
+    # Assert
+    assert not leaked, leaked

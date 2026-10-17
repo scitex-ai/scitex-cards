@@ -34,16 +34,19 @@ def _upsert_source() -> str:
 
 def test_upsert_source_clears_the_completion_stamp():
     # Arrange
+    # Arrange
+    # Act
     src = _upsert_source()
-    # Act + Assert: the verb calls the named clock, not two inline pops
-    # (the helper's docstring is the contract the next transition reuses).
+    # Assert
     assert "_clear_completion_stamp_on_leaving_done(task, prior_status)" in src
 
 
 def test_upsert_source_imports_the_named_clock():
     # Arrange
+    # Arrange
+    # Act
     src = _upsert_source()
-    # Act + Assert: the same clock `update_task` uses, not a divergent copy.
+    # Assert
     assert "from ._store_clocks import _clear_completion_stamp_on_leaving_done" in src
 
 
@@ -78,19 +81,21 @@ def test_upsert_captures_the_prior_status_first():
 
 def test_upsert_doc_records_the_clear():
     # Arrange
+    # Arrange
     from scitex_cards._store_upsert import upsert_task
-
+    # Act
     doc = upsert_task.__doc__ or ""
-    # Act + Assert
+    # Assert
     assert "_clear_completion_stamp_on_leaving_done" in doc
 
 
 def test_upsert_doc_names_the_stamp():
     # Arrange
+    # Arrange
     from scitex_cards._store_upsert import upsert_task
-
+    # Act
     doc = upsert_task.__doc__ or ""
-    # Act + Assert
+    # Assert
     assert "completed_at" in doc
 
 

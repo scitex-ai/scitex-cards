@@ -53,20 +53,61 @@ def test_no_fixture_seeds_the_abolished_status():
     assert seeds == []
 
 
-def test_the_successor_default_seed_is_present():
+def test_the_successor_default_seed_is_present_case1():
     # Arrange
+    # Arrange
+    # Act
     source = _SUBJECT.read_text()
-    # Act + Assert — non-vacuity: the fixtures still seed statuses, and the
-    # file under test is the verify suite, not an empty stub.
+    # Assert
     assert '"status": "deferred"' in source
+
+
+def test_the_successor_default_seed_is_present_case2():
+    # Arrange
+    # Arrange
+    # Act
+    source = _SUBJECT.read_text()
+    # Assert
     assert '"status: deferred' in source
+
+
+def test_the_successor_default_seed_is_present_case3():
+    # Arrange
+    # Arrange
+    # Act
+    source = _SUBJECT.read_text()
+    # Assert
     assert "def _valid_doc" in source
+
+
+def test_the_successor_default_seed_is_present_case4():
+    # Arrange
+    # Arrange
+    # Act
+    source = _SUBJECT.read_text()
+    # Assert
     assert "GOOD_DUMP" in source
+
+
+def test_the_successor_default_seed_is_present_case5():
+    # Arrange
+    # Arrange
+    # Act
+    source = _SUBJECT.read_text()
+    # Assert
     assert "PARTIAL_STREAM" in source
+
+
+def test_the_successor_default_seed_is_present_case6():
+    # Arrange
+    # Arrange
+    # Act
+    source = _SUBJECT.read_text()
+    # Assert
     assert "_PARSEABLE_BUT_UNCONSTRUCTABLE" in source
 
 
-def test_pending_seed_warns_while_deferred_is_silent():
+def test_pending_seed_warns_while_deferred_is_silent_case1():
     """Guard the non-interchangeability itself: the seeds differ on load.
 
     ``_validate_tasks`` tolerates a ``pending`` row with an abolished-status
@@ -78,7 +119,31 @@ def test_pending_seed_warns_while_deferred_is_silent():
     # Arrange
     pending = [{"id": "a", "title": "A", "status": "pending"}]
     live = [{"id": "a", "title": "A", "status": "deferred"}]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _validate_tasks(pending, source="/some/store.db")
+    pending_warnings = [str(x.message) for x in caught]
     # Act
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _validate_tasks(live, source="/some/store.db")
+    # Assert
+    live_warnings = [str(x.message) for x in caught]
+    assert any("abolished" in text for text in pending_warnings)
+
+
+def test_pending_seed_warns_while_deferred_is_silent_case2():
+    """Guard the non-interchangeability itself: the seeds differ on load.
+
+    ``_validate_tasks`` tolerates a ``pending`` row with an abolished-status
+    warning but passes ``deferred`` silently — so a ``pending`` fixture
+    exercises the tolerated-legacy path, not the live-status path the YAML
+    integrity tests claim to pin. This is why the fixtures must stay
+    ``deferred``.
+    """
+    # Arrange
+    pending = [{"id": "a", "title": "A", "status": "pending"}]
+    live = [{"id": "a", "title": "A", "status": "deferred"}]
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         _validate_tasks(pending, source="/some/store.db")
@@ -86,20 +151,20 @@ def test_pending_seed_warns_while_deferred_is_silent():
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         _validate_tasks(live, source="/some/store.db")
+    # Act
     live_warnings = [str(x.message) for x in caught]
     # Assert
-    assert any("abolished" in text for text in pending_warnings)
     assert live_warnings == []
 
 
-def test_verify_path_is_status_blind(tmp_path):
+def test_verify_path_is_status_blind_case1(tmp_path):
     """The verify accepts a deferred doc and still rejects a truncation.
 
     Proves the repoint changes no verdict: the byte-length + event-scan gate
     never reads the status domain, so ``deferred`` verifies and a halved write
     still raises.
     """
-    # Arrange — a real deferred dump plus its halved short-write.
+    # Arrange
     doc = {
         "tasks": [
             {"id": f"t{i}", "title": f"Title {i}", "status": "deferred"}
@@ -108,20 +173,88 @@ def test_verify_path_is_status_blind(tmp_path):
         "users": [{"id": "alice", "kind": "human", "role": "dev"}],
     }
     dumped = safe_dump(doc)
-    assert dumped is not None
     full = tmp_path / ".tasks.yaml.tmp"
     full.write_text(dumped, encoding="utf-8")
     short = tmp_path / ".tasks.yaml.tmp.short"
+    # Act
     short.write_text(dumped[: len(dumped) // 2], encoding="utf-8")
-    # Act + Assert — full verifies, short raises on the length check.
+    # Assert
+    assert dumped is not None
+
+
+def test_verify_path_is_status_blind_case2(tmp_path):
+    """The verify accepts a deferred doc and still rejects a truncation.
+
+    Proves the repoint changes no verdict: the byte-length + event-scan gate
+    never reads the status domain, so ``deferred`` verifies and a halved write
+    still raises.
+    """
+    # Arrange
+    doc = {
+        "tasks": [
+            {"id": f"t{i}", "title": f"Title {i}", "status": "deferred"}
+            for i in range(3)
+        ],
+        "users": [{"id": "alice", "kind": "human", "role": "dev"}],
+    }
+    dumped = safe_dump(doc)
+    full = tmp_path / ".tasks.yaml.tmp"
+    full.write_text(dumped, encoding="utf-8")
+    short = tmp_path / ".tasks.yaml.tmp.short"
+    # Act
+    short.write_text(dumped[: len(dumped) // 2], encoding="utf-8")
+    # Assert
     assert _verify_dumped_tmp(full, dumped) is None
+
+
+def test_verify_path_is_status_blind_case3(tmp_path):
+    """The verify accepts a deferred doc and still rejects a truncation.
+
+    Proves the repoint changes no verdict: the byte-length + event-scan gate
+    never reads the status domain, so ``deferred`` verifies and a halved write
+    still raises.
+    """
+    # Arrange
+    doc = {
+        "tasks": [
+            {"id": f"t{i}", "title": f"Title {i}", "status": "deferred"}
+            for i in range(3)
+        ],
+        "users": [{"id": "alice", "kind": "human", "role": "dev"}],
+    }
+    dumped = safe_dump(doc)
+    full = tmp_path / ".tasks.yaml.tmp"
+    full.write_text(dumped, encoding="utf-8")
+    short = tmp_path / ".tasks.yaml.tmp.short"
+    # Act
+    short.write_text(dumped[: len(dumped) // 2], encoding="utf-8")
+    # Assert
     with pytest.raises(StoreWriteVerifyError):
         _verify_dumped_tmp(short, dumped)
 
 
-def test_status_enum_mirror_holds():
+def test_status_enum_mirror_holds_case1():
     # Arrange + Act + Assert — the abolition itself, so a future
     # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_status_enum_mirror_holds_case2():
+    # Arrange + Act + Assert — the abolition itself, so a future
+    # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_status_enum_mirror_holds_case3():
+    # Arrange + Act + Assert — the abolition itself, so a future
+    # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES

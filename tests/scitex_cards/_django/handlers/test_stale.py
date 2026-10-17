@@ -293,38 +293,125 @@ def test_archive_stamps_log_meta_closed_by(store):
     assert tasks["old-deferred-card"]["_log_meta"]["closed_by"] == "operator"
 
 
-def test_archive_clears_completion_stamp(store):
+def test_archive_clears_completion_stamp_case1(store):
     # Arrange — done-card seeds WITH its completion stamp (see _STORE_TEXT):
     # archiving it must not mint a cancelled row throughput still counts
     # as delivered (fleet/timing.py + timeline.py read completed_at alone).
+    # Arrange
+    row = tasks["done-card"]
     body = {"id": "done-card", "reason": "superseded after all"}
     # Act
     resp = _post("archive", store, body)
     # Assert
+    meta = row.get("_log_meta") or {}
+    tasks = _load(store)
     assert resp.status_code == 200
+
+
+def test_archive_clears_completion_stamp_case2(store):
+    # Arrange — done-card seeds WITH its completion stamp (see _STORE_TEXT):
+    # archiving it must not mint a cancelled row throughput still counts
+    # as delivered (fleet/timing.py + timeline.py read completed_at alone).
+    # Arrange
+    body = {"id": "done-card", "reason": "superseded after all"}
+    resp = _post("archive", store, body)
+    tasks = _load(store)
+    # Act
+    row = tasks["done-card"]
+    # Assert
+    meta = row.get("_log_meta") or {}
+    assert row["status"] == "cancelled"
+
+
+def test_archive_clears_completion_stamp_case3(store):
+    # Arrange — done-card seeds WITH its completion stamp (see _STORE_TEXT):
+    # archiving it must not mint a cancelled row throughput still counts
+    # as delivered (fleet/timing.py + timeline.py read completed_at alone).
+    # Arrange
+    body = {"id": "done-card", "reason": "superseded after all"}
+    resp = _post("archive", store, body)
     tasks = _load(store)
     row = tasks["done-card"]
-    assert row["status"] == "cancelled"
+    # Act
     meta = row.get("_log_meta") or {}
+    # Assert
     assert "completed_at" not in meta
+
+
+def test_archive_clears_completion_stamp_case4(store):
+    # Arrange — done-card seeds WITH its completion stamp (see _STORE_TEXT):
+    # archiving it must not mint a cancelled row throughput still counts
+    # as delivered (fleet/timing.py + timeline.py read completed_at alone).
+    # Arrange
+    body = {"id": "done-card", "reason": "superseded after all"}
+    resp = _post("archive", store, body)
+    tasks = _load(store)
+    row = tasks["done-card"]
+    # Act
+    meta = row.get("_log_meta") or {}
+    # Assert
     assert "completed_by" not in meta
+
+
+def test_archive_clears_completion_stamp_case5(store):
+    # Arrange — done-card seeds WITH its completion stamp (see _STORE_TEXT):
+    # archiving it must not mint a cancelled row throughput still counts
+    # as delivered (fleet/timing.py + timeline.py read completed_at alone).
+    # Arrange
+    body = {"id": "done-card", "reason": "superseded after all"}
+    resp = _post("archive", store, body)
+    tasks = _load(store)
+    row = tasks["done-card"]
+    # Act
+    meta = row.get("_log_meta") or {}
+    # Assert
     assert "closed_at" in meta
 
 
-def test_archive_clears_blocker_gate_on_leaving_blocked(store):
+def test_archive_clears_blocker_gate_on_leaving_blocked_case1(store):
     # Arrange — blocked-card seeds WITH its gate: archiving it must not
     # 400 on its own blocker (the validator rejects a real blocker
     # variant on a non-`blocked` row, `_validate.py` rule (b)), so the
     # handler pops the gate with the flip — same invariant the project
     # board and `handle_reopen` keep.
+    # Arrange
     body = {"id": "blocked-card", "reason": "no longer needed"}
     # Act
     resp = _post("archive", store, body)
     # Assert
-    assert resp.status_code == 200
     tasks = _load(store)
+    assert resp.status_code == 200
+
+
+def test_archive_clears_blocker_gate_on_leaving_blocked_case2(store):
+    # Arrange — blocked-card seeds WITH its gate: archiving it must not
+    # 400 on its own blocker (the validator rejects a real blocker
+    # variant on a non-`blocked` row, `_validate.py` rule (b)), so the
+    # handler pops the gate with the flip — same invariant the project
+    # board and `handle_reopen` keep.
+    # Arrange
+    body = {"id": "blocked-card", "reason": "no longer needed"}
+    resp = _post("archive", store, body)
+    tasks = _load(store)
+    # Act
     row = tasks["blocked-card"]
+    # Assert
     assert row["status"] == "cancelled"
+
+
+def test_archive_clears_blocker_gate_on_leaving_blocked_case3(store):
+    # Arrange — blocked-card seeds WITH its gate: archiving it must not
+    # 400 on its own blocker (the validator rejects a real blocker
+    # variant on a non-`blocked` row, `_validate.py` rule (b)), so the
+    # handler pops the gate with the flip — same invariant the project
+    # board and `handle_reopen` keep.
+    # Arrange
+    body = {"id": "blocked-card", "reason": "no longer needed"}
+    resp = _post("archive", store, body)
+    tasks = _load(store)
+    # Act
+    row = tasks["blocked-card"]
+    # Assert
     assert "blocker" not in row
 
 
@@ -417,17 +504,36 @@ def test_stale_panel_ignores_a_legacy_pending_row():
     assert ids == []
 
 
-def test_stale_panel_status_mirror_equals_the_live_enum():
+def test_stale_panel_status_mirror_equals_the_live_enum_case1():
+    # Arrange
     # Arrange
     from scitex_cards._backlog_triage import BACKLOG_STATUS
     from scitex_cards._django.handlers import stale as stale_handler
-    from scitex_cards._task import ABOLISHED_STATUSES, VALID_STATUSES
-
     # Act
     mirrored = stale_handler.BACKLOG_STATUS
     # Assert
     assert mirrored == BACKLOG_STATUS
+
+
+def test_stale_panel_status_mirror_equals_the_live_enum_case2():
+    # Arrange
+    # Arrange
+    from scitex_cards._django.handlers import stale as stale_handler
+    from scitex_cards._task import ABOLISHED_STATUSES, VALID_STATUSES
+    # Act
+    mirrored = stale_handler.BACKLOG_STATUS
+    # Assert
     assert mirrored in VALID_STATUSES
+
+
+def test_stale_panel_status_mirror_equals_the_live_enum_case3():
+    # Arrange
+    # Arrange
+    from scitex_cards._django.handlers import stale as stale_handler
+    from scitex_cards._task import ABOLISHED_STATUSES, VALID_STATUSES
+    # Act
+    mirrored = stale_handler.BACKLOG_STATUS
+    # Assert
     assert mirrored not in ABOLISHED_STATUSES
 
 

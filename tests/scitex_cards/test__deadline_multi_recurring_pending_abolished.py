@@ -33,27 +33,59 @@ _FIXTURE_TEXT = Path(__file__).with_name("test__deadline_multi_recurring.py").re
 )
 
 
-def test_fixture_text_seeds_no_abolished_status():
+def test_fixture_text_seeds_no_abolished_status_case1():
+    # Arrange
+    # Act
+    # Assert
     assert '"status": "pending"' not in _FIXTURE_TEXT
+
+
+def test_fixture_text_seeds_no_abolished_status_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "'status': 'pending'" not in _FIXTURE_TEXT
-    # Non-vacuity anchor: the successor default is actually seeded, so the
-    # sweep above is not passing on an empty file.
+
+
+def test_fixture_text_seeds_no_abolished_status_case3():
+    # Arrange
+    # Act
+    # Assert
     assert '"status": "deferred"' in _FIXTURE_TEXT
 
 
-def test_pending_seed_warns_abolished_while_deferred_is_silent():
+def test_pending_seed_warns_abolished():
     # Mechanism guard: the two statuses are NOT interchangeable seeds —
     # ``pending`` warns abolished (tolerated), ``deferred`` validates clean.
-    for status, expect_warning in (("pending", True), ("deferred", False)):
-        tasks = [{"id": "a", "title": "A", "status": status, "deadline": "2026-06-15"}]
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            _validate_tasks(tasks, source="<t>", strict=False)
-        abolished = [w for w in caught if "abolished" in str(w.message)]
-        assert (len(abolished) > 0) is expect_warning
+    # --- pending warns abolished (tolerated legacy path) ---
+    # Arrange
+    tasks = [{"id": "a", "title": "A", "status": "pending", "deadline": "2026-06-15"}]
+    # Act
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _validate_tasks(tasks, source="<t>", strict=False)
+    abolished = [w for w in caught if "abolished" in str(w.message)]
+    # Assert
+    assert len(abolished) > 0
+
+
+def test_deferred_seed_validates_silent():
+    # Mechanism guard: the two statuses are NOT interchangeable seeds —
+    # ``pending`` warns abolished (tolerated), ``deferred`` validates clean.
+    # Arrange
+    tasks = [{"id": "a", "title": "A", "status": "deferred", "deadline": "2026-06-15"}]
+    # Act
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _validate_tasks(tasks, source="<t>", strict=False)
+    abolished = [w for w in caught if "abolished" in str(w.message)]
+    # Assert
+    assert abolished == []
 
 
 def test_deferred_fixture_still_rejects_both_deadline_shapes():
+    # Arrange
+    # Act
     tasks = [
         {
             "id": "a",
@@ -63,11 +95,27 @@ def test_deferred_fixture_still_rejects_both_deadline_shapes():
             "deadlines": ["2026-06-15"],
         }
     ]
+    # Assert
     with pytest.raises(TaskValidationError, match="BOTH deadline and deadlines"):
         _validate_tasks(tasks, source="<t>", strict=False)
 
 
-def test_enum_mirror_pending_abolished_deferred_valid():
+def test_enum_mirror_pending_abolished_deferred_valid_case1():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_enum_mirror_pending_abolished_deferred_valid_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_enum_mirror_pending_abolished_deferred_valid_case3():
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES

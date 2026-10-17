@@ -27,38 +27,94 @@ from scitex_cards._store_add import add_task
 from scitex_cards._task import ABOLISHED_STATUSES, VALID_STATUSES, Task
 
 
-def test_ddl_default_is_deferred_not_pending():
+def test_ddl_default_is_deferred_not_pending_case1():
+    # Arrange
+    # Act
+    # Assert
     assert re.search(
         r"status\s+TEXT\s+NOT NULL\s+DEFAULT\s+'deferred'", SCHEMA_SQL
     ), "tasks.status DDL default must be 'deferred'"
+
+
+def test_ddl_default_is_deferred_not_pending_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "DEFAULT 'pending'" not in SCHEMA_SQL
 
 
-def test_ddl_default_mirrors_python_write_defaults():
+def test_ddl_default_mirrors_python_write_defaults_case1():
+    # Arrange
+    # Act
     add_default = inspect.signature(add_task).parameters["status"].default
-    assert add_default == "deferred"
+    # Assert
     (task_default,) = [
         f.default for f in dataclasses.fields(Task) if f.name == "status"
     ]
+    assert add_default == "deferred"
+
+
+def test_ddl_default_mirrors_python_write_defaults_case2():
+    # Arrange
+    # Act
+    add_default = inspect.signature(add_task).parameters["status"].default
+    (task_default,) = [
+        f.default for f in dataclasses.fields(Task) if f.name == "status"
+    ]
+    # Assert
     assert task_default == "deferred"
 
 
-def test_ddl_default_in_valid_outside_abolished():
+def test_ddl_default_in_valid_outside_abolished_case1():
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES
+
+
+def test_ddl_default_in_valid_outside_abolished_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_ddl_default_in_valid_outside_abolished_case3():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
 
 
-def test_raw_insert_omitting_status_lands_deferred():
+def test_raw_insert_omitting_status_lands_deferred_case1():
+    # Arrange
     match = re.search(
         r"CREATE TABLE IF NOT EXISTS tasks \(.*?\);", SCHEMA_SQL, re.DOTALL
     )
+    con = sqlite3.connect(":memory:")
+    con.execute(match.group(0))
+    con.execute("INSERT INTO tasks(id, title) VALUES ('t1', 'T')")
+    # Act
+    (status,) = con.execute(
+        "SELECT status FROM tasks WHERE id = 't1'"
+    ).fetchone()
+    con.close()
+    # Assert
     assert match, "tasks CREATE TABLE statement must be extractable"
+
+
+def test_raw_insert_omitting_status_lands_deferred_case2():
+    # Arrange
+    match = re.search(
+        r"CREATE TABLE IF NOT EXISTS tasks \(.*?\);", SCHEMA_SQL, re.DOTALL
+    )
     con = sqlite3.connect(":memory:")
     con.execute(match.group(0))
     con.execute("INSERT INTO tasks(id, title) VALUES ('t1', 'T')")
     (status,) = con.execute(
         "SELECT status FROM tasks WHERE id = 't1'"
     ).fetchone()
-    assert status == "deferred"
+    # Act
     con.close()
+    # Assert
+    assert status == "deferred"

@@ -51,25 +51,43 @@ def test_no_fixture_seeds_the_abolished_status():
     assert seeds == []
 
 
-def test_the_successor_flip_is_pinned():
+def test_the_successor_flip_is_pinned_case1():
     # Arrange
+    # Arrange
+    # Act
     source = _SUBJECT.read_text()
-    # Act + Assert — non-vacuity: the from/to pin still asserts a flip, and
-    # the file under test is the card-events suite.
+    # Assert
     assert '("deferred", "in_progress")' in source
+
+
+def test_the_successor_flip_is_pinned_case2():
+    # Arrange
+    # Arrange
+    # Act
+    source = _SUBJECT.read_text()
+    # Assert
     assert "def test_status_flip_emits_status_changed_with_from_to" in source
 
 
-def test_the_same_value_no_event_pin_is_live():
+def test_the_same_value_no_event_pin_is_live_case1():
     # Arrange
+    # Arrange
+    # Act
     source = _SUBJECT.read_text()
-    # Act + Assert — the no-event-on-same-value pin re-sets the live
-    # successor, not the abolished value.
+    # Assert
     assert "def test_update_status_to_same_value_emits_no_event" in source
+
+
+def test_the_same_value_no_event_pin_is_live_case2():
+    # Arrange
+    # Arrange
+    # Act
+    source = _SUBJECT.read_text()
+    # Assert
     assert 'status="deferred", entry_points' in source
 
 
-def test_pending_seed_warns_while_deferred_is_silent():
+def test_pending_seed_warns_while_deferred_is_silent_case1():
     """Guard the non-interchangeability itself: the seeds differ on load.
 
     ``_validate_tasks`` tolerates a ``pending`` row with an abolished-status
@@ -81,7 +99,31 @@ def test_pending_seed_warns_while_deferred_is_silent():
     # Arrange
     pending = [{"id": "a", "title": "A", "status": "pending"}]
     live = [{"id": "a", "title": "A", "status": "deferred"}]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _validate_tasks(pending, source="/some/store.db")
+    pending_warnings = [str(x.message) for x in caught]
     # Act
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _validate_tasks(live, source="/some/store.db")
+    # Assert
+    live_warnings = [str(x.message) for x in caught]
+    assert any("abolished" in text for text in pending_warnings)
+
+
+def test_pending_seed_warns_while_deferred_is_silent_case2():
+    """Guard the non-interchangeability itself: the seeds differ on load.
+
+    ``_validate_tasks`` tolerates a ``pending`` row with an abolished-status
+    warning but passes ``deferred`` silently — so a ``pending`` fixture
+    exercises the tolerated-legacy path, not the live-status path the
+    status_changed pins claim. This is why the fixtures must stay
+    ``deferred``.
+    """
+    # Arrange
+    pending = [{"id": "a", "title": "A", "status": "pending"}]
+    live = [{"id": "a", "title": "A", "status": "deferred"}]
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         _validate_tasks(pending, source="/some/store.db")
@@ -89,32 +131,78 @@ def test_pending_seed_warns_while_deferred_is_silent():
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         _validate_tasks(live, source="/some/store.db")
+    # Act
     live_warnings = [str(x.message) for x in caught]
     # Assert
-    assert any("abolished" in text for text in pending_warnings)
     assert live_warnings == []
 
 
-def test_emit_branches_on_done_only():
+def test_emit_branches_on_done_only_case1():
     # Arrange — the flip emit must not gate on the from-value: any
     # non-done flip (including the repointed deferred->in_progress) is a
     # status_changed with {from,to}.
+    # Arrange
     source = _SRC.read_text()
+    # Act
     block = source.split("if status_change is not None:")[1][:600]
-    # Act + Assert — done-branch only; no from-value gate in the emit.
+    # Assert
     assert '_to == "done"' in block
+
+
+def test_emit_branches_on_done_only_case2():
+    # Arrange — the flip emit must not gate on the from-value: any
+    # non-done flip (including the repointed deferred->in_progress) is a
+    # status_changed with {from,to}.
+    # Arrange
+    source = _SRC.read_text()
+    # Act
+    block = source.split("if status_change is not None:")[1][:600]
+    # Assert
     assert '"status_changed"' in block
+
+
+def test_emit_branches_on_done_only_case3():
+    # Arrange — the flip emit must not gate on the from-value: any
+    # non-done flip (including the repointed deferred->in_progress) is a
+    # status_changed with {from,to}.
+    # Arrange
+    source = _SRC.read_text()
+    # Act
+    block = source.split("if status_change is not None:")[1][:600]
+    # Assert
     assert "pending" not in block
 
 
-def test_status_enum_mirror_holds():
+def test_status_enum_mirror_holds_case1():
     # Arrange + Act + Assert — the abolition itself, so a future
     # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_status_enum_mirror_holds_case2():
+    # Arrange + Act + Assert — the abolition itself, so a future
+    # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_status_enum_mirror_holds_case3():
+    # Arrange + Act + Assert — the abolition itself, so a future
+    # re-introduction of `pending` into either set fails loudly here.
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES
 
 
 def test_detector_is_not_vacuous():
+    # Arrange
+    # Act
     fixture = 'add_task(store=store, id="c-1", status="pending")\n'
+    # Assert
     assert "status" in fixture and "pending" in fixture

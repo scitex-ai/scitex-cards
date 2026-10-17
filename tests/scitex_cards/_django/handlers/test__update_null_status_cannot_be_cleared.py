@@ -68,28 +68,53 @@ def test_null_status_error_names_the_decision():
     assert "status" in error and "cannot be cleared" in error
 
 
-def test_absent_status_passes_the_null_gate():
+def test_absent_status_passes_the_null_gate_case1():
     # Arrange — absent status must NOT 400: the patch simply leaves the
     # row's status untouched. With an empty stub board the request falls
     # through to the cached-union 404, proving the null gate let it pass
     # without touching the store.
     # Act
+    # Arrange
+    # Act
     resp = _post_update({"id": "build"})
-    # Assert — 404 (unknown id on the stub union), never the null 400.
+    # Assert
     assert resp.status_code == 404
+
+
+def test_absent_status_passes_the_null_gate_case2():
+    # Arrange — absent status must NOT 400: the patch simply leaves the
+    # row's status untouched. With an empty stub board the request falls
+    # through to the cached-union 404, proving the null gate let it pass
+    # without touching the store.
+    # Act
+    # Arrange
+    # Act
+    resp = _post_update({"id": "build"})
+    # Assert
     assert "cannot be cleared" not in json.loads(resp.content.decode("utf-8"))["error"]
 
 
-def test_null_gate_sits_after_the_status_gate_before_the_verb():
+def test_null_gate_sits_after_the_status_gate_before_the_verb_case1():
     # Arrange — the null rejection must land AFTER _check_status (so an
     # abolished value still gets its disposition hint) and BEFORE any
     # store access (404 fast-path, then the update_task delegation).
+    # Arrange
     src = inspect.getsource(crud.handle_update)
-    # Act — the code-unique error-dict spelling (the docstring records the
-    # same words in prose, so anchor on the '{"error":' shape only code has).
+    # Act
     null_at = src.index('{"error": "status cannot be cleared')
     # Assert
     assert src.index("_check_status(payload)") < null_at
+
+
+def test_null_gate_sits_after_the_status_gate_before_the_verb_case2():
+    # Arrange — the null rejection must land AFTER _check_status (so an
+    # abolished value still gets its disposition hint) and BEFORE any
+    # store access (404 fast-path, then the update_task delegation).
+    # Arrange
+    src = inspect.getsource(crud.handle_update)
+    # Act
+    null_at = src.index('{"error": "status cannot be cleared')
+    # Assert
     assert null_at < src.index("update_task(board.store_path")
 
 
@@ -102,12 +127,23 @@ def test_update_doc_records_the_null_rejection():
     assert "status: null" in flat and "400" in flat and "cannot be cleared" in flat
 
 
-def test_detector_is_not_vacuous():
+def test_detector_is_not_vacuous_case1():
     # Arrange — the ordering check in the source pin must be capable of
     # finding the shape it looks for.
+    # Arrange
     fixture = '_check_status(payload)\n{"error": "status cannot be cleared"}\nupdate_task(board.store_path'
     # Act
     null_at = fixture.index('{"error": "status cannot be cleared')
     # Assert
     assert fixture.index("_check_status(payload)") < null_at
+
+
+def test_detector_is_not_vacuous_case2():
+    # Arrange — the ordering check in the source pin must be capable of
+    # finding the shape it looks for.
+    # Arrange
+    fixture = '_check_status(payload)\n{"error": "status cannot be cleared"}\nupdate_task(board.store_path'
+    # Act
+    null_at = fixture.index('{"error": "status cannot be cleared')
+    # Assert
     assert null_at < fixture.index("update_task(board.store_path")

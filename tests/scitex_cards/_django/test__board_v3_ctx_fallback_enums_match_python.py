@@ -63,8 +63,10 @@ def _ctx_fallback_members(source: str) -> set[str]:
 
 def test_the_ctx_menu_fallback_mirrors_the_python_status_enum(template_source):
     # Arrange + Act
+    # Arrange
+    # Act
     members = _ctx_fallback_members(template_source)
-    # Assert — as SETS (display order is free; membership is not).
+    # Assert
     assert members == set(VALID_STATUSES), (
         f"ctx-menu fallback offers {sorted(members)}, not the live "
         f"{sorted(VALID_STATUSES)}"
@@ -75,6 +77,8 @@ def test_the_ctx_menu_fallback_carries_no_abolished_status(template_source):
     # Pinned by set so a future re-introduction of `pending` into the
     # fallback fails loudly rather than only shifting the mirror.
     # Arrange + Act
+    # Arrange
+    # Act
     members = _ctx_fallback_members(template_source)
     # Assert
     assert members.isdisjoint(ABOLISHED_STATUSES), (
@@ -87,6 +91,9 @@ def test_the_derived_path_still_filters_a_legacy_pending(template_source):
     # The derivation reads live payloads; a stale cached payload can still
     # carry the abolished value, so the guard must stay.
     # Arrange + Act + Assert
+    # Arrange
+    # Act
+    # Assert
     assert '.filter((s) => s !== "pending")' in template_source, (
         "the ctx-menu derived path lost its legacy-pending guard — an old "
         "payload would offer a status the store refuses on write"
@@ -97,6 +104,9 @@ def test_the_ctx_menu_derives_from_the_server_ssot(template_source):
     # The fallback must stay a fallback: the primary path derives from
     # status_colors, never a second hardcoded list.
     # Arrange + Act + Assert
+    # Arrange
+    # Act
+    # Assert
     assert "status_colors" in template_source, (
         "the ctx-menu no longer derives statuses from the status_colors "
         "SSOT — the fallback pin above would be pinning the only path"

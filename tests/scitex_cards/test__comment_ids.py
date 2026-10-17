@@ -272,13 +272,14 @@ def test_every_store_verb_stamps_the_comment_it_appends(verb, postgres_dsn):
     fail-LOUD guard as the ``store`` fixtures in _django/: the ``add_task``
     below writes the ambient store, which is refused without a cluster.
     """
+    # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     task_id = f"card-{verb.__name__}"
     _store.add_task(store, id=task_id, title="A", assignee="agent:test-suite")
-    # Act
     verb(store, task_id)
-    # Assert
+    # Act
     appended = _card(store, task_id)["comments"]
+    # Assert
     assert [c for c in appended if not is_comment_id(c.get("id"))] == []
 
 

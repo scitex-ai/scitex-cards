@@ -45,33 +45,94 @@ def _suggested_statuses(help_text: str) -> list[str]:
     ]
 
 
-def test_list_tasks_help_suggests_no_abolished_status():
+def test_list_tasks_help_has_no_pending_status_flag():
+    # Arrange
+    # Act
     text = _help("list-tasks")
+    # Assert
     assert "--status pending" not in text
-    for value in _suggested_statuses(text):
-        assert value in VALID_STATUSES, value
-        assert value not in ABOLISHED_STATUSES, value
+
+
+def test_list_tasks_help_suggests_no_abolished_status():
+    # Arrange
+    # Act
+    text = _help("list-tasks")
+    suggested = _suggested_statuses(text)
+    bad = [value for value in suggested if value not in VALID_STATUSES]
+    # Assert
+    assert not bad, bad
+
+
+def test_list_tasks_help_suggests_no_abolished_value():
+    # Arrange
+    # Act
+    text = _help("list-tasks")
+    suggested = _suggested_statuses(text)
+    bad = [value for value in suggested if value in ABOLISHED_STATUSES]
+    # Assert
+    assert not bad, bad
 
 
 def test_list_tasks_help_suggests_the_successor_default():
+    # Arrange
+    # Act
     text = _help("list-tasks")
+    # Assert
     assert "--status deferred" in text
+
+
+def test_find_card_help_has_no_pending_status_flag():
+    # Arrange
+    # Act
+    text = _help("find-card")
+    # Assert
+    assert "--status pending" not in text
 
 
 def test_find_card_help_suggests_no_abolished_status():
+    # Arrange
+    # Act
     text = _help("find-card")
-    assert "--status pending" not in text
-    for value in _suggested_statuses(text):
-        assert value in VALID_STATUSES, value
-        assert value not in ABOLISHED_STATUSES, value
+    suggested = _suggested_statuses(text)
+    bad = [value for value in suggested if value not in VALID_STATUSES]
+    # Assert
+    assert not bad, bad
+
+
+def test_find_card_help_suggests_no_abolished_value():
+    # Arrange
+    # Act
+    text = _help("find-card")
+    suggested = _suggested_statuses(text)
+    bad = [value for value in suggested if value in ABOLISHED_STATUSES]
+    # Assert
+    assert not bad, bad
 
 
 def test_find_card_help_suggests_the_successor_default():
+    # Arrange
+    # Act
     text = _help("find-card")
+    # Assert
     assert "--status deferred" in text
 
 
-def test_pending_stays_abolished():
+def test_pending_stays_abolished_case1():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_pending_stays_abolished_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_pending_stays_abolished_case3():
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES

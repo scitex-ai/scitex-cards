@@ -53,113 +53,237 @@ def _stamped_done() -> dict:
     }
 
 
-def test_help_wait_source_captures_prior_status_before_the_flip():
+def test_help_wait_source_captures_prior_status_before_the_flip_case1():
     # Arrange
+    # Arrange
+    # Act
     src = inspect.getsource(_help_wait.help_wait)
-    # Act: the clock keys on the transition, so the prior status must be
-    # captured before the assignment overwrites the evidence.
     # Assert
     assert 'prior_status = existing.get("status")' in src
+
+
+def test_help_wait_source_captures_prior_status_before_the_flip_case2():
+    # Arrange
+    # Arrange
+    # Act
+    src = inspect.getsource(_help_wait.help_wait)
+    # Assert
     assert src.index('prior_status = existing.get("status")') < src.index(
         'existing["status"] = "blocked"'
     )
 
 
-def test_help_wait_source_calls_the_named_clock():
+def test_help_wait_source_calls_the_named_clock_case1():
     # Arrange
+    # Arrange
+    # Act
     src = inspect.getsource(_help_wait.help_wait)
-    # Act + Assert: the named clock, not two inline pops (the helper's
-    # docstring is the contract the next transition reuses).
+    # Assert
     assert "_clear_completion_stamp_on_leaving_done(existing, prior_status)" in src
+
+
+def test_help_wait_source_calls_the_named_clock_case2():
+    # Arrange
+    # Arrange
+    # Act
+    src = inspect.getsource(_help_wait.help_wait)
+    # Assert
     assert '"completed_at"' not in src
+
+
+def test_help_wait_source_calls_the_named_clock_case3():
+    # Arrange
+    # Arrange
+    # Act
+    src = inspect.getsource(_help_wait.help_wait)
+    # Assert
     assert "'completed_at'" not in src
 
 
 def test_help_wait_source_imports_the_clock_from_store_clocks():
     # Arrange
+    # Arrange
+    # Act
     src = inspect.getsource(_help_wait.help_wait)
-    # Act + Assert: the same clock `update_task` uses, not a divergent copy.
+    # Assert
     assert "from ._store_clocks import _clear_completion_stamp_on_leaving_done" in src
 
 
-def test_help_wait_clear_runs_after_the_flip_before_the_save():
+def test_help_wait_clear_runs_after_the_flip_before_the_save_case1():
+    # Arrange
     # Arrange
     src = inspect.getsource(_help_wait.help_wait)
-    # Act: the clear must see the NEW status (lands after the flip) and
-    # must land before the row is persisted, or a crash between write and
-    # clear mints the phantom-delivery row.
+    # Act
     clear_at = src.index("_clear_completion_stamp_on_leaving_done(existing, prior_status)")
     # Assert
     assert clear_at > src.index('existing["status"] = "blocked"')
+
+
+def test_help_wait_clear_runs_after_the_flip_before_the_save_case2():
+    # Arrange
+    # Arrange
+    src = inspect.getsource(_help_wait.help_wait)
+    # Act
+    clear_at = src.index("_clear_completion_stamp_on_leaving_done(existing, prior_status)")
+    # Assert
     assert clear_at < src.index("_save_tasks_unlocked(")
 
 
-def test_help_wait_doc_records_the_clear():
+def test_help_wait_doc_records_the_clear_case1():
     # Arrange
+    # Arrange
+    # Act
     doc = _help_wait.help_wait.__doc__ or ""
-    # Act + Assert
+    # Assert
     assert "_clear_completion_stamp_on_leaving_done" in doc
+
+
+def test_help_wait_doc_records_the_clear_case2():
+    # Arrange
+    # Arrange
+    # Act
+    doc = _help_wait.help_wait.__doc__ or ""
+    # Assert
     assert "completed_at" in doc
 
 
-def test_help_wait_status_lands_inside_the_live_enum():
+def test_help_wait_status_lands_inside_the_live_enum_case1():
     # Arrange + Act: the re-wait target must be a live status, never an
     # abolished one, or the flip itself mints a forbidden row.
+    # Arrange
+    # Act
     # Assert
     assert "blocked" in VALID_STATUSES
+
+
+def test_help_wait_status_lands_inside_the_live_enum_case2():
+    # Arrange + Act: the re-wait target must be a live status, never an
+    # abolished one, or the flip itself mints a forbidden row.
+    # Arrange
+    # Act
+    # Assert
     assert COMPLETED_STATUS == "done"
+
+
+def test_help_wait_status_lands_inside_the_live_enum_case3():
+    # Arrange + Act: the re-wait target must be a live status, never an
+    # abolished one, or the flip itself mints a forbidden row.
+    # Arrange
+    # Act
+    # Assert
     assert COMPLETED_STATUS in VALID_STATUSES
 
 
-def test_clock_clears_a_done_stamped_rewait():
+def test_clock_clears_a_done_stamped_rewait_case1():
     # Arrange: the row AFTER the flip (blocked) with the prior captured.
+    # Arrange
     task = _stamped_done()
     task["status"] = "blocked"
     # Act
     cleared = _clear_completion_stamp_on_leaving_done(task, "done")
-    # Assert: both stamp keys gone; the emptied `_log_meta` goes with them.
+    # Assert
     assert cleared is True
+
+
+def test_clock_clears_a_done_stamped_rewait_case2():
+    # Arrange: the row AFTER the flip (blocked) with the prior captured.
+    # Arrange
+    task = _stamped_done()
+    # Act
+    task["status"] = "blocked"
+    # Assert
+    cleared = _clear_completion_stamp_on_leaving_done(task, "done")
     assert "completed_at" not in task.get("_log_meta", {})
+
+
+def test_clock_clears_a_done_stamped_rewait_case3():
+    # Arrange: the row AFTER the flip (blocked) with the prior captured.
+    # Arrange
+    task = _stamped_done()
+    # Act
+    task["status"] = "blocked"
+    # Assert
+    cleared = _clear_completion_stamp_on_leaving_done(task, "done")
     assert "completed_by" not in task.get("_log_meta", {})
 
 
-def test_clock_leaves_a_blocked_refresh_untouched():
+def test_clock_leaves_a_blocked_refresh_untouched_case1():
     # Arrange: the steady-state re-wait — already blocked, no prior done.
+    # Arrange
     task = {"id": "help-alice-waiting", "status": "blocked", "title": "t"}
-    before = dict(task)
     # Act
+    before = dict(task)
     cleared = _clear_completion_stamp_on_leaving_done(task, "blocked")
-    # Assert: not a transition, nothing to unstamp, mapping identical.
+    # Assert
     assert cleared is False
+
+
+def test_clock_leaves_a_blocked_refresh_untouched_case2():
+    # Arrange: the steady-state re-wait — already blocked, no prior done.
+    # Arrange
+    task = {"id": "help-alice-waiting", "status": "blocked", "title": "t"}
+    # Act
+    before = dict(task)
+    # Assert
+    cleared = _clear_completion_stamp_on_leaving_done(task, "blocked")
     assert task == before
 
 
-def test_clock_keeps_a_genuine_stamp_when_still_done():
+def test_clock_keeps_a_genuine_stamp_when_still_done_case1():
     # Arrange: a passing edit on a done row (not an exit) must not unstamp.
+    # Arrange
     task = _stamped_done()
     # Act
     cleared = _clear_completion_stamp_on_leaving_done(task, "done")
     # Assert
     assert cleared is False
+
+
+def test_clock_keeps_a_genuine_stamp_when_still_done_case2():
+    # Arrange: a passing edit on a done row (not an exit) must not unstamp.
+    # Arrange
+    # Act
+    task = _stamped_done()
+    # Assert
+    cleared = _clear_completion_stamp_on_leaving_done(task, "done")
     assert task["_log_meta"]["completed_at"] == "2026-01-01T00:00:00Z"
 
 
-def test_detectors_are_non_vacuous():
+def test_detectors_are_non_vacuous_case1():
     # Arrange + Act + Assert: these anchors tie the suite to the real
     # invariant — if the stamp keys or the done name ever move, the pins
     # fail loudly instead of passing on renamed ghosts.
+    # Arrange
+    # Act
+    # Assert
     assert set(COMPLETION_STAMP_KEYS) == {"completed_at", "completed_by"}
+
+
+def test_detectors_are_non_vacuous_case2():
+    # Arrange + Act + Assert: these anchors tie the suite to the real
+    # invariant — if the stamp keys or the done name ever move, the pins
+    # fail loudly instead of passing on renamed ghosts.
+    # Arrange
+    # Act
+    # Assert
     assert _stamped_done()["status"] == COMPLETED_STATUS
 
 
-def test_help_clear_deliberately_does_not_stamp():
+def test_help_clear_deliberately_does_not_stamp_case1():
     # Arrange
+    # Arrange
+    # Act
     src = inspect.getsource(_help_wait.help_clear)
-    # Act + Assert: entering `done` here stamps nothing (mixed convention:
-    # only `complete_task` stamps). Locked so a future reader cannot
-    # "fix" the asymmetry silently — it is a recorded decision, and the
-    # pure wait/clear cycle therefore never mints a stamp.
+    # Assert
     assert "completed_at" not in src
+
+
+def test_help_clear_deliberately_does_not_stamp_case2():
+    # Arrange
+    # Arrange
+    # Act
+    src = inspect.getsource(_help_wait.help_clear)
+    # Assert
     assert "complete_task" not in src
 
 
