@@ -39,7 +39,8 @@
      to. Lead a2a 510a58d4 (2026-06-14) operator complaint. -->
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/00-theme-scrollbar-select.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/01-filterbar.css' %}">
-<link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}">{# page-header.css: geometry of the header bar SHARED with chat.html — the single place its height/padding/gap are stated. Linked AFTER 01-filterbar.css (so the shared h1 rule wins the desktop baseline) and BEFORE 05-responsive.css (so the phone overrides still win). (hook-bypass: line-limit — pre-existing over-cap template.) #}
+<link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/app-header.css' %}">{# CCT 3878: SDK header grammar for the shared .stx-app-header row. #}{# page-header.css: geometry of the header bar SHARED with chat.html — the single place its height/padding/gap are stated. Linked AFTER 01-filterbar.css (so the shared h1 rule wins the desktop baseline) and BEFORE 05-responsive.css (so the phone overrides still win). (hook-bypass: line-limit — pre-existing over-cap template.) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/02-card.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/03-right-and-modal.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/03b-card-actions.css' %}">
@@ -527,10 +528,10 @@
         board-appropriate width.
       {% endcomment %}
       <div class="stx-shell-sidebar__header">
-        <h5><span aria-hidden="true">📊</span> {% translate "Details" %}</h5>
+        <h5>{% translate "Details" %}</h5>
         {# shown only when collapsed — the shell's vertical icon+label strip #}
         <span class="stx-shell-sidebar__title">
-          <i aria-hidden="true">📊</i><span>{% translate "Details" %}</span>
+          <span>{% translate "Details" %}</span>
         </span>
         <button type="button" class="stx-shell-sidebar__toggle"
                 id="details-toggle" onclick="toggleDetailsPane()"
@@ -598,10 +599,10 @@
               <select class="filt" id="f-date"
                       title="Show cards by due date">
                 <option value="">{% translate "All dates" %}</option>
-                <option value="overdue">{% translate "📅 overdue" %}</option>
-                <option value="today">{% translate "📅 today" %}</option>
-                <option value="7d">{% translate "📅 within 7 days" %}</option>
-                <option value="30d">{% translate "📅 within 30 days" %}</option>
+                <option value="overdue">{% translate "overdue" %}</option>
+                <option value="today">{% translate "today" %}</option>
+                <option value="7d">{% translate "within 7 days" %}</option>
+                <option value="30d">{% translate "within 30 days" %}</option>
                 <option value="undated">{% translate "no date in title" %}</option>
               </select>
             </div>
@@ -609,7 +610,7 @@
                    title="Show blocked cards that need your decision">
               <input type="checkbox" id="f-blockingme"
                      onchange="onBlockingMeChange(event)">
-              <span>{% translate "🚧 awaiting your decision" %}</span>
+              <span>{% translate "awaiting your decision" %}</span>
             </label>
             <label class="details-check" for="f-showdone">
               <input type="checkbox" id="f-showdone" onchange="onShowDoneChange(event)">
@@ -641,8 +642,13 @@
 
   {% if cards_internal_chrome_enabled %}
   <div class="foot">
-    <span>v3 LIVE · real data · operator schema (ADR-0007) · GUI→code (ADR-0006)</span>
-    <span><code id="store-path">…</code></span>
+    {# Dev strings hide behind info (operator mandate CCT 3877): the ADR refs #}
+    {# and store path stay in the DOM (pinned) but render only on expand. #}
+    <details class="foot-info">
+      <summary title="Internal build info" aria-label="Internal build info">ⓘ</summary>
+      <span>v3 LIVE · real data · operator schema (ADR-0007) · GUI→code (ADR-0006)</span>
+      <span><code id="store-path">…</code></span>
+    </details>
   </div>
   {% endif %}
 
@@ -655,7 +661,7 @@
            per lead a2a a7e53184). All comments[] entries render here;
            Post appends via /comment + refreshes. -->
       <div class="d-comments-section">
-        <h3>🛤 Route <span class="route-hint">— how this card was handled (newest last)</span></h3>
+        <h3>Route <span class="route-hint">— how this card was handled (newest last)</span></h3>
         <div class="comment-list" id="d-comment-list">
           <div class="comment-empty">…</div>
         </div>
@@ -1456,7 +1462,7 @@
         ? `<button class="card-ctx-item card-ctx-item--sub"
              id="move-cb-trigger-${escapeHtml(cardId)}"
              onclick="event.stopPropagation(); _openMoveToCombobox('${escapeHtml(cardId)}', this)">
-             🔎 Pick / create a project ▾
+             Pick / create a project ▾
            </button>
            <span class="cb-container"
              id="move-cb-container-${escapeHtml(cardId)}"
@@ -1481,15 +1487,15 @@
         .join("");
       menu.innerHTML = `
         <div class="card-ctx-title">${escapeHtml(t.title || cardId)}</div>
-        ${item("✎ Edit details (drawer)", `closeCardCtx(); openDetail('${escapeHtml(cardId)}'); setTimeout(enterDetailEdit, 50);`)}
-        ${item("📋 Copy reference", `closeCardCtx(); copyCardText('${escapeHtml(cardId)}')`)}
-        ${item(isHidden ? "👁 Un-hide" : "🙈 Hide", `closeCardCtx(); ${isHidden ? `unhideTask('${escapeHtml(cardId)}'); render();` : `hideTask('${escapeHtml(cardId)}'); render();`}`)}
+        ${item("Edit details (drawer)", `closeCardCtx(); openDetail('${escapeHtml(cardId)}'); setTimeout(enterDetailEdit, 50);`)}
+        ${item("Copy reference", `closeCardCtx(); copyCardText('${escapeHtml(cardId)}')`)}
+        ${item(isHidden ? "Un-hide" : "Hide", `closeCardCtx(); ${isHidden ? `unhideTask('${escapeHtml(cardId)}'); render();` : `hideTask('${escapeHtml(cardId)}'); render();`}`)}
         <div class="card-ctx-sep"></div>
         ${sectionHeader("Change status")}
         ${statusItems || `<div class="card-ctx-empty">(only "${t.status}" available)</div>`}
         ${projects.length > 1 ? `<div class="card-ctx-sep"></div>${sectionHeader("Move to project")}${projectItems || `<div class="card-ctx-empty">(no other projects)</div>`}` : ""}
         <div class="card-ctx-sep"></div>
-        ${item("🗑 Delete (with Undo)", `closeCardCtx(); deleteCardById('${escapeHtml(cardId)}')`, true)}
+        ${item("Delete (with Undo)", `closeCardCtx(); deleteCardById('${escapeHtml(cardId)}')`, true)}
       `;
       // Position the menu, clamping to viewport.
       document.body.appendChild(menu);
@@ -1579,7 +1585,7 @@
             });
             if (!rr.ok) throw new Error(`HTTP ${rr.status}`);
             await loadGraph();
-            toast(`↶ Restored ${cardId}`);
+            toast(`Restored ${cardId}`);
           } catch (e) {
             toast(`✗ Undo failed: ${e.message}`, true);
           }
@@ -2039,7 +2045,7 @@
           include rows with no timestamps
         </label>
         <button type="button" class="stale-tb-reload" onclick="loadStale()"
-                title="Refetch /stale">↻ refresh</button>
+                title="Refetch /stale">refresh</button>
       </div>`;
     }
 
@@ -2109,7 +2115,7 @@
             <button type="button" class="stale-archive-btn"
                     onclick="archiveStaleCard('${escapeHtml(r.id)}', '${escapeHtml((r.title||'').replace(/'/g, '&#39;'))}')"
                     title="Archive this card WITH a reason (close-with-reason — PR #151 verb)">
-              🗄 Archive
+              Archive
             </button>
           </td>
         </tr>`;
@@ -2132,7 +2138,7 @@
               </tr></thead>
               <tbody>${rows}</tbody>
             </table></div>`
-          : `<div class="loading">no stale cards match the current criteria 🎉</div>`}
+          : `<div class="loading">no stale cards match the current criteria</div>`}
       </div>`;
     }
 
@@ -2248,7 +2254,7 @@
       if (!wrap) return;
       wrap.classList.toggle("graph-wrap--fit", GRAPH_FIT);
       const btn = wrap.querySelector(".graph-fit-btn");
-      if (btn) btn.textContent = GRAPH_FIT ? "⤢ 1:1" : "⤡ Fit";
+      if (btn) btn.textContent = GRAPH_FIT ? "1:1" : "Fit";
     }
 
     // Render `src` to an SVG string OFF-DOM. Cached by source, so a repeat
@@ -2445,8 +2451,14 @@
       try { localStorage.setItem(DETAILS_PANE_KEY, on ? "1" : "0"); } catch {}
     }
     function _syncDetailsPane() {
-      let collapsed = false;
-      try { collapsed = localStorage.getItem(DETAILS_PANE_KEY) === "1"; } catch {}
+      // Collapsed BY DEFAULT (operator mandate CCT 3877): a fresh profile
+      // with no stored preference starts collapsed; an explicit stored
+      // preference still wins.
+      let collapsed = true;
+      try {
+        const raw = localStorage.getItem(DETAILS_PANE_KEY);
+        collapsed = raw === null ? true : raw === "1";
+      } catch {}
       const pane = document.getElementById("details-panel");
       const btn = document.getElementById("details-toggle");
       if (pane) pane.classList.toggle("collapsed", collapsed);
@@ -2573,7 +2585,7 @@
         </div>
         ${rows}
         <div class="stat-foot" id="recent-count-pill">
-          🆕 <strong id="recent-count-value">${newCount}</strong> new / 24 h
+          <strong id="recent-count-value">${newCount}</strong> new / 24 h
         </div>`;
     }
 
@@ -2741,8 +2753,7 @@
           ? "blocking me" : STX_BOARD_T.blockingMe;
         chips.push(
           `<span class="filt-chip" title="Click × to clear">
-            <span class="filt-chip-key">🚧</span>
-            <span class="filt-chip-val">${blockingMeLabel}</span>
+           <span class="filt-chip-val">${blockingMeLabel}</span>
             <button type="button" class="filt-chip-clear"
               aria-label="Clear blocking-me filter"
               onclick="clearOneFilter('blockingMe')">×</button>
@@ -3026,7 +3037,7 @@
       el.appendChild(span);
       const btn = document.createElement("button");
       btn.className = "toast-undo";
-      btn.textContent = "↺ Undo";
+      btn.textContent = "Undo";
       btn.onclick = async () => {
         btn.disabled = true;
         try { await undoFn(); } finally { /* hide whether or not undo errored */
@@ -3093,7 +3104,7 @@
         toastUndo(`✓ Resolved ${tid}`, async () => {
           try {
             await postReopen(tid, priorStatus, priorBlocker);
-            toast(`↺ Re-opened ${tid}`);
+            toast(`Re-opened ${tid}`);
             await loadGraph();
           } catch (err) {
             toast(`✗ undo failed: ${err.message}`, true);
@@ -3118,7 +3129,7 @@
         toastUndo(`✓ Resolved ${id}`, async () => {
           try {
             await postReopen(id, priorStatus, priorBlocker);
-            toast(`↺ Re-opened ${id}`);
+            toast(`Re-opened ${id}`);
             await loadGraph();
           } catch (err) {
             toast(`✗ undo failed: ${err.message}`, true);
@@ -3140,14 +3151,14 @@
     // + a synthetic done hop from status/completed_at. Derived from the event
     // stream, so it adapts automatically as the workflow's rings change.
     const ROUTE_RING = {
-      created: { label: "✦ created", cls: "created" },
-      push: { label: "⬆ push", cls: "push" },
+      created: { label: "created", cls: "created" },
+      push: { label: "push", cls: "push" },
       "ci-result": { label: "✓ CI", cls: "ci" },
       ci: { label: "✓ CI", cls: "ci" },
       done: { label: "✅ done", cls: "done" },
-      "card-message": { label: "💬 message", cls: "message" },
-      message: { label: "💬 message", cls: "message" },
-      system: { label: "⚙ system", cls: "system" },
+      "card-message": { label: "message", cls: "message" },
+      message: { label: "message", cls: "message" },
+      system: { label: "system", cls: "system" },
       escalate: { label: "⚠ escalate", cls: "escalate" },
     };
     function _routeHops(task) {
@@ -3512,7 +3523,7 @@
             });
             if (!rr.ok) throw new Error(`HTTP ${rr.status}`);
             await loadGraph();
-            toast(`↶ Restored ${id}`);
+            toast(`Restored ${id}`);
           } catch (e) {
             toast(`✗ Undo failed: ${e.message}`, true);
           }

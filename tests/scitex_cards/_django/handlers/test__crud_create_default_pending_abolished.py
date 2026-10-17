@@ -26,36 +26,100 @@ from scitex_cards._django.handlers import crud
 from scitex_cards._task import ABOLISHED_STATUSES, VALID_STATUSES
 
 
-def test_create_doc_names_the_deferred_default():
+def test_create_doc_names_the_deferred_default_case1():
+    # Arrange
+    # Act
     doc = crud.handle_create.__doc__ or ""
+    # Assert
     assert "``deferred``" in doc
+
+
+def test_create_doc_names_the_deferred_default_case2():
+    # Arrange
+    # Act
+    doc = crud.handle_create.__doc__ or ""
+    # Assert
     assert "defaults\n    ``pending``" not in doc
+
+
+def test_create_doc_names_the_deferred_default_case3():
+    # Arrange
+    # Act
+    doc = crud.handle_create.__doc__ or ""
+    # Assert
     assert "``status`` defaults" in doc
 
 
-def test_create_doc_records_the_pending_abolition():
+def test_create_doc_records_the_pending_abolition_case1():
+    # Arrange
+    # Act
     doc = crud.handle_create.__doc__ or ""
+    # Assert
     assert "abolished" in doc
+
+
+def test_create_doc_records_the_pending_abolition_case2():
+    # Arrange
+    # Act
+    doc = crud.handle_create.__doc__ or ""
+    # Assert
     assert "2026-07-10" in doc
 
 
 def test_create_code_defaults_missing_status_to_deferred():
+    # Arrange
+    # Act
     src = inspect.getsource(crud.handle_create)
+    # Assert
     assert 'payload.get("status") or "deferred"' in src
 
 
-def test_check_status_rejects_abolished_pending():
+def test_check_status_rejects_abolished_pending_case1():
+    # Arrange
+    # Act
     resp = crud._check_status({"status": "pending"})
+    # Assert
     assert resp is not None
+
+
+def test_check_status_rejects_abolished_pending_case2():
+    # Arrange
+    # Act
+    resp = crud._check_status({"status": "pending"})
+    # Assert
     assert resp.status_code == 400
 
 
-def test_check_status_accepts_deferred_and_absent():
+def test_check_status_accepts_deferred_and_absent_case1():
+    # Arrange
+    # Act
+    # Assert
     assert crud._check_status({}) is None
+
+
+def test_check_status_accepts_deferred_and_absent_case2():
+    # Arrange
+    # Act
+    # Assert
     assert crud._check_status({"status": "deferred"}) is None
 
 
-def test_pending_stays_abolished():
+def test_pending_stays_abolished_case1():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_pending_stays_abolished_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_pending_stays_abolished_case3():
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES

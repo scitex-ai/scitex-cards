@@ -64,71 +64,215 @@ def _ready(rows=()):
 # --- the abolished value never reaches a writer -------------------------------
 
 
-def test_create_refuses_abolished_pending_before_the_writer():
+def test_create_refuses_abolished_pending_before_the_writer_case1():
     """A crafted create form posting the abolished status is refused, writer silent."""
+    # Arrange
     add = _Recorder()
+    # Act
     result = pb.create_card(
         _ready(), {"title": "Sneaky", "status": "pending"}, add=add
     )
+    # Assert
     assert result.ok is False
+
+
+def test_create_refuses_abolished_pending_before_the_writer_case2():
+    """A crafted create form posting the abolished status is refused, writer silent."""
+    # Arrange
+    add = _Recorder()
+    # Act
+    result = pb.create_card(
+        _ready(), {"title": "Sneaky", "status": "pending"}, add=add
+    )
+    # Assert
     assert "pending" in result.error
+
+
+def test_create_refuses_abolished_pending_before_the_writer_case3():
+    """A crafted create form posting the abolished status is refused, writer silent."""
+    # Arrange
+    # Act
+    add = _Recorder()
+    # Assert
+    result = pb.create_card(
+        _ready(), {"title": "Sneaky", "status": "pending"}, add=add
+    )
     assert add.calls == []
 
 
-def test_update_refuses_abolished_pending_before_the_writer():
+def test_update_refuses_abolished_pending_before_the_writer_case1():
     """A crafted update form posting the abolished status is refused, writer silent."""
+    # Arrange
     update = _Recorder()
+    # Act
     result = pb.update_card(
         _ready(rows=(_card(),)),
         {"card_id": "alice-a", "status": "pending"},
         update=update,
     )
+    # Assert
     assert result.ok is False
+
+
+def test_update_refuses_abolished_pending_before_the_writer_case2():
+    """A crafted update form posting the abolished status is refused, writer silent."""
+    # Arrange
+    update = _Recorder()
+    # Act
+    result = pb.update_card(
+        _ready(rows=(_card(),)),
+        {"card_id": "alice-a", "status": "pending"},
+        update=update,
+    )
+    # Assert
     assert "pending" in result.error
+
+
+def test_update_refuses_abolished_pending_before_the_writer_case3():
+    """A crafted update form posting the abolished status is refused, writer silent."""
+    # Arrange
+    # Act
+    update = _Recorder()
+    # Assert
+    result = pb.update_card(
+        _ready(rows=(_card(),)),
+        {"card_id": "alice-a", "status": "pending"},
+        update=update,
+    )
     assert update.calls == []
 
 
-def test_the_status_vocabulary_is_the_stores_own_and_excludes_the_abolished():
-    """A page-local list would drift from the validator that gates the write;
-    a widened list would re-admit the abolished value this file refuses."""
-    from scitex_cards._task import ABOLISHED_STATUSES, VALID_STATUSES
+def test_the_status_vocabulary_is_the_stores_own():
+    """A page-local list would drift from the validator that gates the write."""
+    # Arrange
+    from scitex_cards._task import VALID_STATUSES
 
+    # Act
+    # Assert
     assert pb.canonical_statuses() == tuple(VALID_STATUSES)
-    for abolished in ABOLISHED_STATUSES:
-        assert abolished not in pb.canonical_statuses()
+
+
+def test_the_status_vocabulary_excludes_the_abolished():
+    """A widened list would re-admit the abolished value this file refuses."""
+    # Arrange
+    from scitex_cards._task import ABOLISHED_STATUSES
+
+    # Act
+    offered = [
+        abolished
+        for abolished in ABOLISHED_STATUSES
+        if abolished in pb.canonical_statuses()
+    ]
+    # Assert
+    assert not offered, offered
 
 
 # --- canonical values still flow (the pins are not a blanket refusal) ---------
 
 
-def test_create_still_files_a_canonical_status():
+def test_create_still_files_a_canonical_status_case1():
+    # Arrange
     add = _Recorder()
+    # Act
     result = pb.create_card(
         _ready(), {"title": "Legit", "status": "deferred"}, add=add
     )
+    # Assert
     assert result.ok is True
+
+
+def test_create_still_files_a_canonical_status_case2():
+    # Arrange
+    # Act
+    add = _Recorder()
+    # Assert
+    result = pb.create_card(
+        _ready(), {"title": "Legit", "status": "deferred"}, add=add
+    )
     assert len(add.calls) == 1
+
+
+def test_create_still_files_a_canonical_status_case3():
+    # Arrange
+    # Act
+    add = _Recorder()
+    # Assert
+    result = pb.create_card(
+        _ready(), {"title": "Legit", "status": "deferred"}, add=add
+    )
     assert add.calls[0]["status"] == "deferred"
 
 
-def test_update_still_moves_a_card_to_a_canonical_status():
+def test_update_still_moves_a_card_to_a_canonical_status_case1():
+    # Arrange
     update = _Recorder()
+    # Act
     result = pb.update_card(
         _ready(rows=(_card(),)),
         {"card_id": "alice-a", "status": "deferred"},
         update=update,
     )
+    # Assert
     assert result.ok is True
+
+
+def test_update_still_moves_a_card_to_a_canonical_status_case2():
+    # Arrange
+    # Act
+    update = _Recorder()
+    # Assert
+    result = pb.update_card(
+        _ready(rows=(_card(),)),
+        {"card_id": "alice-a", "status": "deferred"},
+        update=update,
+    )
     assert len(update.calls) == 1
+
+
+def test_update_still_moves_a_card_to_a_canonical_status_case3():
+    # Arrange
+    # Act
+    update = _Recorder()
+    # Assert
+    result = pb.update_card(
+        _ready(rows=(_card(),)),
+        {"card_id": "alice-a", "status": "deferred"},
+        update=update,
+    )
     assert update.calls[0]["status"] == "deferred"
 
 
-def test_whitespace_padded_abolished_value_is_refused_not_passed_through():
+def test_whitespace_padded_abolished_value_is_refused_not_passed_through_case1():
     """The form strips before checking, so padding must not smuggle it past."""
+    # Arrange
     add = _Recorder()
+    # Act
     result = pb.create_card(
         _ready(), {"title": "Padded", "status": "  pending  "}, add=add
     )
+    # Assert
     assert result.ok is False
+
+
+def test_whitespace_padded_abolished_value_is_refused_not_passed_through_case2():
+    """The form strips before checking, so padding must not smuggle it past."""
+    # Arrange
+    add = _Recorder()
+    # Act
+    result = pb.create_card(
+        _ready(), {"title": "Padded", "status": "  pending  "}, add=add
+    )
+    # Assert
     assert "pending" in result.error
+
+
+def test_whitespace_padded_abolished_value_is_refused_not_passed_through_case3():
+    """The form strips before checking, so padding must not smuggle it past."""
+    # Arrange
+    # Act
+    add = _Recorder()
+    # Assert
+    result = pb.create_card(
+        _ready(), {"title": "Padded", "status": "  pending  "}, add=add
+    )
     assert add.calls == []

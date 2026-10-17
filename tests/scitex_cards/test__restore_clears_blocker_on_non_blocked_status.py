@@ -72,9 +72,10 @@ def _post_restore(task: dict):
 
 def test_handler_pops_the_blocker_gate():
     # Arrange
+    # Arrange
+    # Act
     src = _restore_source()
-    # Act + Assert: leaving `blocked` clears the gate in place — the same
-    # pop `handle_reopen` and the `/archive` twin use, not a divergent copy.
+    # Assert
     assert 'task.pop("blocker", None)' in src
 
 
@@ -98,31 +99,61 @@ def test_handler_gate_clear_is_gated_on_not_blocked():
     assert gate_at < src.index('task.pop("blocker", None)')
 
 
-def test_handler_doc_records_the_gate_clear():
+def test_handler_doc_records_the_gate_clear_case1():
     # Arrange
+    # Arrange
+    # Act
     doc = undo_mod.handle_restore.__doc__ or ""
-    # Act + Assert
+    # Assert
     assert "blocker" in doc
+
+
+def test_handler_doc_records_the_gate_clear_case2():
+    # Arrange
+    # Arrange
+    # Act
+    doc = undo_mod.handle_restore.__doc__ or ""
+    # Assert
     assert "blocked" in doc
 
 
-def test_verb_pops_the_gate_on_the_written_copy():
+def test_verb_pops_the_gate_on_the_written_copy_case1():
+    # Arrange
+    # Arrange
+    # Act
+    src = _verb_source()
+    # Assert
+    gate_at = src.index('if restored.get("status") != "blocked":')
+    assert 'restored.pop("blocker", None)' in src
+
+
+def test_verb_pops_the_gate_on_the_written_copy_case2():
+    # Arrange
     # Arrange
     src = _verb_source()
-    # Act + Assert: the COPY is ungated (caller's Undo payload stays
-    # replayable), gated on re-entering in a non-`blocked` status.
-    assert 'restored.pop("blocker", None)' in src
+    # Act
     gate_at = src.index('if restored.get("status") != "blocked":')
+    # Assert
     assert gate_at < src.index('restored.pop("blocker", None)')
+
+
+def test_verb_pops_the_gate_on_the_written_copy_case3():
+    # Arrange
+    # Arrange
+    src = _verb_source()
+    # Act
+    gate_at = src.index('if restored.get("status") != "blocked":')
+    # Assert
     assert gate_at < src.index("_save_doc_unlocked(")
 
 
 def test_verb_doc_records_the_gate_clear():
     # Arrange
+    # Arrange
     from scitex_cards import _store_lifecycle
-
+    # Act
     doc = _store_lifecycle.restore_task.__doc__ or ""
-    # Act + Assert
+    # Assert
     assert "blocker" in doc
 
 
@@ -131,8 +162,10 @@ def test_verb_keeps_a_verbatim_blocked_gate():
     # The pop is gated on `!= "blocked"`, so this mapping is untouched by
     # construction; pin the gate text so a future unconditional pop fails
     # loudly instead of silently stripping real gates.
+    # Arrange
+    # Act
     src = _verb_source()
-    # Act + Assert
+    # Assert
     assert 'if restored.get("status") != "blocked":' in src
 
 
@@ -151,10 +184,11 @@ def test_validator_refuses_a_real_blocker_on_a_deferred_row():
             "blocker": "operator-decision",
         }
     ]
-    # Act + Assert: rule (b) raises — this refusal is WHY the pop exists.
+    # Act
     try:
         _validate_tasks(rows, source="probe")
     except TaskValidationError as exc:
+        # Assert: rule (b) raises — this refusal is WHY the pop exists.
         assert "operator-decision" in str(exc)
     else:  # pragma: no cover — the pin is vacuous if this ever passes
         raise AssertionError("validator accepted blocker-on-deferred")
@@ -162,10 +196,11 @@ def test_validator_refuses_a_real_blocker_on_a_deferred_row():
 
 def test_validator_accepts_a_deferred_row_with_no_gate():
     # Arrange: the post-fix shape — gate popped, backlog status kept.
+    # Arrange
     from scitex_cards._validate import _validate_tasks
-
+    # Act
     rows = [{"id": "was-blocked", "title": "gated card", "status": "deferred"}]
-    # Act + Assert: no raise (returns None on success).
+    # Assert
     assert _validate_tasks(rows, source="probe") is None
 
 

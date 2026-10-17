@@ -111,11 +111,12 @@ def _kind_arrays(source: str) -> list[set[str]]:
     return [set(m) for m in _bundle_string_arrays(source) if set(m) <= _KIND_VOCAB]
 
 
-def test_the_shipped_bundle_status_enums_equal_the_python_one(bundle_source):
+def test_the_shipped_bundle_status_enums_equal_the_python_one_nonvacuous(bundle_source):
     # The bundle carries the search enum, the editor STATUSES, the export
     # order, and the progress-chip order as separate literals (display order
     # differs; as SETS each must equal VALID_STATUSES).
-    # Arrange + Act
+    # Arrange
+    # Act
     found = _status_arrays(bundle_source)
     # Assert — non-vacuity first: the minifier must still emit recognisable
     # literals, else this pin evaporates on a build-tool change.
@@ -123,67 +124,132 @@ def test_the_shipped_bundle_status_enums_equal_the_python_one(bundle_source):
         f"expected >=3 status-enum literals in the shipped bundle, found "
         f"{len(found)} — the bundle shape moved under this pin"
     )
-    for members in found:
-        assert members == set(VALID_STATUSES), (
-            f"shipped bundle status literal {sorted(members)} has drifted "
-            f"from scitex_cards._task.VALID_STATUSES {sorted(VALID_STATUSES)}"
-        )
+
+
+def test_the_shipped_bundle_status_enums_equal_the_python_one(bundle_source):
+    # The bundle carries the search enum, the editor STATUSES, the export
+    # order, and the progress-chip order as separate literals (display order
+    # differs; as SETS each must equal VALID_STATUSES).
+    # Arrange
+    # Act
+    found = _status_arrays(bundle_source)
+    drifted = [sorted(members) for members in found if members != set(VALID_STATUSES)]
+    # Assert
+    assert not drifted, (
+        f"shipped bundle status literals {drifted} have drifted "
+        f"from scitex_cards._task.VALID_STATUSES {sorted(VALID_STATUSES)}"
+    )
+
+
+def test_a_status_enum_literal_is_present_in_the_bundle(bundle_source):
+    # Pinned by name so a future re-introduction of `pending` into any
+    # shipped literal fails loudly rather than only shifting a set.
+    # Arrange
+    # Act
+    found = _status_arrays(bundle_source)
+    # Assert
+    assert found, "no status-enum literal found in the shipped bundle"
 
 
 def test_an_abolished_status_is_not_shipped_in_the_bundle(bundle_source):
     # Pinned by name so a future re-introduction of `pending` into any
     # shipped literal fails loudly rather than only shifting a set.
-    # Arrange + Act
+    # Arrange
+    # Act
     found = _status_arrays(bundle_source)
-    assert found, "no status-enum literal found in the shipped bundle"
+    offered = [
+        sorted(members & set(ABOLISHED_STATUSES))
+        for members in found
+        if not members.isdisjoint(ABOLISHED_STATUSES)
+    ]
     # Assert
-    for members in found:
-        assert members.isdisjoint(ABOLISHED_STATUSES), (
-            f"the shipped board offers abolished status(es) "
-            f"{sorted(members & set(ABOLISHED_STATUSES))}"
-        )
+    assert not offered, (
+        f"the shipped board offers abolished status(es) {offered}"
+    )
 
 
-def test_the_shipped_bundle_kind_enum_equals_the_python_one(bundle_source):
-    # Arrange + Act
+def test_the_shipped_bundle_kind_enum_is_present(bundle_source):
+    # Arrange
+    # Act
     found = _kind_arrays(bundle_source)
     # Assert
     assert len(found) >= 1, (
         "no kind-enum literal found in the shipped bundle — "
         "the bundle shape moved under this pin"
     )
-    for members in found:
-        assert members == set(VALID_KINDS), (
-            f"shipped bundle kind literal {sorted(members)} has drifted "
-            f"from scitex_cards._task.VALID_KINDS {sorted(VALID_KINDS)}"
-        )
 
 
-def test_the_shipped_board_css_names_no_abolished_status(css_sources):
-    # A `data-status="pending"` selector (or its fill/stroke vars) styles a
-    # value the store refuses — dead CSS that reads as support.
-    # Arrange + Act + Assert
-    for name, source in css_sources.items():
-        assert 'data-status="pending"' not in source, (
-            f"{name} still styles the abolished pending status"
-        )
-        assert "status-fill-pending" not in source, (
-            f"{name} still references --status-fill-pending"
-        )
-        assert "status-stroke-pending" not in source, (
-            f"{name} still references --status-stroke-pending"
-        )
+def test_the_shipped_bundle_kind_enum_equals_the_python_one(bundle_source):
+    # Arrange
+    # Act
+    found = _kind_arrays(bundle_source)
+    drifted = [sorted(members) for members in found if members != set(VALID_KINDS)]
+    # Assert
+    assert not drifted, (
+        f"shipped bundle kind literals {drifted} have drifted "
+        f"from scitex_cards._task.VALID_KINDS {sorted(VALID_KINDS)}"
+    )
+
+
+def test_the_shipped_board_css_names_no_pending_selector(css_sources):
+    # A `data-status="pending"` selector styles a value the store refuses —
+    # dead CSS that reads as support.
+    # Arrange
+    probed = list(css_sources.items())
+    # Act
+    bad = [name for name, source in probed if 'data-status="pending"' in source]
+    # Assert
+    assert not bad, f"{bad} still style(s) the abolished pending status"
+
+
+def test_the_shipped_board_css_names_no_pending_fill_var(css_sources):
+    # Arrange
+    probed = list(css_sources.items())
+    # Act
+    bad = [name for name, source in probed if "status-fill-pending" in source]
+    # Assert
+    assert not bad, f"{bad} still reference(s) --status-fill-pending"
+
+
+def test_the_shipped_board_css_names_no_pending_stroke_var(css_sources):
+    # Arrange
+    probed = list(css_sources.items())
+    # Act
+    bad = [name for name, source in probed if "status-stroke-pending" in source]
+    # Assert
+    assert not bad, f"{bad} still reference(s) --status-stroke-pending"
+
+
+def test_the_shipped_board_css_selectors_are_present(css_sources):
+    # The positive mirror: every live status gets a selector in EACH file,
+    # so a newly added status cannot silently render unstyled (the
+    # `cancelled`-with-no-rule defect this sweep repaired).
+    # Arrange
+    probed = list(css_sources.items())
+    # Act
+    bad = [
+        name
+        for name, source in probed
+        if not set(re.findall(r'data-status="([a-z_]+)"', source))
+    ]
+    # Assert
+    assert not bad, f"no data-status selectors found in {bad}"
 
 
 def test_the_shipped_board_css_covers_the_live_statuses(css_sources):
     # The positive mirror: every live status gets a selector in EACH file,
     # so a newly added status cannot silently render unstyled (the
     # `cancelled`-with-no-rule defect this sweep repaired).
-    # Arrange + Act + Assert
-    for name, source in css_sources.items():
-        covered = set(re.findall(r'data-status="([a-z_]+)"', source))
-        assert covered, f"no data-status selectors found in {name}"
-        assert covered == set(VALID_STATUSES), (
-            f"{name} styles {sorted(covered)}, not the live "
-            f"{sorted(VALID_STATUSES)}"
-        )
+    # Arrange
+    probed = list(css_sources.items())
+    # Act
+    bad = [
+        (name, sorted(covered))
+        for name, source in probed
+        for covered in [set(re.findall(r'data-status="([a-z_]+)"', source))]
+        if covered != set(VALID_STATUSES)
+    ]
+    # Assert
+    assert not bad, (
+        f"styled statuses {bad} do not match the live {sorted(VALID_STATUSES)}"
+    )

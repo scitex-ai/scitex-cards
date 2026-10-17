@@ -89,6 +89,8 @@ def test_config_parses_as_yaml_mapping():
     # The config must stay machine-readable: a broken YAML edit fails the
     # audit loader before any rule runs.
     # Arrange + Act
+    # Arrange
+    # Act
     config = _load_config()
     # Assert
     assert isinstance(config, dict)
@@ -98,19 +100,43 @@ def test_no_ps220_key_in_audit_exemptions():
     # PS-220 offers no configuration bypass, so an exemption entry for it
     # suppresses nothing — the map must not carry the key.
     # Arrange
+    # Arrange
+    # Act
     sites = _ps220_sites(_exemptions_of(_load_config()))
-    # Act + Assert
+    # Assert
     assert sites == []
 
 
-def test_exemptions_map_stays_nonempty():
+def test_exemptions_map_stays_nonempty_case1():
     # Non-vacuity anchor: the live PS-231 entries must still be there, so
     # the pin above is passing on a governed map, not a missing one.
     # Arrange
+    # Arrange
+    # Act
     exemptions = _exemptions_of(_load_config())
-    # Act + Assert
+    # Assert
     assert isinstance(exemptions, dict)
+
+
+def test_exemptions_map_stays_nonempty_case2():
+    # Non-vacuity anchor: the live PS-231 entries must still be there, so
+    # the pin above is passing on a governed map, not a missing one.
+    # Arrange
+    # Arrange
+    # Act
+    exemptions = _exemptions_of(_load_config())
+    # Assert
     assert "PS-231" in exemptions
+
+
+def test_exemptions_map_stays_nonempty_case3():
+    # Non-vacuity anchor: the live PS-231 entries must still be there, so
+    # the pin above is passing on a governed map, not a missing one.
+    # Arrange
+    # Arrange
+    # Act
+    exemptions = _exemptions_of(_load_config())
+    # Assert
     assert exemptions["PS-231"]
 
 
@@ -119,8 +145,10 @@ def test_do_not_readd_note_names_ps220():
     # scitex-dev >= 0.62 + the PlainConsole transport), so a future fixer
     # does not re-derive the dead exemption.
     # Arrange
+    # Arrange
+    # Act
     text = _config_path().read_text(encoding="utf-8")
-    # Act + Assert
+    # Assert
     assert "Do NOT re-add PS-220 entries here" in text
 
 
@@ -128,31 +156,49 @@ def test_detector_flags_a_ps220_mapping_key():
     # Non-vacuity: the detector fails on the mapping shape a re-added
     # entry would take.
     # Arrange
+    # Arrange
+    # Act
     exemptions = {_PS220: [{"path": "src/x.py", "line": 1, "reason": "n/a"}]}
-    # Act + Assert
+    # Assert
     assert _ps220_sites(exemptions) != []
 
 
 def test_detector_flags_a_ps220_rule_entry():
     # Non-vacuity: the detector fails on the list-entry spelling too.
     # Arrange
+    # Arrange
+    # Act
     exemptions = {"PS-231": [{"path": "src/x.py", "line": 1, "rule": _PS220}]}
-    # Act + Assert
+    # Assert
     assert _ps220_sites(exemptions) != []
 
 
 def test_detector_accepts_ps231_only():
     # Arrange
+    # Arrange
+    # Act
     exemptions = {"PS-231": [{"path": "w.yml", "line": 0, "reason": "live"}]}
-    # Act + Assert
+    # Assert
     assert _ps220_sites(exemptions) == []
 
 
-def test_config_carries_no_sac_or_harness_coupling():
+def test_config_carries_no_sac_or_harness_coupling_case1():
     # The audit repair is Cards-owned: the config must not name the agent
     # container or any model harness.
     # Arrange
+    # Arrange
+    # Act
     text = _config_path().read_text(encoding="utf-8").lower()
-    # Act + Assert
+    # Assert
     assert "sac" not in text
+
+
+def test_config_carries_no_sac_or_harness_coupling_case2():
+    # The audit repair is Cards-owned: the config must not name the agent
+    # container or any model harness.
+    # Arrange
+    # Arrange
+    # Act
+    text = _config_path().read_text(encoding="utf-8").lower()
+    # Assert
     assert "harness" not in text

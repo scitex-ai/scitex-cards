@@ -37,35 +37,104 @@ _FIXTURE = (
 ).read_text(encoding="utf-8")
 
 
-def test_fixture_seeds_no_abolished_status():
+def test_fixture_seeds_no_abolished_status_case1():
+    # Arrange
+    # Act
+    # Assert
     assert 'status="pending"' not in _FIXTURE
+
+
+def test_fixture_seeds_no_abolished_status_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "status='pending'" not in _FIXTURE
 
 
 def test_fixture_seeds_the_successor_default():
+    # Arrange
+    # Act
+    # Assert
     assert 'status="deferred"' in _FIXTURE
 
 
 def test_add_default_is_the_successor():
+    # Arrange
+    # Act
+    # Assert
     assert inspect.signature(add_task).parameters["status"].default == "deferred"
 
 
-def test_cli_update_status_choice_rejects_pending():
+def test_cli_update_status_choice_rejects_pending_case1():
+    # Arrange
+    out = CliRunner().invoke(main, ["update", "--help"]).output
+    # Act
+    m = re.search(r"--status \[([^\]]+)\]", out)
+    # Assert
+    choices = m.group(1).split("|")
+    assert m, "--status closed choice missing from update --help"
+
+
+def test_cli_update_status_choice_rejects_pending_case2():
+    # Arrange
     out = CliRunner().invoke(main, ["update", "--help"]).output
     m = re.search(r"--status \[([^\]]+)\]", out)
-    assert m, "--status closed choice missing from update --help"
+    # Act
     choices = m.group(1).split("|")
+    # Assert
     assert "pending" not in choices
+
+
+def test_cli_update_status_choice_rejects_pending_case3():
+    # Arrange
+    out = CliRunner().invoke(main, ["update", "--help"]).output
+    m = re.search(r"--status \[([^\]]+)\]", out)
+    # Act
+    choices = m.group(1).split("|")
+    # Assert
     assert "deferred" in choices
+
+
+def test_cli_update_status_choice_rejects_pending_case4():
+    # Arrange
+    out = CliRunner().invoke(main, ["update", "--help"]).output
+    m = re.search(r"--status \[([^\]]+)\]", out)
+    # Act
+    choices = m.group(1).split("|")
+    # Assert
     assert set(choices) == set(VALID_STATUSES)
 
 
-def test_pending_stays_abolished():
+def test_pending_stays_abolished_case1():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" in ABOLISHED_STATUSES
+
+
+def test_pending_stays_abolished_case2():
+    # Arrange
+    # Act
+    # Assert
     assert "pending" not in VALID_STATUSES
+
+
+def test_pending_stays_abolished_case3():
+    # Arrange
+    # Act
+    # Assert
     assert "deferred" in VALID_STATUSES
 
 
-def test_pins_are_nonvacuous():
+def test_pins_are_nonvacuous_case1():
+    # Arrange
+    # Act
+    # Assert
     assert "t-set" in _FIXTURE
+
+
+def test_pins_are_nonvacuous_case2():
+    # Arrange
+    # Act
+    # Assert
     assert callable(add_task)

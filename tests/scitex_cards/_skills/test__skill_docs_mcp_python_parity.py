@@ -60,65 +60,157 @@ def _section_d(text: str) -> str:
 
 
 def test_no_legacy_only_claim_in_section_c():
+    # Arrange
+    # Act
+    # Assert
     assert _STALE_CLAIM not in _section_c(_doc41())
 
 
-def test_detector_is_not_vacuous():
+def test_detector_is_not_vacuous_case1():
+    # Arrange
+    # Act
+    # Assert
     assert _STALE_CLAIM in (
         "MCP `add_task` / `update_task` " + _STALE_CLAIM + " (scope,"
     )
+
+
+def test_detector_is_not_vacuous_case2():
+    # Arrange
+    # Act
+    # Assert
     assert _STALE_FENCE_LINE in (
         "x,\n" + _STALE_FENCE_LINE + "\nupdate_task"
     )
 
 
 def test_section_c_names_the_shipped_field_surface():
+    # Arrange
+    # Act
     section = _section_c(_doc41())
-    for field in _SHIPPED_MCP_FIELDS:
-        assert field in section, field
+    missing = [field for field in _SHIPPED_MCP_FIELDS if field not in section]
+    # Assert
+    assert not missing, missing
+
+
+def test_section_c_names_convention_a():
+    # Arrange
+    # Act
+    section = _section_c(_doc41())
+    # Assert
     assert "Convention A" in section
 
 
 def test_mcp_add_task_carries_the_full_surface():
+    # Arrange
+    # Act
     params = inspect.signature(_mcp_write.add_task).parameters
-    for field in _SHIPPED_MCP_FIELDS:
-        assert field in params, field
+    missing = [field for field in _SHIPPED_MCP_FIELDS if field not in params]
+    # Assert
+    assert not missing, missing
 
 
 def test_mcp_update_task_carries_the_full_surface():
+    # Arrange
+    # Act
     params = inspect.signature(_mcp_write.update_task).parameters
-    for field in _SHIPPED_MCP_FIELDS:
-        assert field in params, field
+    missing = [field for field in _SHIPPED_MCP_FIELDS if field not in params]
+    # Assert
+    assert not missing, missing
 
 
-def test_mcp_verb_tools_are_live():
-    assert callable(_mcp_server.comment_task)
-    assert callable(_mcp_server.reopen_task)
+def test_mcp_verb_tools_are_live_case1():
+    # Arrange
+    # Act
+    # Assert
     section = _section_c(_doc41())
+    assert callable(_mcp_server.comment_task)
+
+
+def test_mcp_verb_tools_are_live_case2():
+    # Arrange
+    # Act
+    # Assert
+    section = _section_c(_doc41())
+    assert callable(_mcp_server.reopen_task)
+
+
+def test_mcp_verb_tools_are_live_case3():
+    # Arrange
+    # Act
+    section = _section_c(_doc41())
+    # Assert
     assert "comment_task" in section
+
+
+def test_mcp_verb_tools_are_live_case4():
+    # Arrange
+    # Act
+    section = _section_c(_doc41())
+    # Assert
     assert "reopen_task" in section
 
 
 def test_no_stale_all_fence_in_section_d():
+    # Arrange
+    # Act
+    # Assert
     assert _STALE_FENCE_LINE not in _section_d(_doc41())
 
 
-def test_public_api_exports_comment_and_reopen():
-    assert "comment_task" in scitex_cards.__all__
-    assert "reopen_task" in scitex_cards.__all__
+def test_public_api_exports_comment_and_reopen_case1():
+    # Arrange
+    # Act
+    # Assert
     section = _section_d(_doc41())
+    assert "comment_task" in scitex_cards.__all__
+
+
+def test_public_api_exports_comment_and_reopen_case2():
+    # Arrange
+    # Act
+    # Assert
+    section = _section_d(_doc41())
+    assert "reopen_task" in scitex_cards.__all__
+
+
+def test_public_api_exports_comment_and_reopen_case3():
+    # Arrange
+    # Act
+    section = _section_d(_doc41())
+    # Assert
     assert "comment_task" in section
+
+
+def test_public_api_exports_comment_and_reopen_case4():
+    # Arrange
+    # Act
+    section = _section_d(_doc41())
+    # Assert
     assert "reopen_task" in section
 
 
 def test_update_task_accepts_arbitrary_fields():
+    # Arrange
+    # Act
     params = inspect.signature(_store_mutate.update_task).parameters
+    # Assert
     assert any(
         p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
     )
 
 
-def test_validate_store_stays_the_honest_follow_up():
+def test_validate_store_stays_the_honest_follow_up_case1():
+    # Arrange
+    # Act
     section = _section_d(_doc41())
+    # Assert
     assert "validate_store" in section
+
+
+def test_validate_store_stays_the_honest_follow_up_case2():
+    # Arrange
+    # Act
+    # Assert
+    section = _section_d(_doc41())
     assert not hasattr(scitex_cards, "validate_store")

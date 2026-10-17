@@ -27,14 +27,25 @@ from __future__ import annotations
 from scitex_cards._paths import runtime_dir
 
 
-def test_ensured_runtime_dir_carries_the_ignore_policy(tmp_path):
+def test_ensured_runtime_dir_carries_the_ignore_policy_case1(tmp_path):
     # Arrange — a store path the package never saw before.
+    # Arrange
     store = tmp_path / "tasks.yaml"
-    # Act — the same ensure every board/test/CLI run performs.
     d = runtime_dir(store, create=True)
-    # Assert — the PS-234 policy rides next to the mkdir.
+    # Act
     policy = d / ".gitignore"
+    # Assert
     assert policy.is_file()
+
+
+def test_ensured_runtime_dir_carries_the_ignore_policy_case2(tmp_path):
+    # Arrange — a store path the package never saw before.
+    # Arrange
+    store = tmp_path / "tasks.yaml"
+    d = runtime_dir(store, create=True)
+    # Act
+    policy = d / ".gitignore"
+    # Assert
     assert policy.read_text() == "*\n"
 
 
@@ -48,29 +59,59 @@ def test_present_policy_is_never_overwritten(tmp_path):
     assert (d / ".gitignore").read_text() == "*.log\n"
 
 
-def test_create_false_touches_nothing(tmp_path):
+def test_create_false_touches_nothing_case1(tmp_path):
     # Arrange — a store path with no dir yet.
+    # Arrange
     store = tmp_path / "tasks.yaml"
-    # Act — the read-path spelling that must not touch the filesystem.
+    # Act
     d = runtime_dir(store, create=False)
-    # Assert — neither dir nor policy minted.
+    # Assert
     assert not d.exists()
+
+
+def test_create_false_touches_nothing_case2(tmp_path):
+    # Arrange — a store path with no dir yet.
+    # Arrange
+    store = tmp_path / "tasks.yaml"
+    # Act
+    d = runtime_dir(store, create=False)
+    # Assert
     assert not (d / ".gitignore").exists()
 
 
-def test_seeded_policy_has_no_negations():
+def test_seeded_policy_has_no_negations_case1():
     # Arrange — the rule forbids later negation exceptions.
+    # Arrange
+    # Act
     from scitex_cards import _paths
-    # Act / Assert — the seeded constant is exactly star-newline.
+    # Assert
     assert _paths._RUNTIME_GITIGNORE == "*\n"
+
+
+def test_seeded_policy_has_no_negations_case2():
+    # Arrange — the rule forbids later negation exceptions.
+    # Arrange
+    # Act
+    from scitex_cards import _paths
+    # Assert
     assert "!" not in _paths._RUNTIME_GITIGNORE
 
 
-def test_runtime_dir_docstring_names_the_policy_contract():
+def test_runtime_dir_docstring_names_the_policy_contract_case1():
     # Arrange — the contract readers must find.
+    # Arrange
+    # Act
     doc = runtime_dir.__doc__ or ""
-    # Act / Assert — the docstring records the seed + the why.
+    # Assert
     assert ".gitignore" in doc
+
+
+def test_runtime_dir_docstring_names_the_policy_contract_case2():
+    # Arrange — the contract readers must find.
+    # Arrange
+    # Act
+    doc = runtime_dir.__doc__ or ""
+    # Assert
     assert "PS-234" in doc
 
 

@@ -105,7 +105,7 @@ def test_creating_a_card_with_an_abolished_status_is_refused_with_the_hint():
         act()
 
 
-def test_the_refused_create_costs_no_card(seeded, postgres_dsn):
+def test_the_refused_create_costs_no_card_case1(seeded, postgres_dsn):
     """OPERATOR RULING 2026-07-10 -- a status value must never cost a card.
 
     The refusal lands BEFORE the store guard, so the seeded card stands
@@ -113,9 +113,22 @@ def test_the_refused_create_costs_no_card(seeded, postgres_dsn):
     gate-before-guard order test beside the verb).
     """
     # Arrange
+    # Act
+    # Assert
+    stored = get_task(None, "w1")
     with pytest.raises(TaskValidationError):
         add_task(id="w5", title="probe", status="pending", assignee="t",
                  created_by="t")
+
+
+def test_the_refused_create_costs_no_card_case2(seeded, postgres_dsn):
+    """OPERATOR RULING 2026-07-10 -- a status value must never cost a card.
+
+    The refusal lands BEFORE the store guard, so the seeded card stands
+    untouched (that a rejected id is never minted is pinned by the
+    gate-before-guard order test beside the verb).
+    """
+    # Arrange
     # Act
     stored = get_task(None, "w1")
     # Assert
@@ -167,13 +180,23 @@ def test_updating_to_an_unknown_status_is_refused():
         act()
 
 
-def test_the_refused_update_keeps_the_prior_status(seeded, postgres_dsn):
+def test_the_refused_update_keeps_the_prior_status_case1(seeded, postgres_dsn):
     """Warn, never refuse, was the old mutate-path contract -- the same ruling,
     on the same path. The refusal keeps the row's prior (good) status, so
     nothing is lost; the caller retries with a legal value."""
     # Arrange
+    # Act
+    # Assert
+    stored = get_task(None, "w1")
     with pytest.raises(TaskValidationError):
         update_task(None, "w1", status="archived")
+
+
+def test_the_refused_update_keeps_the_prior_status_case2(seeded, postgres_dsn):
+    """Warn, never refuse, was the old mutate-path contract -- the same ruling,
+    on the same path. The refusal keeps the row's prior (good) status, so
+    nothing is lost; the caller retries with a legal value."""
+    # Arrange
     # Act
     stored = get_task(None, "w1")
     # Assert

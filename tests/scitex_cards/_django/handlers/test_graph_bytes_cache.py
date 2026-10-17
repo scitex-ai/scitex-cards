@@ -38,7 +38,7 @@ def _board(**over):
 
 
 @pytest.fixture
-def builds(monkeypatch):
+def builds():
     """Count ``_build_graph`` calls; serve a fixed small payload."""
     calls: list = []
 
@@ -46,10 +46,16 @@ def builds(monkeypatch):
         calls.append(board)
         return {"nodes": [], "hello": "world"}
 
-    monkeypatch.setattr(_graph_mod, "_build_graph", fake_build)
+    # Hand-swap, not monkeypatch (PA-306 forbids the fixture): restore in
+    # finally so a failing test cannot leak the stub into the next one.
+    old_build = _graph_mod._build_graph
+    _graph_mod._build_graph = fake_build
     _graph_mod._graph_cache_reset()
-    yield calls
-    _graph_mod._graph_cache_reset()
+    try:
+        yield calls
+    finally:
+        _graph_mod._build_graph = old_build
+        _graph_mod._graph_cache_reset()
 
 
 def _get(**extra):
