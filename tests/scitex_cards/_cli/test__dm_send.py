@@ -209,21 +209,45 @@ print(json.dumps({"exit_code": result.exit_code, "payload": payload}))
         "TMPDIR": str(tmp_path),
         "TZ": "UTC",
     }
-    # Act
+    # Act: spawn the scrubbed fresh process. Generous timeout: the child cold-imports the whole package
+    # (click + scitex stack) while sibling xdist workers saturate the box.
+    # The 5s budget predates -n auto and produced TimeoutExpired flakes
+    # under load; 60s keeps the test hermetic without masking a real hang
+    # (a hung child still fails, with its stderr attached below).
     result = subprocess.run(
         [sys.executable, "-c", code],
         env=child_env,
         capture_output=True,
         text=True,
-        timeout=5,
+        timeout=60,
     )
-    payload = json.loads(result.stdout)
+    # The point of this test is stdout purity ("emits ONLY json"). An empty
+    # stdout used to surface as a bare `json.loads` JSONDecodeError with the
+    # real evidence (child returncode + stderr) swallowed. Parse
+    # defensively instead: an empty stdout yields a probe shaped so the
+    # single assertion below fails LOUD with the child's stderr attached
+    # (stale-install gate refusal, OOM-kill, import crash).
+    raw = result.stdout
+    probe = (
+        json.loads(raw)
+        if raw.strip()
+        else {
+            "exit_code": None,
+            "payload": {"status": {"code": None, "message": ""}},
+        }
+    )
     # Assert
     assert (
         result.returncode,
-        payload["exit_code"],
-        payload["payload"]["status"]["code"],
-        "No DM was persisted" in payload["payload"]["status"]["message"],
+        probe["exit_code"]
+        if raw.strip()
+        else (
+            "fresh-process probe emitted no stdout "
+            f"(returncode={result.returncode}, "
+            f"stderr={result.stderr[-2000:]!r})"
+        ),
+        probe["payload"]["status"]["code"],
+        "No DM was persisted" in probe["payload"]["status"]["message"],
     ) == (0, 1, 400, True)
 
 
