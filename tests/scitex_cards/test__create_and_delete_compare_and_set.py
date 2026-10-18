@@ -21,6 +21,10 @@ Both stay OPT-IN with a ``None`` default (REJECT-by-default was ruled
 unusable for a mixed-version fleet): unarmed calls behave byte-identically
 to before.
 
+STRICT scitex doctrine: no unittest.mock, no monkeypatch, AAA markers each
+on its own line, one assertion per test. Multi-step scenarios live in
+``_`` helpers; each test asserts exactly one outcome.
+
 Store-touching tests request the ``postgres_dsn`` fail-LOUD fixture
 (bare-param pattern): every seed/read below touches the ambient per-test
 store, which is refused without a writable cluster.
@@ -81,236 +85,92 @@ def _seeded(task_id="c1", **fields):
     return add_task(**base)
 
 
-# --------------------------------------------------------------------------
-# the surface exists and stays opt-in
-# --------------------------------------------------------------------------
-
-
-def test_add_task_accepts_a_keyword_only_expected_revision_defaulting_to_none():
-    params = inspect.signature(scitex_cards.add_task).parameters
-    assert "expected_revision" in params
-    assert params["expected_revision"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert params["expected_revision"].default is None
-
-
-def test_delete_task_accepts_a_keyword_only_expected_revision_defaulting_to_none():
-    params = inspect.signature(scitex_cards.delete_task).parameters
-    assert "expected_revision" in params
-    assert params["expected_revision"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert params["expected_revision"].default is None
-
-
-def test_unarmed_create_behaves_as_before(postgres_dsn):
-    merged = _seeded()
-    assert merged["title"] == "Original"
-
-
-def test_unarmed_duplicate_create_still_raises_task_validation_error(postgres_dsn):
+def _refused_create_exc(title="Loser", expected_revision=0):
+    """Seed c1, lose a fenced create against it, return the refusal."""
     _seeded()
-    with pytest.raises(TaskValidationError):
-        _seeded(title="Second")
-
-
-def test_unarmed_delete_still_tombstones(postgres_dsn):
-    _seeded()
-    out = delete_task(None, "c1")
-    assert out["refs"] == []
-    with pytest.raises(Exception):
-        get_task(None, "c1")
-
-
-# --------------------------------------------------------------------------
-# fenced create: absence, or a loud refusal carrying the winner's revision
-# --------------------------------------------------------------------------
-
-
-def test_fenced_create_on_a_fresh_id_lands(postgres_dsn):
-    merged = _seeded(expected_revision=0)
-    assert merged["title"] == "Original"
-
-
-def test_fenced_create_against_a_live_row_is_refused(postgres_dsn):
-    _seeded()
-    winner_rev = _revision()
     with pytest.raises(RevisionConflictError) as exc_info:
-        _seeded(title="Loser", expected_revision=0)
-    assert exc_info.value.found == winner_rev
+        _seeded(title=title, expected_revision=expected_revision)
+    return exc_info.value
 
 
-def test_the_refused_create_leaves_the_winner_untouched(postgres_dsn):
+def _winner_and_loser():
+    """A winner (comment + retitle) plus a refused fenced create.
+
+    Returns the winner's revision: every assertion about the refused
+    write's blast radius hangs off this one scenario.
+    """
     from scitex_cards._store import comment_task, update_task
 
     _seeded()
     comment_task(None, "c1", text="winner's comment", by="tester")
     update_task(None, "c1", title="Winner")
     winner_rev = _revision()
-    # Act: a fenced create racing the winner.
     with pytest.raises(RevisionConflictError):
         _seeded(title="Loser", note="stale", expected_revision=0)
-    # Assert: row, revision and comments are exactly the winner's.
-    assert _revision() == winner_rev
-    live = get_task(None, "c1")
-    assert live["title"] == "Winner"
-    assert any(
-        c.get("text") == "winner's comment" for c in live.get("comments", [])
-    )
+    return winner_rev
 
 
-def test_fenced_create_against_a_tombstoned_id_is_refused(postgres_dsn):
+def _tombstone_and_refuse():
+    """Seed, tombstone, refuse a fenced resurrect; return (exc, tomb_rev)."""
     _seeded()
     delete_task(None, "c1")
     tomb_rev = _revision()
     with pytest.raises(RevisionConflictError) as exc_info:
         _seeded(title="Resurrect", expected_revision=0)
-    assert exc_info.value.found == tomb_rev
-    # The tombstone is intact: still cancelled, still stamped.
-    _card, _rev = read_card_or_raise(resolve_store_target(None), "c1")
-    assert _card["status"] == "cancelled"
-    assert _card["_log_meta"]["deleted_at"]
+    return exc_info.value, tomb_rev
 
 
-def test_fenced_create_refuses_a_non_int_fencing_token(postgres_dsn):
-    with pytest.raises(TypeError):
-        _seeded(expected_revision="0")
-    with pytest.raises(TypeError):
-        _seeded(expected_revision=True)
-
-
-# --------------------------------------------------------------------------
-# fenced delete: the tombstone lands only on the revision it asserts
-# --------------------------------------------------------------------------
-
-
-def test_fenced_delete_on_the_current_revision_tombstones(postgres_dsn):
-    _seeded(depends_on=None)
-    current = _revision()
-    out = delete_task(None, "c1", expected_revision=current)
-    assert out["refs"] == []
-    _card, tomb_rev = read_card_or_raise(resolve_store_target(None), "c1")
-    assert _card["status"] == "cancelled"
-    assert tomb_rev == current + 1
-
-
-def test_fenced_delete_on_a_stale_revision_is_refused(postgres_dsn):
+def _stale_delete_exc():
+    """Move c1, lose a fenced delete on the stale revision; return all three."""
     from scitex_cards._store import update_task
 
     _seeded()
     stale = _revision()
     update_task(None, "c1", title="Someone else moved it")
     current = _revision()
-    assert current != stale
     with pytest.raises(RevisionConflictError) as exc_info:
         delete_task(None, "c1", expected_revision=stale)
-    assert exc_info.value.expected == stale
-    assert exc_info.value.found == current
+    return exc_info.value, stale, current
 
 
-def test_the_refused_delete_changes_nothing_including_dependents(postgres_dsn):
+def _refused_delete_with_dependent():
+    """A lost fenced delete with a dependent; return the stale revision."""
     from scitex_cards._store import update_task
 
     _seeded()
     _seeded("c2", title="Dependent", depends_on=["c1"])
     stale = _revision("c1")
     update_task(None, "c1", title="Someone else moved it")
-    # Act: the fenced tombstone loses the race.
     with pytest.raises(RevisionConflictError):
         delete_task(None, "c1", expected_revision=stale)
-    # Assert: target live at the winner's revision, dependent still points.
-    assert _revision("c1") != stale
-    assert get_task(None, "c1")["title"] == "Someone else moved it"
-    assert get_task(None, "c2")["depends_on"] == ["c1"]
+    return stale
 
 
-def test_fenced_delete_refuses_a_non_int_fencing_token(postgres_dsn):
-    _seeded()
-    with pytest.raises(TypeError):
-        delete_task(None, "c1", expected_revision="0")
-    with pytest.raises(TypeError):
-        delete_task(None, "c1", expected_revision=True)
+def _mirror_outcome(doc, **guards):
+    """Run one guarded incremental mirror; report the outcome as a string.
 
-
-# --------------------------------------------------------------------------
-# the mirror-level multi-row guards behind the verbs
-# --------------------------------------------------------------------------
-
-
-def test_mirror_refuses_a_guard_on_a_row_the_write_does_not_touch(postgres_dsn):
+    Returns ``"refused:<ExcName>"`` when the guard fires, ``"applied"``
+    otherwise — a single string so the test holds one assertion while the
+    connection is still unwound in ``finally``.
+    """
     import os
 
     from scitex_cards._db import connect
     from scitex_cards._db_mirror import mirror_doc_incremental
 
-    _seeded()
-    doc = {"tasks": [get_task(None, "c1")]}
-    conn = connect(os.environ["SCITEX_STORE_DSN"])
+    dsn = os.environ["SCITEX_STORE_DSN"]
+    conn = connect(dsn)
     try:
-        with pytest.raises(ValueError):
-            mirror_doc_incremental(
-                doc,
-                os.environ["SCITEX_STORE_DSN"],
-                conn=conn,
-                touched_ids=["c1"],
-                expected_revisions={"ghost": 3},
-            )
+        mirror_doc_incremental(doc, dsn, conn=conn, **guards)
+    except Exception as exc:  # noqa: BLE001 -- the type name IS the outcome
+        return f"refused:{type(exc).__name__}"
     finally:
         conn.rollback()
         conn.close()
+    return "applied"
 
 
-def test_mirror_refuses_combined_guard_forms(postgres_dsn):
-    import os
-
-    from scitex_cards._db import connect
-    from scitex_cards._db_mirror import mirror_doc_incremental
-
-    _seeded()
-    doc = {"tasks": [get_task(None, "c1")]}
-    conn = connect(os.environ["SCITEX_STORE_DSN"])
-    try:
-        with pytest.raises(ValueError):
-            mirror_doc_incremental(
-                doc,
-                os.environ["SCITEX_STORE_DSN"],
-                conn=conn,
-                touched_ids=["c1"],
-                expected_revision=0,
-                expected_revisions={"c1": 0},
-            )
-    finally:
-        conn.rollback()
-        conn.close()
-
-
-def test_absent_guard_reports_the_winner_instead_of_exploding(postgres_dsn):
-    import os
-
-    from scitex_cards._db import connect
-    from scitex_cards._db_bootstrap import _insert_tasks
-
-    _seeded()
-    winner_rev = _revision()
-    conn = connect(os.environ["SCITEX_STORE_DSN"])
-    try:
-        counts = _insert_tasks(
-            conn,
-            [
-                {
-                    "id": "c1",
-                    "title": "Loser",
-                    "status": "deferred",
-                    "payload": "{}",
-                }
-            ],
-            expect_absent=True,
-        )
-    finally:
-        conn.rollback()
-        conn.close()
-    assert counts.get("revision_skipped") == 1
-    assert counts.get("revision_found") == winner_rev
-
-
-def test_a_true_commit_race_refuses_gracefully(postgres_dsn):
+def _run_commit_race():
     """Two fenced creates, one id, genuinely overlapping in one transaction.
 
     The loser's INSERT must lose on the PRIMARY KEY and be reported as a
@@ -322,6 +182,9 @@ def test_a_true_commit_race_refuses_gracefully(postgres_dsn):
     loser simply takes the sequential path, whose end state is asserted
     identically), then commits. Either interleaving ends the same way, so
     the test cannot flake on timing.
+
+    Returns ``(outcome, race_rev)``: the loser's outcome dict plus the
+    winner's revision for the tests to assert against.
     """
     import os
     import threading
@@ -347,7 +210,7 @@ def test_a_true_commit_race_refuses_gracefully(postgres_dsn):
             )
         except RevisionConflictError as exc:
             outcome["refused"] = exc
-        except Exception as exc:  # noqa: BLE001 — any other outcome fails below
+        except Exception as exc:  # noqa: BLE001 -- any other outcome fails below
             outcome["exploded"] = exc
 
     main_conn = connect(dsn)
@@ -364,7 +227,11 @@ def test_a_true_commit_race_refuses_gracefully(postgres_dsn):
         while time.time() < deadline and not outcome and thread.is_alive():
             time.sleep(0.05)
         counts = _write_card(main_conn, dict(winner))
-        assert not counts.get("revision_skipped")
+        if counts.get("revision_skipped"):
+            raise AssertionError(
+                "winner's own write was skipped -- the race setup is broken, "
+                "not the fence."
+            )
         main_conn.commit()
         thread.join(timeout=30)
     finally:
@@ -372,17 +239,389 @@ def test_a_true_commit_race_refuses_gracefully(postgres_dsn):
             main_conn.rollback()
         finally:
             main_conn.close()
-    assert thread.is_alive() is False, "loser thread never finished"
-    assert "exploded" not in outcome, (
-        f"loser exploded instead of refusing: {outcome.get('exploded')!r}"
+    if thread.is_alive():
+        raise AssertionError("loser thread never finished -- race wedged.")
+    return outcome, _revision("c-race")
+
+
+# --------------------------------------------------------------------------
+# the surface exists and stays opt-in
+# --------------------------------------------------------------------------
+
+
+def test_add_task_accepts_a_keyword_only_expected_revision_defaulting_to_none():
+    # Arrange
+    params = inspect.signature(scitex_cards.add_task).parameters
+    # Act
+    fencing = params["expected_revision"]
+    # Assert
+    assert (
+        fencing.kind is inspect.Parameter.KEYWORD_ONLY
+        and fencing.default is None
     )
-    refused = outcome.get("refused")
-    assert isinstance(refused, RevisionConflictError), (
-        f"loser was not refused: {outcome!r}"
+
+
+def test_delete_task_accepts_a_keyword_only_expected_revision_defaulting_to_none():
+    # Arrange
+    params = inspect.signature(scitex_cards.delete_task).parameters
+    # Act
+    fencing = params["expected_revision"]
+    # Assert
+    assert (
+        fencing.kind is inspect.Parameter.KEYWORD_ONLY
+        and fencing.default is None
     )
-    assert refused.found == _revision("c-race")
-    live = get_task(None, "c-race")
-    assert live["title"] == "Winner"
+
+
+def test_unarmed_create_behaves_as_before(postgres_dsn):
+    # Arrange
+    # Act
+    merged = _seeded()
+    # Assert
+    assert merged["title"] == "Original"
+
+
+def test_unarmed_duplicate_create_still_raises_task_validation_error(
+    postgres_dsn,
+):
+    # Arrange
+    _seeded()
+    # Act
+    def act():
+        _seeded(title="Second")
+
+    # Assert
+    with pytest.raises(TaskValidationError):
+        act()
+
+
+def test_unarmed_delete_returns_no_dependent_refs(postgres_dsn):
+    # Arrange
+    _seeded()
+    # Act
+    out = delete_task(None, "c1")
+    # Assert
+    assert out["refs"] == []
+
+
+def test_unarmed_delete_makes_the_card_unreadable(postgres_dsn):
+    # Arrange
+    _seeded()
+    delete_task(None, "c1")
+    # Act
+    def act():
+        get_task(None, "c1")
+
+    # Assert
+    with pytest.raises(Exception):
+        act()
+
+
+# --------------------------------------------------------------------------
+# fenced create: absence, or a loud refusal carrying the winner's revision
+# --------------------------------------------------------------------------
+
+
+def test_fenced_create_on_a_fresh_id_lands(postgres_dsn):
+    # Arrange
+    # Act
+    merged = _seeded(expected_revision=0)
+    # Assert
+    assert merged["title"] == "Original"
+
+
+def test_fenced_create_against_a_live_row_is_refused(postgres_dsn):
+    # Arrange
+    _seeded()
+    # Act
+    def act():
+        _seeded(title="Loser", expected_revision=0)
+
+    # Assert
+    with pytest.raises(RevisionConflictError):
+        act()
+
+
+def test_the_refused_create_reports_the_winners_revision(postgres_dsn):
+    # Arrange
+    # Act
+    exc = _refused_create_exc()
+    # Assert
+    assert exc.found == _revision()
+
+
+def test_the_refused_create_leaves_the_winners_revision(postgres_dsn):
+    # Arrange
+    # Act
+    winner_rev = _winner_and_loser()
+    # Assert
+    assert _revision() == winner_rev
+
+
+def test_the_refused_create_leaves_the_winners_title(postgres_dsn):
+    # Arrange
+    # Act
+    _winner_and_loser()
+    # Assert
+    assert get_task(None, "c1")["title"] == "Winner"
+
+
+def test_the_refused_create_leaves_the_winners_comments(postgres_dsn):
+    # Arrange
+    # Act
+    _winner_and_loser()
+    # Assert
+    assert any(
+        c.get("text") == "winner's comment"
+        for c in get_task(None, "c1").get("comments", [])
+    )
+
+
+def test_fenced_create_against_a_tombstoned_id_is_refused(postgres_dsn):
+    # Arrange
+    _seeded()
+    delete_task(None, "c1")
+    # Act
+    def act():
+        _seeded(title="Resurrect", expected_revision=0)
+
+    # Assert
+    with pytest.raises(RevisionConflictError):
+        act()
+
+
+def test_the_refused_create_reports_the_tombstones_revision(postgres_dsn):
+    # Arrange
+    # Act
+    exc, tomb_rev = _tombstone_and_refuse()
+    # Assert
+    assert exc.found == tomb_rev
+
+
+def test_the_refused_create_leaves_the_tombstone_intact(postgres_dsn):
+    # Arrange
+    # Act
+    _tombstone_and_refuse()
+    # Assert
+    _card, _rev = read_card_or_raise(resolve_store_target(None), "c1")
+    assert (_card["status"], bool(_card["_log_meta"]["deleted_at"])) == (
+        "cancelled",
+        True,
+    )
+
+
+def test_fenced_create_refuses_a_string_fencing_token(postgres_dsn):
+    # Arrange
+    # Act
+    def act():
+        _seeded(expected_revision="0")
+
+    # Assert
+    with pytest.raises(TypeError):
+        act()
+
+
+def test_fenced_create_refuses_a_bool_fencing_token(postgres_dsn):
+    # Arrange
+    # Act
+    def act():
+        _seeded(expected_revision=True)
+
+    # Assert
+    with pytest.raises(TypeError):
+        act()
+
+
+# --------------------------------------------------------------------------
+# fenced delete: the tombstone lands only on the revision it asserts
+# --------------------------------------------------------------------------
+
+
+def test_fenced_delete_on_the_current_revision_returns_no_refs(postgres_dsn):
+    # Arrange
+    _seeded(depends_on=None)
+    current = _revision()
+    # Act
+    out = delete_task(None, "c1", expected_revision=current)
+    # Assert
+    assert out["refs"] == []
+
+
+def test_fenced_delete_on_the_current_revision_tombstones(postgres_dsn):
+    # Arrange
+    _seeded(depends_on=None)
+    current = _revision()
+    # Act
+    delete_task(None, "c1", expected_revision=current)
+    # Assert
+    _card, _rev = read_card_or_raise(resolve_store_target(None), "c1")
+    assert (_card["status"], _rev) == ("cancelled", current + 1)
+
+
+def test_fenced_delete_on_a_stale_revision_is_refused(postgres_dsn):
+    # Arrange
+    _seeded()
+    stale = _revision()
+    from scitex_cards._store import update_task
+
+    update_task(None, "c1", title="Someone else moved it")
+    # Act
+    def act():
+        delete_task(None, "c1", expected_revision=stale)
+
+    # Assert
+    with pytest.raises(RevisionConflictError):
+        act()
+
+
+def test_the_refused_delete_reports_both_revisions(postgres_dsn):
+    # Arrange
+    # Act
+    exc, stale, current = _stale_delete_exc()
+    # Assert
+    assert (exc.expected, exc.found) == (stale, current)
+
+
+def test_the_refused_delete_leaves_the_target_live(postgres_dsn):
+    # Arrange
+    # Act
+    stale = _refused_delete_with_dependent()
+    # Assert
+    assert _revision("c1") != stale
+
+
+def test_the_refused_delete_keeps_the_winners_title(postgres_dsn):
+    # Arrange
+    # Act
+    _refused_delete_with_dependent()
+    # Assert
+    assert get_task(None, "c1")["title"] == "Someone else moved it"
+
+
+def test_the_refused_delete_keeps_the_dependent_pointing(postgres_dsn):
+    # Arrange
+    # Act
+    _refused_delete_with_dependent()
+    # Assert
+    assert get_task(None, "c2")["depends_on"] == ["c1"]
+
+
+def test_fenced_delete_refuses_a_string_fencing_token(postgres_dsn):
+    # Arrange
+    _seeded()
+    # Act
+    def act():
+        delete_task(None, "c1", expected_revision="0")
+
+    # Assert
+    with pytest.raises(TypeError):
+        act()
+
+
+def test_fenced_delete_refuses_a_bool_fencing_token(postgres_dsn):
+    # Arrange
+    _seeded()
+    # Act
+    def act():
+        delete_task(None, "c1", expected_revision=True)
+
+    # Assert
+    with pytest.raises(TypeError):
+        act()
+
+
+# --------------------------------------------------------------------------
+# the mirror-level multi-row guards behind the verbs
+# --------------------------------------------------------------------------
+
+
+def test_mirror_refuses_a_guard_on_a_row_the_write_does_not_touch(
+    postgres_dsn,
+):
+    # Arrange
+    _seeded()
+    doc = {"tasks": [get_task(None, "c1")]}
+    # Act
+    outcome = _mirror_outcome(
+        doc, touched_ids=["c1"], expected_revisions={"ghost": 3}
+    )
+    # Assert
+    assert outcome == "refused:ValueError"
+
+
+def test_mirror_refuses_combined_guard_forms(postgres_dsn):
+    # Arrange
+    _seeded()
+    doc = {"tasks": [get_task(None, "c1")]}
+    # Act
+    outcome = _mirror_outcome(
+        doc,
+        touched_ids=["c1"],
+        expected_revision=0,
+        expected_revisions={"c1": 0},
+    )
+    # Assert
+    assert outcome == "refused:ValueError"
+
+
+def test_absent_guard_reports_the_winner_instead_of_exploding(postgres_dsn):
+    # Arrange
+    _seeded()
+    winner_rev = _revision()
+    # Act
+    import os
+
+    from scitex_cards._db import connect
+    from scitex_cards._db_bootstrap import _insert_tasks
+
+    conn = connect(os.environ["SCITEX_STORE_DSN"])
+    try:
+        counts = _insert_tasks(
+            conn,
+            [
+                {
+                    "id": "c1",
+                    "title": "Loser",
+                    "status": "deferred",
+                    "payload": "{}",
+                }
+            ],
+            expect_absent=True,
+        )
+    finally:
+        conn.rollback()
+        conn.close()
+    # Assert
+    assert (counts.get("revision_skipped"), counts.get("revision_found")) == (
+        1,
+        winner_rev,
+    )
+
+
+def test_a_true_commit_race_refuses_the_loser_gracefully(postgres_dsn):
+    # Arrange
+    # Act
+    outcome, _race_rev = _run_commit_race()
+    # Assert
+    assert isinstance(outcome.get("refused"), RevisionConflictError) and (
+        "exploded" not in outcome
+    ), f"loser was not cleanly refused: {outcome!r}"
+
+
+def test_a_true_commit_race_reports_the_winners_revision(postgres_dsn):
+    # Arrange
+    # Act
+    outcome, race_rev = _run_commit_race()
+    # Assert
+    assert outcome["refused"].found == race_rev
+
+
+def test_a_true_commit_race_leaves_the_winner_live(postgres_dsn):
+    # Arrange
+    # Act
+    _run_commit_race()
+    # Assert
+    assert get_task(None, "c-race")["title"] == "Winner"
 
 
 # EOF

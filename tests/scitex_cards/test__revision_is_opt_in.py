@@ -182,45 +182,47 @@ class TestItIsStillOptIn:
             "current."
         )
 
-    def test_add_task_asserts_absence_not_equality(self):
-        """An INSERT has no prior revision, so the argument would be meaningless
-        as an equality check — and the day it arrived, it arrived as an
-        insert-if-absent fence instead. This test fired then, as designed, and
-        was rewritten together with ``_db.py``'s paragraph in the same change:
-        the pin is now that the argument EXISTS, defaults to None (opt-in),
-        and the prose says what it compares against (absence).
-        """
+    def test_add_task_accepts_expected_revision(self):
+        """The fence exists on the create verb (insert-if-absent)."""
         # Arrange
         params = _public_verb_params()
         # Act
         accepts = "expected_revision" in params.get("add_task", set())
-        default = None
-        if accepts:
-            from scitex_cards import _store_add
-
-            default = inspect.signature(_store_add.add_task).parameters[
-                "expected_revision"
-            ].default
-        says_absence = "asserts ABSENCE" in (SRC / "_db.py").read_text(
-            encoding="utf-8"
-        )
         # Assert
         assert accepts is True, (
             "add_task() no longer accepts expected_revision. If that is "
             "deliberate, _db.py's insert-if-absent paragraph is now false and "
             "must be rewritten in the same change."
         )
+
+    def test_add_task_fence_defaults_off(self):
+        """The create fence stays opt-in (REJECT-by-default is unusable)."""
+        # Arrange
+        from scitex_cards import _store_add
+        # Act
+        default = inspect.signature(_store_add.add_task).parameters[
+            "expected_revision"
+        ].default
+        # Assert
         assert default is None, (
             "add_task's expected_revision stopped defaulting to None: the "
             "fence is opt-in, and a mandatory fence would fail fleet writes "
             "from writers that know nothing about revision."
         )
+
+    def test_db_says_what_the_create_fence_compares_against(self):
+        """The prose names absence — the exact gap this pin's first version named."""
+        # Arrange
+        prose = (SRC / "_db.py").read_text(encoding="utf-8")
+        # Act
+        says_absence = "asserts ABSENCE" in prose
+        # Assert
         assert says_absence is True, (
             "_db.py no longer says what add_task's expected_revision compares "
             "against — the exact gap this pin's first version named."
         )
 
-    def test_delete_task_can_be_asked_for_the_guard_and_defaults_off(self):
+    def test_delete_task_can_be_asked_for_the_guard(self):
         # Arrange
         params = _public_verb_params()
         # Act
@@ -231,11 +233,15 @@ class TestItIsStillOptIn:
             "deliberate, _db.py's tombstone-fence paragraph is now false and "
             "must be rewritten in the same change."
         )
-        from scitex_cards import _store_lifecycle
 
+    def test_delete_task_fence_defaults_off(self):
+        # Arrange
+        from scitex_cards import _store_lifecycle
+        # Act
         default = inspect.signature(
             _store_lifecycle.delete_task
         ).parameters["expected_revision"].default
+        # Assert
         assert default is None, (
             "delete_task's expected_revision stopped defaulting to None: the "
             "fence is opt-in, and a mandatory fence would fail fleet writes "
