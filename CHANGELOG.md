@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [0.55.0] - 2026-10-18
+
+Board DM release (operator mandates CCT 3852/3853):
+
+- DM New button with agent-directory buzz-search + timeline empty-state (#1090).
+
 ## [0.54.0] - 2026-10-17
 
 Board calm-UI release (operator mandates CCT 3852/3853/3877/3878/3881):
