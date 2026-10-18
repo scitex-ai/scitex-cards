@@ -130,6 +130,8 @@ def write_doc_to_db(
     touched_ids=None,
     allow_shrink: bool = False,
     expected_revision: int | None = None,
+    expected_revisions: dict[str, int] | None = None,
+    absent_ids=None,
 ) -> dict:
     """Commit ``doc`` to the store, the only one there is. RAISES on failure.
 
@@ -209,6 +211,8 @@ def write_doc_to_db(
         deleted_ids=deleted_ids,
         touched_ids=touched_ids,
         expected_revision=expected_revision,
+        expected_revisions=expected_revisions,
+        absent_ids=absent_ids,
     )
 
 

@@ -32,6 +32,15 @@ honest there) tripped it exactly as designed. The failure message said to update
 the comment and the test in the same change, and that is what happened. What the
 class pins now is the DEFAULT: "opt-in" was never about refusing the argument,
 it is about an un-opted write emitting no clause.
+
+AND IT HAS NOW FIRED A SECOND TIME, ON ``add_task``. An INSERT has no prior
+revision, so the first version of the pin below said the argument would be
+meaningless there — and its failure message said: "Say what it compares
+against on an insert, and update _db.py's paragraph, together." The answer is
+ABSENCE: the int arms an insert-if-absent fence (the value rides the conflict
+report; the predicate needs no number), and ``_db.py`` says so. The same
+change fenced ``delete_task``'s tombstone by revision, which is why
+``_PUBLIC_VERBS`` now has three entries.
 """
 
 from __future__ import annotations
@@ -53,18 +62,25 @@ _WHERE_CLAUSE = "WHERE tasks.revision = ?"
 
 #: Verbs on the PUBLIC surface. If any of these grows an ``expected_revision``
 #: parameter, ``_db.py``'s "no public verb does" is false and must be rewritten.
-_PUBLIC_VERBS = ("add_task", "update_task")
+_PUBLIC_VERBS = ("add_task", "update_task", "delete_task")
 
 
 def _public_verb_params():
-    """Parameter names of each public mutating verb, by import not by text."""
-    from scitex_cards import _store_mutate
+    """Parameter names of each public mutating verb, by import not by text.
 
-    return {
-        name: set(inspect.signature(getattr(_store_mutate, name)).parameters)
-        for name in _PUBLIC_VERBS
-        if hasattr(_store_mutate, name)
-    }
+    ``delete_task`` lives in ``_store_lifecycle``, not ``_store_mutate`` — the
+    lookup tries both homes so the pin covers the verb wherever its author
+    filed it.
+    """
+    from scitex_cards import _store_lifecycle, _store_mutate
+
+    params = {}
+    for name in _PUBLIC_VERBS:
+        for home in (_store_mutate, _store_lifecycle):
+            if hasattr(home, name):
+                params[name] = set(inspect.signature(getattr(home, name)).parameters)
+                break
+    return params
 
 
 def _where_clause_sites():
@@ -166,17 +182,64 @@ class TestItIsStillOptIn:
             "current."
         )
 
-    def test_add_task_still_has_nothing_to_compare_against(self):
+    def test_add_task_asserts_absence_not_equality(self):
         """An INSERT has no prior revision, so the argument would be meaningless
-        there rather than merely unimplemented."""
+        as an equality check — and the day it arrived, it arrived as an
+        insert-if-absent fence instead. This test fired then, as designed, and
+        was rewritten together with ``_db.py``'s paragraph in the same change:
+        the pin is now that the argument EXISTS, defaults to None (opt-in),
+        and the prose says what it compares against (absence).
+        """
         # Arrange
         params = _public_verb_params()
         # Act
         accepts = "expected_revision" in params.get("add_task", set())
+        default = None
+        if accepts:
+            from scitex_cards import _store_add
+
+            default = inspect.signature(_store_add.add_task).parameters[
+                "expected_revision"
+            ].default
+        says_absence = "asserts ABSENCE" in (SRC / "_db.py").read_text(
+            encoding="utf-8"
+        )
         # Assert
-        assert accepts is False, (
-            "add_task() now accepts expected_revision. Say what it compares "
-            "against on an insert, and update _db.py's paragraph, together."
+        assert accepts is True, (
+            "add_task() no longer accepts expected_revision. If that is "
+            "deliberate, _db.py's insert-if-absent paragraph is now false and "
+            "must be rewritten in the same change."
+        )
+        assert default is None, (
+            "add_task's expected_revision stopped defaulting to None: the "
+            "fence is opt-in, and a mandatory fence would fail fleet writes "
+            "from writers that know nothing about revision."
+        )
+        assert says_absence is True, (
+            "_db.py no longer says what add_task's expected_revision compares "
+            "against — the exact gap this pin's first version named."
+        )
+
+    def test_delete_task_can_be_asked_for_the_guard_and_defaults_off(self):
+        # Arrange
+        params = _public_verb_params()
+        # Act
+        accepts = "expected_revision" in params.get("delete_task", set())
+        # Assert
+        assert accepts is True, (
+            "delete_task() no longer accepts expected_revision. If that is "
+            "deliberate, _db.py's tombstone-fence paragraph is now false and "
+            "must be rewritten in the same change."
+        )
+        from scitex_cards import _store_lifecycle
+
+        default = inspect.signature(
+            _store_lifecycle.delete_task
+        ).parameters["expected_revision"].default
+        assert default is None, (
+            "delete_task's expected_revision stopped defaulting to None: the "
+            "fence is opt-in, and a mandatory fence would fail fleet writes "
+            "from writers that know nothing about revision."
         )
 
 

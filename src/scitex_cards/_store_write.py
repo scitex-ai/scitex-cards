@@ -287,6 +287,8 @@ def _save_doc_unlocked(
     touched_ids: list[str] | None = None,
     allow_shrink: bool = False,
     expected_revision: int | None = None,
+    expected_revisions: dict[str, int] | None = None,
+    absent_ids=None,
 ) -> dict | None:
     """Validate-and-write an ALREADY-PARSED full doc WITHOUT the store lock.
 
@@ -352,6 +354,8 @@ def _save_doc_unlocked(
         touched_ids=touched_ids,
         allow_shrink=allow_shrink,
         expected_revision=expected_revision,
+        expected_revisions=expected_revisions,
+        absent_ids=absent_ids,
     )
 
 

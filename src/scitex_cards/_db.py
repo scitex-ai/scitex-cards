@@ -93,8 +93,9 @@ ENV_STORE_DSN = "SCITEX_STORE_DSN"
 #:
 #: v6 (the optimistic lock) adds ``tasks.revision``. It is incremented by every
 #: row-level write (v7's trigger, below) and it CAN be asserted in a write's
-#: WHERE clause — but only by a caller that opts in, which now includes
-#: ``update_task``.
+#: WHERE clause — but only by a caller that opts in, which now includes the
+#: single-card verbs ``update_task`` / ``delete_task`` / ``add_task`` (the
+#: last asserting absence, having no prior revision to compare).
 #:
 #: THAT DISTINCTION IS LOAD-BEARING AND THIS COMMENT USED TO ERASE IT. It read
 #: "incremented by every row-level write and asserted in the write's WHERE
@@ -113,8 +114,14 @@ ENV_STORE_DSN = "SCITEX_STORE_DSN"
 #:     path and RAISES :class:`RevisionConflictError` when the row moved. This
 #:     became possible only with #872: update_task declares ``touched_ids``, so
 #:     the write reaches exactly one row and a per-row guard is no longer a lie.
-#:   * ``add_task`` accepts no such argument — an INSERT has no prior revision to
-#:     compare against.
+#:   * ``delete_task(..., expected_revision=N)`` fences the tombstone the same
+#:     way, through ``expected_revisions={id: N}``: the tombstone lands only if
+#:     the live row is still at N, and a lost race rolls the whole batch back.
+#:   * ``add_task`` accepts the same argument and asserts ABSENCE — an INSERT
+#:     has no prior revision to compare, so the int ARMS an insert-if-absent
+#:     fence (the value rides the conflict report; the predicate needs no
+#:     number) via ``absent_ids``. A held id — live row or tombstone — raises
+#:     :class:`RevisionConflictError` and nothing is written.
 #:   * OMITTING it emits no clause at all, so an un-opted write is byte-identical
 #:     to before and remains LAST-WRITE-WINS. That default is deliberate:
 #:     :func:`_migrate_v6_to_v7` ruled REJECT-by-default unusable across a fleet
