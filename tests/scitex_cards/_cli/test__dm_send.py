@@ -223,21 +223,31 @@ print(json.dumps({"exit_code": result.exit_code, "payload": payload}))
     )
     # The point of this test is stdout purity ("emits ONLY json"). An empty
     # stdout used to surface as a bare `json.loads` JSONDecodeError with the
-    # real evidence (child returncode + stderr) swallowed. Fail loud instead:
-    # attach the child's stderr tail so the next failure names its cause
-    # (stale-install gate refusal, OOM-kill, import crash) directly.
-    assert result.stdout.strip(), (
-        "fresh-process probe emitted no stdout "
-        f"(returncode={result.returncode}, "
-        f"stderr={result.stderr[-2000:]!r})"
+    # real evidence (child returncode + stderr) swallowed. Parse
+    # defensively instead: an empty stdout yields a probe shaped so the
+    # single assertion below fails LOUD with the child's stderr attached
+    # (stale-install gate refusal, OOM-kill, import crash).
+    raw = result.stdout
+    probe = (
+        json.loads(raw)
+        if raw.strip()
+        else {
+            "exit_code": None,
+            "payload": {"status": {"code": None, "message": ""}},
+        }
     )
-    payload = json.loads(result.stdout)
     # Assert
     assert (
         result.returncode,
-        payload["exit_code"],
-        payload["payload"]["status"]["code"],
-        "No DM was persisted" in payload["payload"]["status"]["message"],
+        probe["exit_code"]
+        if raw.strip()
+        else (
+            "fresh-process probe emitted no stdout "
+            f"(returncode={result.returncode}, "
+            f"stderr={result.stderr[-2000:]!r})"
+        ),
+        probe["payload"]["status"]["code"],
+        "No DM was persisted" in probe["payload"]["status"]["message"],
     ) == (0, 1, 400, True)
 
 
