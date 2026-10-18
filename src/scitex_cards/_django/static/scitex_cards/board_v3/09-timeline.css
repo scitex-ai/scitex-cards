@@ -287,10 +287,13 @@
 .tl-card:hover {
   border-color: var(--text-muted, #8a96a8);
 }
-/* Multi-select highlight for the simple per-task list (timelineSelect.js). */
+/* Multi-select highlight for the simple per-task list (timelineSelect.js).
+ * Operator CCT4368: the highlight wears straight/square corners, not the
+ * card's 8px rounding. */
 .tl-card--selected {
   border-color: var(--purple, #8e6cff);
   box-shadow: 0 0 0 1px var(--purple, #8e6cff);
+  border-radius: 0;
 }
 /* Per-status left-bar color (7 distinct, SSOT --status-fill-<s>). */
 .tl-card[data-status="goal"] {
