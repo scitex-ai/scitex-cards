@@ -209,13 +209,27 @@ print(json.dumps({"exit_code": result.exit_code, "payload": payload}))
         "TMPDIR": str(tmp_path),
         "TZ": "UTC",
     }
-    # Act
+    # Act: spawn the scrubbed fresh process. Generous timeout: the child cold-imports the whole package
+    # (click + scitex stack) while sibling xdist workers saturate the box.
+    # The 5s budget predates -n auto and produced TimeoutExpired flakes
+    # under load; 60s keeps the test hermetic without masking a real hang
+    # (a hung child still fails, with its stderr attached below).
     result = subprocess.run(
         [sys.executable, "-c", code],
         env=child_env,
         capture_output=True,
         text=True,
-        timeout=5,
+        timeout=60,
+    )
+    # The point of this test is stdout purity ("emits ONLY json"). An empty
+    # stdout used to surface as a bare `json.loads` JSONDecodeError with the
+    # real evidence (child returncode + stderr) swallowed. Fail loud instead:
+    # attach the child's stderr tail so the next failure names its cause
+    # (stale-install gate refusal, OOM-kill, import crash) directly.
+    assert result.stdout.strip(), (
+        "fresh-process probe emitted no stdout "
+        f"(returncode={result.returncode}, "
+        f"stderr={result.stderr[-2000:]!r})"
     )
     payload = json.loads(result.stdout)
     # Assert
