@@ -50,6 +50,7 @@ def add_task(
     repo: str | None = None,
     created_by: str | None = None,  # hook-bypass: line-limit
     entry_points=None,
+    expected_revision: int | None = None,
     **extras,
 ) -> dict:
     """Append a new task to ``store`` and persist via :func:`save_tasks`.
@@ -95,6 +96,28 @@ def add_task(
         explicit ``status=None`` (a card cannot be born status-less), or
         on an ABOLISHED ``status`` (``"pending"``, which carries the
         abolition hint naming what to pick instead).
+    RevisionConflictError
+        When ``expected_revision`` is armed and the id is already held —
+        by a live row OR a tombstone (resurrection rides ``restore_task``,
+        never create). NOTHING is written: the winner's row, comments,
+        edges and roles are untouched.
+
+    ``expected_revision`` makes the create a COMPARE-AND-SET on absence,
+    and it is OPT-IN exactly like ``update_task``'s: ``None`` (the default)
+    is byte-identical to before. The fence closes the cross-reader race the
+    in-doc duplicate check cannot see — two writers on different containers
+    share PostgreSQL but not the file lock, so both can pass validation and
+    the second's upsert silently overwrites the first's card. Armed, the
+    loser is refused loudly instead.
+
+    On a create there is no prior revision to compare — compare against WHAT
+    does not exist — so the predicate is ABSENCE, not equality (the same
+    reason scitex-dev's store uses the ``NEW_RECORD`` sentinel rather than a
+    number). Pass any int to arm it; the value is the caller's fencing
+    declaration, echoed verbatim in the conflict report, and a ``bool`` or
+    non-int is refused up front. A tombstoned id counts as HELD: re-creating
+    a deleted card must go through ``restore_task`` (guarded update-only),
+    never through create.
     """
     from . import _task
     from ._store import _read_write_doc, _resolve_creator_or_raise, _utc_now_iso
@@ -144,6 +167,14 @@ def add_task(
         )
     refuse_ineffective_store(store, verb="add_task")
     resolved = _resolved_store(store)
+    if expected_revision is not None and (
+        isinstance(expected_revision, bool)
+        or not isinstance(expected_revision, int)
+    ):
+        raise TypeError(
+            "add_task: expected_revision must be an int (the caller's fencing "
+            f"declaration) or None (fence off); got {expected_revision!r}."
+        )
     # A write against a store that does not exist must not INVENT one when
     # nothing named the path — that is how a decoy board accumulates and then
     # gets imported over the real one. See the guard's docstring for the
@@ -260,6 +291,22 @@ def add_task(
         # card absent from it. A missing database is a configuration error, not
         # an empty board — see `_read_write_doc`.
         doc, tasks = _read_write_doc(resolved)
+        if expected_revision is not None:
+            # Authoritative held-check, FRESHER than the snapshot above: it
+            # reads the live row (live OR tombstone — both block a create)
+            # rather than trusting a doc that a concurrent committer may have
+            # already invalidated. The mirror's absence guard below stays the
+            # arbiter for the residual race; this turns every already-held id
+            # into the SAME RevisionConflictError instead of splitting fresh
+            # readers (TaskValidationError duplicate) from stale ones.
+            from ._store_errors import RevisionConflictError
+            from ._store_single_card import read_card_or_raise
+
+            _held, _held_rev = read_card_or_raise(
+                resolve_store_target(store), id
+            )
+            if _held is not None:
+                raise RevisionConflictError(id, expected_revision, _held_rev)
         # WIP-validation gate (operator standing direction via lead a2a
         # `d99b8de6839d46e586e4ee692f43c1d9` + ``5acfbb5d0db44db8a7fa4f70c399d539``,
         # 2026-06-12). WARN to stderr at the limit, HARD REFUSE at 2x — EXCEPT
@@ -281,7 +328,27 @@ def add_task(
         # the audit comment)", so no other card is written. Without this, a
         # single `add_task` re-asserts the caller's entire snapshot and reverts
         # anything committed between its read and its write.
-        _save_doc_unlocked(doc, resolved, tasks=tasks, touched_ids=[new["id"]])
+        _fenced = expected_revision is not None
+        _mirror = _save_doc_unlocked(
+            doc,
+            resolved,
+            tasks=tasks,
+            touched_ids=[new["id"]],
+            absent_ids=[new["id"]] if _fenced else None,
+        )
+        if _fenced and _mirror and _mirror.get("revision_skipped"):
+            # The commit race: someone took the id between the held-check
+            # above and the write. The row (and its comments/edges/roles —
+            # the guard refuses BEFORE the drop) is untouched; report the
+            # winner's revision so the caller can re-read instead of retrying
+            # blind.
+            from ._store_errors import RevisionConflictError
+
+            raise RevisionConflictError(
+                new["id"],
+                expected_revision,
+                (_mirror.get("revision_found") or {}).get(new["id"]),
+            )
     # C5: emit a canonical `created` card-event AFTER the card is durably
     # persisted + the lock released. Fail-soft (the mutation already
     # succeeded). Actor = the resolved creating user (same chain that

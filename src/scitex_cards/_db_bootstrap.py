@@ -183,6 +183,7 @@ def _insert_tasks(
     *,
     replace: bool = True,
     expected_revision: int | None = None,
+    expect_absent: bool = False,
 ) -> dict[str, int]:
     """Insert every card + its children.
 
@@ -236,8 +237,31 @@ def _insert_tasks(
 
     Duplicate ids are collapsed by :func:`_dedupe_last_wins` (last-wins — the winner
     REPLACE would have picked), so ``replace=False`` cannot conflict with itself.
+
+    ``expect_absent`` is the create-side compare-and-set: the row is inserted
+    ONLY if no row with its id exists, otherwise ``revision_skipped`` is
+    reported with the winner's revision in ``revision_found``. It cannot be
+    combined with ``expected_revision`` — absence and at-revision are different
+    assertions — and it takes exactly one card, for the same reason. The
+    PRIMARY KEY on ``tasks.id`` arbitrates the commit race: a concurrent
+    committer wins and the loser's INSERT raises inside a SAVEPOINT, which is
+    rolled back before reporting the skip, so the transaction survives to
+    REPORT rather than exploding mid-batch (the mirror then rolls a refused
+    guarded batch back — see :func:`_db_mirror.mirror_doc_incremental`).
     """
     counts = {"tasks": 0, "comments": 0, "edges": 0, "roles": 0}
+    if expect_absent and expected_revision is not None:
+        raise ValueError(
+            "_insert_tasks: expect_absent and expected_revision cannot be combined: "
+            "absence and at-revision are different assertions about the row. "
+            "Pass one or the other."
+        )
+    if expect_absent and not replace:
+        raise ValueError(
+            "_insert_tasks: expect_absent needs replace=True: with replace=False the "
+            "caller has already deleted the rows, so there is no row whose "
+            "absence could be asserted."
+        )
     if expected_revision is not None:
         if not replace:
             raise ValueError(
@@ -251,9 +275,23 @@ def _insert_tasks(
                 "A batch cannot report which row lost the race, and a "
                 "half-applied batch is worse than none."
             )
+    if expect_absent and len(tasks) != 1:
+        raise ValueError(
+            f"_insert_tasks: expect_absent takes exactly one card, got {len(tasks)}. "
+            "A batch cannot report WHICH row was already present, and a "
+            "half-applied batch is worse than none."
+        )
     placeholders = ", ".join("?" for _ in TASK_INSERT_COLS)
     cols = ", ".join(TASK_INSERT_COLS)
-    if replace:
+    if expect_absent:
+        # No conflict clause at all. A conflicting row must REFUSE, not
+        # overwrite — and the atomic arbiter is the PRIMARY KEY on tasks.id,
+        # not the SELECT below (which is only the fast path: it also reports
+        # the winner's revision without paying for an exception). The
+        # SAVEPOINT + re-SELECT in the loop turn a lost commit-race into the
+        # same graceful skip instead of a UNIQUE explosion mid-transaction.
+        insert_sql = f"INSERT INTO tasks ({cols}) VALUES ({placeholders})"
+    elif replace:
         # ON CONFLICT DO UPDATE, not INSERT OR REPLACE. Three reasons, and the
         # first is the one that changes behaviour:
         #
@@ -303,7 +341,39 @@ def _insert_tasks(
         # The writer already knows the payload cannot be serialised at this point;
         # refusing costs this one call, storing it costs everyone else.
         values.append(card_payload_json_or_raise(row))
-        if expected_revision is None:
+        if expect_absent:
+            tid_absent = str(row.get("id"))
+            # Fast path: the row is already there, so this create loses
+            # without touching anything. BY NAME, not by position — the
+            # server's rows are mapping-shaped (see the note on `found_row`
+            # in the branch below).
+            present = conn.execute(
+                "SELECT revision FROM tasks WHERE id = ?", (tid_absent,)
+            ).fetchone()
+            if present is not None:
+                counts["revision_skipped"] = 1
+                counts["revision_found"] = present["revision"]
+                return counts
+            # Slow path: the commit race. The PRIMARY KEY on tasks.id is the
+            # atomic arbiter — a concurrent committer wins and this INSERT
+            # raises. The SAVEPOINT keeps that loss local so the transaction
+            # survives to report it; the re-SELECT distinguishes a lost race
+            # (row now present: graceful skip) from a genuine failure (row
+            # still absent: re-raise, nothing is hidden).
+            conn.execute("SAVEPOINT cas_expect_absent")
+            try:
+                conn.execute(insert_sql, values)
+            except Exception:
+                conn.execute("ROLLBACK TO SAVEPOINT cas_expect_absent")
+                raced = conn.execute(
+                    "SELECT revision FROM tasks WHERE id = ?", (tid_absent,)
+                ).fetchone()
+                if raced is None:
+                    raise
+                counts["revision_skipped"] = 1
+                counts["revision_found"] = raced["revision"]
+                return counts
+        elif expected_revision is None:
             conn.execute(insert_sql, values)
         else:
             tid_cas = str(row.get("id"))

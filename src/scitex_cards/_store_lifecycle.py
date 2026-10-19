@@ -175,6 +175,8 @@ def complete_task(
 def delete_task(  # hook-bypass: line-limit — verb-module split still queued
     store: str | Path | None = None,
     task_id: str | None = None,
+    *,
+    expected_revision: int | None = None,
 ) -> dict:
     """TOMBSTONE a task + scrub references to it. Returns the lossless
     payload the client can pass to ``restore_task`` for Undo.
@@ -198,6 +200,15 @@ def delete_task(  # hook-bypass: line-limit — verb-module split still queued
     scrubbed>]}`` where each ref is the id of another task whose
     depends_on / blocks / parent pointed at the deleted task (the client
     passes ``removed`` back to ``restore_task`` to lossless-revert).
+
+    ``expected_revision`` makes the tombstone a COMPARE-AND-SET, OPT-IN
+    exactly like ``update_task``'s: ``None`` (the default) is byte-identical
+    to before. Armed, the tombstone lands ONLY if the live row is still at
+    that revision — a racing update between the caller's read and this write
+    is refused with :class:`RevisionConflictError` instead of deleting a card
+    the caller never saw. The ref-scrubs travel in the same atomic batch and
+    a refused fence rolls the whole batch back, so a lost race leaves the
+    target live AND the dependents pointing at it: nothing is half-deleted.
     """
     from . import _model, _task
     from ._store import _default_agent, _read_write_doc, _task_not_found, _utc_now_iso
@@ -206,6 +217,14 @@ def delete_task(  # hook-bypass: line-limit — verb-module split still queued
     tasks_path = _resolved_store(store)
     if not task_id:
         raise ValueError("delete_task: 'task_id' is required")
+    if expected_revision is not None and (
+        isinstance(expected_revision, bool)
+        or not isinstance(expected_revision, int)
+    ):
+        raise TypeError(
+            "delete_task: expected_revision must be an int (the revision the "
+            f"tombstone asserts) or None (fence off); got {expected_revision!r}."
+        )
     with _model._store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
         target = _task._find_live_task(tasks, task_id)
@@ -285,9 +304,35 @@ def delete_task(  # hook-bypass: line-limit — verb-module split still queued
         # references to a tombstoned card — a new defect introduced by the fix
         # for an old one. The ids are already collected because the Undo payload
         # returns them; naming intent here costs nothing extra.
-        _model._save_doc_unlocked(
-            doc, tasks_path, tasks=tasks, touched_ids=[task_id, *refs]
+        #
+        # `expected_revisions` (when the caller armed `expected_revision`)
+        # fences ONLY the tombstone row: the ref-scrubs travel unguarded in
+        # the same atomic batch, and a lost tombstone race rolls the whole
+        # batch back — refused siblings included — so a failed fence leaves
+        # the target live AND the dependents pointing at it, exactly as
+        # before the call. See `mirror_doc_incremental`.
+        _armed_rev = expected_revision
+        _mirror = _model._save_doc_unlocked(
+            doc,
+            tasks_path,
+            tasks=tasks,
+            touched_ids=[task_id, *refs],
+            expected_revisions=(
+                {task_id: _armed_rev} if _armed_rev is not None else None
+            ),
         )
+        if (
+            _armed_rev is not None
+            and _mirror
+            and task_id in (_mirror.get("revision_skipped") or [])
+        ):
+            from ._store_errors import RevisionConflictError
+
+            raise RevisionConflictError(
+                task_id,
+                _armed_rev,
+                (_mirror.get("revision_found") or {}).get(task_id),
+            )
     return {"removed": original, "refs": refs}
 
 
