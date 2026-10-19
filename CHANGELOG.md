@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## [0.56.1] - 2026-10-19
+
+Release-tree fix (v0.56.0 tag fell 2 commits behind main — release CI
+failed 3/3 on the fresh-process JSON probe: a tag checkout behind
+origin/main trips the currency drift gate, which refuses every CLI call
+in the fresh child before the subcommand runs):
+
+- Re-cut the release at the current main tip, picking up the DM-tab-first
+  page switcher (#1100).
+
 ## [0.56.0] - 2026-10-19
 
 - Create/delete compare-and-set fences + multi-row guards (#1099).
