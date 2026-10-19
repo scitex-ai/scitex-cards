@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## [0.56.2] - 2026-10-19
+
+Release-tree fix, second attempt (v0.56.1 tag passed the ancestry gate
+but the release checkout still tripped the currency drift gate: a
+detached tag checkout carries no origin/HEAD, so drift resolves upstream
+to origin/develop, which had moved 2 commits past the tag):
+
+- Cut at the develop tip so the tag reads 0 commits behind at checkout.
+  Ships the app-entry-lands-on-DM default + no-DM-inside-Board separation
+  (#1103) and the 0.56.1 re-cut.
+
 ## [0.56.1] - 2026-10-19
 
 Release-tree fix (v0.56.0 tag fell 2 commits behind main — release CI
