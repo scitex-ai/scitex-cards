@@ -134,7 +134,7 @@ def test_the_switcher_labels_the_dm_surface_dm(chat_html):
     # Act
     labels = _switcher_labels(html)
     # Assert
-    assert labels == ["Board", "Direct messages"]
+    assert labels == ["Direct messages", "Board"]
 
 
 def test_the_switcher_has_no_item_labelled_chat(chat_html):
