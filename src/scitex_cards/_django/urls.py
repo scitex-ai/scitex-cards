@@ -159,12 +159,14 @@ urlpatterns = [
     # external producers register under is ``scitex_cards.hooks``.
     path("hooks/push", hook_push_view, name="hook_push"),
     path("hooks/done", hook_done_view, name="hook_done"),
-    # ROOT = the operator-approved v3 layout. Operator TG 263 confirmed
-    # post-screenshot: "はい、root においてください。http://127.0.0.1:8051/".
-    # Lead-coordinated promotion per a2a `62094366` — once v3 was proven
-    # on real seeded data + the operator green-lit it visually, swap the
-    # root from the React-SPA GraphView to the server-rendered board_v3.
-    path("", views.board_v3_page, name="board"),
+    # ROOT = the DM page. Operator CCT4610 (2026-10-19): clicking the Cards
+    # app lands on Board, must land on DM. This supersedes the TG-263-era
+    # root=board mapping (kept in history, not as contract).
+    # Served directly rather than redirecting, the same rule the `/board`
+    # alias states below: a redirect would make the address bar disagree
+    # with the entry the operator clicked. `/board` + `/board/` +
+    # `/board-v3` still serve the board, so no bookmark goes dark.
+    path("", views.chat_page, name="dm"),
     # The previous root view (React SPA GraphView built by Vite) moves to
     # `/legacy/` as a backup escape hatch — preserved (not deleted) so any
     # tool or muscle memory pointing at the old layout still has access.
@@ -177,11 +179,12 @@ urlpatterns = [
     path("board-v3", views.board_v3_page, name="board_v3"),
     path("board-v3/", views.board_v3_page, name="board_v3_slash"),
     # `/board` — the readable twin of `/dm` (operator, 2026-07-29, see the DM
-    # note above). Root `/` is KEPT as the primary URL: it is what the
-    # operator's own bookmark, every agent reference and TG 263 all point at.
-    # This is a second door onto the same room, not a move — which is also why
-    # it serves `board_v3_page` directly rather than redirecting: a redirect
-    # would make the address bar disagree with the link the operator clicked.
+    # note above). Since CCT4610 (2026-10-19) root `/` serves the DM page,
+    # `/board` is now the primary board URL — it is what the switcher's
+    # Board tab points at. This is a second door onto the same room, not a
+    # move — which is also why it serves `board_v3_page` directly rather
+    # than redirecting: a redirect would make the address bar disagree with
+    # the link the operator clicked.
     path("board", views.board_v3_page, name="board_alias"),
     path("board/", views.board_v3_page, name="board_alias_slash"),
     # `/projects` — the PROJECT-SCOPED board (Hub PR #923 §5 "Cards": "current
