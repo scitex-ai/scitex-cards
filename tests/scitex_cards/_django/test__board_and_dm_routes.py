@@ -114,15 +114,28 @@ def test_dm_does_not_fall_through_to_the_api_catch_all():
 # --- THE ALIAS GUARANTEE: the published URLs keep working ------------------
 
 
-def test_root_still_resolves_to_the_board_view():
-    """`/` is the URL in the operator's bookmark and in TG 263. Adding a
-    readable name may not cost them the one they already use."""
+def test_root_resolves_to_the_dm_view():
+    """REPLACES ``test_root_still_resolves_to_the_board_view``, which pinned
+    `/` -> board_v3_page.
+
+    That guard was correct for the change it was written against — adding
+    readable `/board` + `/dm` names must not cost the operator the `/` they
+    already used — and is superseded now: on 2026-10-19 the operator
+    reported the app entry landing on Board as a regression (CCT4610) and
+    directed `/` to land on DM instead. The concern underneath it does not
+    evaporate, so it is RESTATED here rather than dropped — deleting a
+    guard because it went red is how a rule gets lost.
+
+    What is pinned here is the half that still matters: `/` must keep
+    resolving to a page view, not fall through to the catch-all
+    `api_dispatch` JSON 404. The room behind the door moved from the board
+    to DM; the door itself stays open."""
     # Arrange
     path = "/"
     # Act
     match = resolve(path, urlconf=_URLCONF)
     # Assert
-    assert match.func is views.board_v3_page
+    assert match.func is views.chat_page
 
 
 def test_chat_still_resolves_to_the_dm_view():
