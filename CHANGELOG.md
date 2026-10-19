@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## [0.56.0] - 2026-10-19
+
+- Create/delete compare-and-set fences + multi-row guards (#1099).
+- Square corners on the selected-card highlight (CCT4368) (#1097).
+
 ## [0.55.1] - 2026-10-18
 
 Release-harness fix (v0.55.0 tag never published — release CI failed 3/3 on
