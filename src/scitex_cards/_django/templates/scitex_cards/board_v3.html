@@ -61,6 +61,8 @@
   wholesale the moment data (or a named state) lands and flip aria-busy off.
 {% endcomment %}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/18-skeleton.css' %}">
+{# 19-dm-pane.css: DM/chat LEFT pane (operator layout 2026-10-19, DEFAULT DM on open). #}
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/19-dm-pane.css' %}">
 {% comment %}
   Prefetch the board JSON this page is about to request anyway. Mount-aware
   via graph_prefetch_url (the view strips api_base exactly like the API_BASE
@@ -94,6 +96,15 @@
   server diagnosis as a single unreadable red line.
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/board_v3/boardStates.js' %}"></script>
+{% comment %}
+  dmPane.js — the DM/chat LEFT pane on this page (operator layout directive
+  2026-10-19, DEFAULT DM on open). Pure helpers + DOM init against the
+  existing dm/* endpoints; node-testable like searchQuery.js. Defines the
+  global toggleDmPane() the pane's own buttons call, and reads
+  window.API_BASE (set in extra_js below) — WITHOUT it the pane renders a
+  named disabled state instead of guessing a mount (same rule as chat.js).
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/dmPane.js' %}"></script>
 {% comment %}
   searchSuggest.js — autocomplete/Tab-completion engine, extends PR #102.
   Pure module; the inline script in extra_js below wires it to the
@@ -455,6 +466,28 @@
   {% endcomment %}
 
   <div class="main">
+    {% comment %}
+      DM/chat LEFT pane (operator layout directive 2026-10-19): the board
+      page opens with DM beside the Board — DM first in DOM order, so the
+      phone stack (column below 900px) shows DM on top with no extra state.
+      Filled by dmPane.js (30s poll of the existing dm/* endpoints); the
+      shell below is server-rendered so first paint names the pane before
+      the fetch lands. Collapsing shrinks it to its header rail — the rail
+      button re-opens it, so the control is never stranded.
+    {% endcomment %}
+    <aside id="dm-pane" aria-label="{% translate 'DM — direct messages' %}">
+      <div class="dm-pane__head">
+        <h2>DM</h2>
+        <span id="dm-rail-count" class="dm-pane__rail-count" hidden></span>
+        <button type="button" class="dm-pane__toggle" data-dm-toggle
+                onclick="toggleDmPane()" aria-expanded="true" aria-controls="dm-pane"
+                title="{% translate 'Collapse / expand the DM pane' %}">‹</button>
+      </div>
+      <div class="dm-pane__body">
+        <div id="dm-threads" aria-live="polite"></div>
+        <div id="dm-thread"></div>
+      </div>
+    </aside>
     <div class="board-area">
 
     <!-- Empty-state banner (operator TG12911, lead a2a `ffa6c606`) — when
