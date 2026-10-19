@@ -10,7 +10,10 @@ below say ``board`` / ``dm`` where they used to say ``/`` and ``chat``.
 
 THAT SWITCH IS ONLY SAFE BECAUSE THE OLD DOORS STAY OPEN, so the last section of
 this file pins exactly that: ``/``, ``/chat`` and ``/chat/`` must still SERVE a
-page, not merely resolve. A published URL is a MIGRATION, not a label — #616
+page, not merely resolve. CCT4610 (2026-10-19) moves ``/`` from the board to DM:
+the root pins below assert it serves the DM page — the same room as ``/dm`` —
+while ``/board`` keeps serving the board under its own pins. A published URL
+is a MIGRATION, not a label — #616
 published ``/board`` and ``/dm`` as aliases first, and this file is the check
 that the alias half never quietly disappears afterwards, leaving every bookmark
 and agent reference pointing at a 404.
@@ -398,9 +401,9 @@ def _serve(path: str):
     return match.func(request, **match.kwargs)
 
 
-def test_the_root_url_still_serves_the_board_now_that_links_say_board(store):
-    """`/` is the URL in the operator's bookmark and in TG 263. The switcher no
-    longer points here, so nothing else would catch it going dark."""
+def test_the_root_url_serves_the_dm_page_now_that_entry_is_dm():
+    """`/` is the app entry: CCT4610 (2026-10-19) moves it from the board to
+    DM. The operator's bookmark only survives if the route also RENDERS."""
     # Arrange
     path = "/"
     # Act
@@ -444,10 +447,12 @@ def test_the_old_chat_url_serves_the_same_page_as_the_new_dm_url():
     assert len(bodies) == 1
 
 
-def test_the_root_url_serves_the_same_page_as_the_new_board_url(store):
-    """The board half of the same guarantee."""
+def test_the_root_url_serves_the_same_page_as_the_dm_url():
+    """The entry half of the same guarantee: `/` and `/dm` are two doors
+    onto ONE room (CCT4610). A `/` that survives as a slightly different
+    page is the drift that makes the entry guarantee worthless."""
     # Arrange
-    paths = ("/", "/board")
+    paths = ("/", "/dm")
     # Act
     bodies = {_serve(path).content for path in paths}
     # Assert
