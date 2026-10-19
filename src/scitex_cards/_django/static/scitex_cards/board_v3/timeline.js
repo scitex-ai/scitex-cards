@@ -29,6 +29,36 @@
   var WINDOWS = ((globalThis.STX = globalThis.STX || {}).timelineWindows =
     { "1d": 24, "1w": 168, "1m": 720 });
 
+  // Empty-state helpers: the default 24 h window legitimately shows nothing
+  // when every card is older — say so, with the board count + one-click
+  // widen, instead of the silent "no activity" that reads as "no cards".
+  function _windowLabel() {
+    return TL.windowKey === "1m"
+      ? "30 days"
+      : TL.windowKey === "1w"
+        ? "7 days"
+        : "24 hours";
+  }
+  function _emptyTimelineHtml() {
+    var nodes =
+      (typeof STATE !== "undefined" && STATE.graph && STATE.graph.nodes) ||
+      [];
+    var extra = nodes.length
+      ? " — " +
+        nodes.length +
+        " card" +
+        (nodes.length === 1 ? "" : "s") +
+        " on board. "
+      : ". ";
+    return (
+      '<div class="loading">no activity in the last ' +
+      escapeHtml(_windowLabel()) +
+      extra +
+      '<button class="tl-empty-btn" onclick="setTimelineWindow(\'1w\')">Show week</button> ' +
+      '<button class="tl-empty-btn" onclick="setTimelineWindow(\'1m\')">Show month</button></div>'
+    );
+  }
+
   // Layout constants for the raster SVG.
   var LANE_H = 26; // px floor per lane row (a 1-row lane keeps this height)
   var BAR_INSET = 4; // vertical padding inside a lane
@@ -363,7 +393,7 @@
           '" role="img" aria-label="Fleet timeline raster">' +
           svg +
           "</svg></div>"
-        : '<div class="loading">no activity in this window 🌙</div>') +
+        : _emptyTimelineHtml()) +
       "</div>";
     if (_gate) {
       _gate.restore(canvas);
@@ -442,7 +472,7 @@
       controlsHtml(rows.length + " tasks") +
       (rows.length
         ? '<div class="tl-simple">' + cards + "</div>"
-        : '<div class="loading">no activity in this window 🌙</div>') +
+        : _emptyTimelineHtml()) +
       "</div>";
   }
 

@@ -9,6 +9,7 @@ from .handlers.attachments import serve_view as attachments_serve_view
 from .handlers.attachments import upload_view as attachments_upload_view
 from .handlers.chat import chat_view
 from .handlers.dm import (
+    dm_agents_view,
     dm_exchange_view,
     dm_reaction_view,
     dm_thread_view,
@@ -125,6 +126,10 @@ urlpatterns = [
     path("dm", views.chat_page, name="dm_page"),
     path("dm/", views.chat_page, name="dm_page_slash"),
     path("dm/threads", dm_threads_view, name="dm_threads"),
+    # Directory buzz-search for the DM New button (CCT 3853). Static string,
+    # registered beside dm/threads and BEFORE the catch-all, for the same
+    # shadowing reason the comment above gives for "dm".
+    path("dm/agents", dm_agents_view, name="dm_agents"),
     path(
         "dm/exchange/<str:exchange_id>",
         dm_exchange_view,

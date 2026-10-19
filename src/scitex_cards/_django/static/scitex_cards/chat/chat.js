@@ -421,6 +421,14 @@
   var drawer = window.ChatDrawer ? window.ChatDrawer.mount(drawerHost) : null;
   if (window.ChatFilter)
     window.ChatFilter.mount({ input: $agentFilter, list: $agents });
+  // New-agent dialog (CCT 3853): buzz-search + jump to the room. Mounted
+  // with the opener seam so chat_new.js owns no page internals.
+  if (window.ChatNew)
+    window.ChatNew.mount({
+      apiBase: API_BASE,
+      openThread: openThread,
+      closeDrawer: closeDrawer,
+    });
 
   function closeDrawer() {
     if (drawer) drawer.close();

@@ -51,6 +51,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
     from ._backend_connect import StoreConnection
 
+from collections.abc import Collection
 from pathlib import Path
 
 from ._db_bootstrap import (
@@ -139,6 +140,15 @@ from ._schema_probe import _sole_value
 _SECTION_KEYS = ()
 
 
+def _store_has_no_task_rows(conn: StoreConnection) -> bool:
+    """True when the ``tasks`` table holds no rows at all.
+
+    Decides whether a guarded first write (no hash table yet) may take the
+    incremental path: on an empty store every per-row guard is evaluable and
+    there is nothing a rebuild could clobber. A presence probe, not a count —
+    the answer is boolean and a count would invite a threshold.
+    """
+    return conn.execute("SELECT 1 FROM tasks LIMIT 1").fetchone() is None
 
 
 def mirror_doc_incremental(
@@ -150,6 +160,8 @@ def mirror_doc_incremental(
     deleted_ids: list[str] | None = None,
     touched_ids: list[str] | None = None,
     expected_revision: int | None = None,
+    expected_revisions: dict[str, int] | None = None,
+    absent_ids: Collection[str] | None = None,
 ) -> dict:
     """Mirror ``doc`` by writing ONLY what changed. Raises on failure.
 
@@ -162,6 +174,22 @@ def mirror_doc_incremental(
     ``expected_revision`` makes the ONE write a compare-and-set. It REQUIRES
     exactly one changed row and is refused on the first-run full rebuild: a guard
     that cannot name the row it guarded is not a guard.
+
+    ``expected_revisions`` is the same guard for SEVERAL rows by id — the
+    tombstone verb's shape, where one guarded row travels with unguarded
+    ref-scrubs in a single atomic batch. Every guarded id must be among the
+    rows this write touches; a guard that is never evaluated is refused, not
+    carried. ``absent_ids`` is the create-side twin: those ids are inserted
+    ONLY if no row holds them, otherwise the write reports
+    ``revision_skipped`` with the winner's revision. Absence-guarded ids are
+    always visited, even when their content is unchanged — an unchanged hash
+    against a present row is exactly the identical-content retry, and it must
+    refuse rather than pass silently.
+
+    A refused guarded batch changes NOTHING: the mirror rolls back instead of
+    committing, so a guarded row's refusal also unwinds the unguarded siblings
+    that travelled with it. The summary still reports ``revision_skipped`` /
+    ``revision_found`` per losing id so the caller can re-read and retry.
 
     A REFUSED WRITE MUST NOT HAVE ITS HASH RECORDED -- the subtle half. Stamping a
     refused card's NEW hash would make the retry that a refusal invites compute
@@ -246,25 +274,51 @@ def mirror_doc_incremental(
             # compare-and-set on one row while the whole board is overwritten from
             # their snapshot, which is the failure the guard exists to prevent.
             # Only the tests found this; reading did not.
-            if expected_revision is not None:
-                raise ValueError(
-                    "expected_revision cannot be honoured on a first-run full "
-                    "rebuild (no hash table yet, so every card is rewritten from "
-                    "this doc). Mirror once without the guard, then retry."
+            #
+            # The ONE exception: a guarded write against an EMPTY store. There
+            # is nothing to clobber, so the rebuild's DELETE is a no-op — but
+            # the rebuild does not EVALUATE guards either, so the write takes
+            # the incremental path below instead (with prior == {}, every doc
+            # card counts as changed and each guard is checked by
+            # _write_card). Without this the first-EVER guarded write always
+            # failed with "mirror once without the guards", and concurrent
+            # first writers would last-writer-win whole tables at each other
+            # instead of arbitrating on the PRIMARY KEY.
+            #
+            # ONLY the new mapping/absence forms take this path. The scalar
+            # form keeps its pinned refusal even on an empty store
+            # (test__update_task_compare_and_set pins the ValueError): its
+            # callers predate this branch and their contract is byte-identical
+            # refusal, not a re-evaluated one.
+            _any_new_guard = expected_revisions is not None or absent_ids
+            if _any_new_guard and _store_has_no_task_rows(conn):
+                pass  # fall through to the incremental path
+            else:
+                if expected_revision is not None:
+                    raise ValueError(
+                        "expected_revision cannot be honoured on a first-run full "
+                        "rebuild (no hash table yet, so every card is rewritten from "
+                        "this doc). Mirror once without the guard, then retry."
+                    )
+                if expected_revisions is not None or absent_ids:
+                    raise ValueError(
+                        "row guards cannot be honoured on a first-run full rebuild "
+                        "(no hash table yet, so every card is rewritten from this "
+                        "doc). Mirror once without the guards, then retry."
+                    )
+                summary = _rebuild_from_doc(conn, doc)
+                conn.executemany(
+                    f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
+                    f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
+                    [(str(c["id"]), _card_hash(c)) for c in cards],
                 )
-            summary = _rebuild_from_doc(conn, doc)
-            conn.executemany(
-                f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
-                f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
-                [(str(c["id"]), _card_hash(c)) for c in cards],
-            )
-            _remember_sections(conn, doc)
-            _stamp()
-            conn.commit()
-            summary.update(
-                {"changed": len(cards), "removed": 0, "unchanged": 0, "full": True}
-            )
-            return summary
+                _remember_sections(conn, doc)
+                _stamp()
+                conn.commit()
+                summary.update(
+                    {"changed": len(cards), "removed": 0, "unchanged": 0, "full": True}
+                )
+                return summary
 
         now_hashes = {str(c["id"]): _card_hash(c) for c in cards}
         by_id = {str(c["id"]): c for c in cards}
@@ -325,12 +379,61 @@ def mirror_doc_incremental(
         # longer propagated here, so rows accumulate. That is the trade the
         # ruling makes, and it is the right one — unbounded growth is a
         # storage cost, and this was data loss.
+        if expected_revision is not None and expected_revisions is not None:
+            raise ValueError(
+                "expected_revision and expected_revisions cannot be combined: "
+                "the scalar form guards the one row this write touches, the "
+                "mapping form guards several by id. Pass one or the other."
+            )
+        absent_set = {str(i) for i in (absent_ids or [])}
+        if expected_revision is not None and absent_set:
+            raise ValueError(
+                "expected_revision and absent_ids cannot be combined: "
+                "at-revision and absence are different assertions, and the "
+                "scalar form guards the one row this write touches. Pass one "
+                "or the other."
+            )
         if expected_revision is not None and len(changed) != 1:
             raise ValueError(
                 f"expected_revision guards exactly one row, but this write would "
                 f"touch {len(changed)}: {sorted(changed)!r}. Name the single card "
                 f"via touched_ids, or omit expected_revision for last-writer-wins."
             )
+        if expected_revisions is not None:
+            # A guard on a row this write does not touch would be SILENTLY
+            # UNASSERTED — the loop below only visits `changed`, so the caller
+            # would hold a guarantee that was never checked. Refuse rather
+            # than carry an unchecked guard.
+            unvisited = [t for t in expected_revisions if t not in changed]
+            if unvisited:
+                raise ValueError(
+                    f"expected_revisions names rows this write does not touch: "
+                    f"{sorted(unvisited)!r}. A guard that is never evaluated is "
+                    f"not a guard — narrow it to the rows being written."
+                )
+            overlap = [t for t in expected_revisions if t in absent_set]
+            if overlap:
+                raise ValueError(
+                    f"rows cannot be both at-revision-guarded and "
+                    f"absence-guarded: {sorted(overlap)!r}. Absence and "
+                    f"at-revision are different assertions about the same row."
+                )
+        if absent_set:
+            # Absence-guarded rows MUST be visited even when their content did
+            # NOT change: an unchanged hash means "identical to the mirror",
+            # and the mirror may hold exactly the row this create asserts is
+            # absent (identical-content retry). Skipping the visit would turn
+            # that into a silent pass; visiting evaluates the guard, which
+            # refuses with the winner's revision as it should. A guard on an id
+            # with no payload in this doc names nothing insertable — refuse.
+            no_payload = sorted(t for t in absent_set if t not in by_id)
+            if no_payload:
+                raise ValueError(
+                    f"absent_ids names rows with no card in this write: "
+                    f"{no_payload!r}. An absence guard rides on the create it "
+                    f"fences — pass the card being created, not a bare id."
+                )
+            changed = changed + [t for t in absent_set if t not in changed]
 
         # `written`, never `changed` -- see the docstring. A refused card was NOT
         # written, and stamping its hash would strand it permanently.
@@ -338,7 +441,17 @@ def mirror_doc_incremental(
         refused: list[str] = []
         found: dict[str, int | None] = {}
         for tid in changed:
-            counts = _write_card(conn, by_id[tid], expected_revision=expected_revision)
+            row_guard = (
+                expected_revisions.get(tid)
+                if expected_revisions is not None
+                else expected_revision
+            )
+            counts = _write_card(
+                conn,
+                by_id[tid],
+                expected_revision=row_guard,
+                expect_absent=(tid in absent_set),
+            )
             if counts.get("revision_skipped"):
                 refused.append(tid)
                 found[tid] = counts.get("revision_found")
@@ -371,7 +484,19 @@ def mirror_doc_incremental(
         # 830 ms YAML parse. Freshness is about the FILE, not about the delta.
         _stamp()
 
-        conn.commit()
+        if refused:
+            # A refused guarded batch changes NOTHING — not even the rows whose
+            # own guards passed. A half-applied guarded write (guarded row
+            # refused, unguarded siblings committed) would leave the caller
+            # holding a guarantee over a batch that only partly landed, and the
+            # committed siblings would be invisible to the retry the refusal
+            # invites. This changes no existing caller: the scalar form guards
+            # exactly one row, so a refusal there means `written` is empty and
+            # a rollback commits the same nothing a commit would; unguarded
+            # batches never refuse at all.
+            conn.rollback()
+        else:
+            conn.commit()
         summary = {
             # `written`, not `changed`: a card the compare-and-set refused was a
             # candidate, not a change, and counting it would tell the caller their

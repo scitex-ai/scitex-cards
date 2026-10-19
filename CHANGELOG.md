@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+## [0.56.1] - 2026-10-19
+
+Release-tree fix (v0.56.0 tag fell 2 commits behind main — release CI
+failed 3/3 on the fresh-process JSON probe: a tag checkout behind
+origin/main trips the currency drift gate, which refuses every CLI call
+in the fresh child before the subcommand runs):
+
+- Re-cut the release at the current main tip, picking up the DM-tab-first
+  page switcher (#1100).
+
+## [0.56.0] - 2026-10-19
+
+- Create/delete compare-and-set fences + multi-row guards (#1099).
+- Square corners on the selected-card highlight (CCT4368) (#1097).
+
+## [0.55.1] - 2026-10-18
+
+Release-harness fix (v0.55.0 tag never published — release CI failed 3/3 on
+the fresh-process JSON probe in the release env):
+
+- Harden fresh-process JSON probe: 60s timeout, empty-stdout diagnostics
+  with child returncode + stderr attached (#1095).
+
+## [0.55.0] - 2026-10-18
+
+Board DM release (operator mandates CCT 3852/3853):
+
+- DM New button with agent-directory buzz-search + timeline empty-state (#1090).
+
 ## [0.54.0] - 2026-10-17
 
 Board calm-UI release (operator mandates CCT 3852/3853/3877/3878/3881):

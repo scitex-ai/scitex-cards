@@ -50,6 +50,7 @@ def _write_card(
     card: dict,
     *,
     expected_revision: int | None = None,
+    expect_absent: bool = False,
 ) -> dict[str, int]:
     """Upsert ONE card and its derived rows. Returns the insert counts.
 
@@ -80,12 +81,31 @@ def _write_card(
     going to be refused.
     """
     tid = str(card.get("id"))
-    if expected_revision is not None:
+    if expect_absent and expected_revision is not None:
+        raise ValueError(
+            "_write_card: expect_absent and expected_revision cannot be combined: "
+            "absence and at-revision are different assertions about the row. "
+            "Pass one or the other."
+        )
+    if expected_revision is not None or expect_absent:
         row = conn.execute(
             "SELECT revision FROM tasks WHERE id = ?", (tid,)
         ).fetchone()
         found = None if row is None else row["revision"]
-        if found != expected_revision:
+        if expect_absent:
+            if found is not None:
+                # Refuse BEFORE the drop. Nothing has been touched — in
+                # particular the WINNER's comments, which the drop below
+                # would otherwise delete before the insert lost its race.
+                return {
+                    "tasks": 0,
+                    "comments": 0,
+                    "edges": 0,
+                    "roles": 0,
+                    "revision_skipped": 1,
+                    "revision_found": found,
+                }
+        elif found != expected_revision:
             # Refuse BEFORE the drop. Nothing has been touched.
             return {
                 "tasks": 0,
@@ -101,7 +121,9 @@ def _write_card(
     _drop_card_rows(conn, tid)
     # _insert_tasks handles the task row + comments + edges + roles for each
     # card it is given, so a one-element list is exactly one card's worth.
-    return _insert_tasks(conn, [card], expected_revision=expected_revision)
+    return _insert_tasks(
+        conn, [card], expected_revision=expected_revision, expect_absent=expect_absent
+    )
 
 
 def _comment_fields(row) -> tuple:
