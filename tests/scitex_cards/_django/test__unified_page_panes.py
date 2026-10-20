@@ -69,13 +69,26 @@ def test_unified_page_runs_both_panes_scripts(unified_html):
     assert both == (True, True)
 
 
-def test_unified_page_renders_exactly_one_shared_header(unified_html):
-    # Arrange
-    html = unified_html
+def test_unified_page_renders_exactly_one_shared_header_mount(unified_html):
+    # Arrange — the leaf no longer hand-rolls the row (learn-from-stats):
+    # one SDK mount stub per page, identity as data attributes.
     # Act
-    headers = _headers(html)
-    # Assert — a second copy would be the fluctuation the operator called out.
-    assert len(headers) == 1
+    mounts = re.findall(r"<div data-stx-app-header", unified_html)
+    titled = 'data-app-title="SciTeX Cards"' in unified_html
+    versioned = 'data-app-version="0.56.4"' in unified_html
+    # Assert
+    assert (len(mounts), titled, versioned) == (1, True, True)
+
+
+def test_unified_page_mount_carries_no_hand_rolled_header(unified_html):
+    # Arrange — the SDK module owns the row chrome; any literal
+    # `.stx-app-header` element in server HTML is a fork of it.
+    # Act
+    hand_rolled = re.findall(r'<header class="stx-app-header', unified_html)
+    module = "scitex_sdk/ui/js/app/app-header.js" in unified_html
+    adopt = "scitex_cards/app_header.js" in unified_html
+    # Assert
+    assert (hand_rolled, module, adopt) == ([], True, True)
 
 
 def test_unified_page_marks_dm_active_on_first_paint(unified_html):
@@ -99,14 +112,14 @@ def test_unified_page_carries_no_duplicate_ids(unified_html):
 
 
 def test_unified_page_tab_row_is_not_inside_the_title_row(unified_html):
-    # Arrange — the SDK title row holds label + version + project selector
+    # Arrange — the SDK title mount holds label + version + project selector
     # ONLY (operator 2026-10-20); the tab row is its sibling, never nested.
-    # Nested, the outer flex row squeezes both side by side (measured 60px
-    # single row on #board) instead of stacking them.
-    title_row = re.search(
-        r'<header class="stx-app-header.*?</header>', unified_html, re.DOTALL
+    # The mount stub carries no switcher: the SDK renders the row from data
+    # attributes, and switcher markup inside it would fork shared chrome.
+    mount = re.search(
+        r'<div data-stx-app-header.*?</div>', unified_html, re.DOTALL
     )
     # Act
-    nested = "stx-cards-header" in (title_row.group(0) if title_row else "")
+    nested = "stx-cards-switcher" in (mount.group(0) if mount else "")
     # Assert
-    assert title_row is not None and not nested
+    assert mount is not None and not nested
