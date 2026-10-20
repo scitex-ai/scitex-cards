@@ -157,6 +157,15 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     display: none;
   }
   #layout { flex: 1 1 auto; display: flex; min-height: 0; }
+  /* Unified-page panes (operator 2026-10-20): #dm-pane and #board-pane are
+     the two switchable views under the shared header. Each is a flex column
+     filling the app height so its content lays out exactly as on the
+     standalone page. The [hidden] guard is load-bearing: display:flex would
+     otherwise override the UA's hidden handling and show both panes. */
+  #dm-pane, #board-pane {
+    flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
+  }
+  #dm-pane[hidden], #board-pane[hidden] { display: none; }
 
   /* ---- agent list (left) ---- */
   /* The nav is now a COLUMN of two things — the filter row, which stays put,
@@ -615,6 +624,15 @@ and the page needs both — this was a textual collision, not a real one.)
 <link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/app-header.css' %}">{# CCT 3878: SDK header grammar for the shared .stx-app-header row. #}
 <link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_panes.css' %}">
+{% comment %}
+Board assets for the unified page: the board pane below is the SAME partial
+the standalone board serves, so it needs the SAME stylesheets + scripts.
+One include, one source — never a copied link list. Shared links
+(page-switcher/header/app-header) duplicate the ones above; browsers dedupe
+identical URLs, and the duplication is what keeps the board's load ORDER
+(the partial preserves it) intact here.
+{% endcomment %}
+{% include "scitex_cards/_board_head.html" %}
 <style>
   /* Positioning only — every visual rule comes from base. */
   #msg-menu-wrap, #react-bar, #forward-menu { position: fixed; display: none; z-index: 40; }
@@ -751,6 +769,13 @@ the tab row below it arrive via the shared partial, identical on both pages.
   {% endcomment %}
   {% include "scitex_cards/_page_header.html" with active="chat" page_title="SciTeX Cards" %}
 </header>
+<div id="dm-pane">
+{% comment %}
+ONE page, TWO panes (operator 2026-10-20): #dm-pane here, #board-pane below.
+The hash names the pane (#dm / #board); app_router.js toggles them with no
+reload, so the header never fluctuates. Both panes' scripts start on page
+load — data preloads in parallel. DM is the default (CCT4610 landing).
+{% endcomment %}
 <div id="error-bar"></div>
 <div id="layout">
 {% comment %}
@@ -908,6 +933,13 @@ Forward uses.
     </form>
   </main>
 </div>
+</div>
+<div id="board-pane" hidden>
+  {% comment %}board_header=False: the page header above is already the shared
+  one — a second copy inside the pane would be the fluctuation the operator
+  called out. The standalone board passes nothing and keeps its header.{% endcomment %}
+  {% include "scitex_cards/_board_pane.html" with board_header=False %}
+</div>
 </section>
 {% endblock app_content %}
 {% block extra_js %}
@@ -973,6 +1005,15 @@ if the symbol is missing, so an old SDK costs behaviour, not the page.
 <script defer src="{% static 'scitex_cards/chat/chat.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_panes.js' %}"></script>
 <script defer src="{% static 'scitex_cards/ui/emoji_picker.js' %}"></script>
+{% comment %}
+Board runtime for the unified page: the SAME inline script the standalone
+board runs (one source, _board_foot.html), then the hash router. Classic
+script runs during parse — same timing as on the board page — while the
+router is defer like the chat modules. Router order vs chat.js is
+immaterial: it only toggles panes and listens, never calls chat internals.
+{% endcomment %}
+{% include "scitex_cards/_board_foot.html" %}
+<script defer src="{% static 'scitex_cards/app_router.js' %}"></script>
 {% comment %}
 SELF-VERIFYING WIRING, and it belongs HERE rather than in chat.js.
 
