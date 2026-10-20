@@ -247,34 +247,33 @@ def _rendered_chat_page() -> str:
     return views.chat_page(RequestFactory().get("/chat")).content.decode("utf-8")
 
 
-def test_served_page_links_the_stylesheet() -> None:
-    """Unstyled, the panel renders as sixty stacked buttons over the
-    thread."""
+def test_served_page_links_no_emoji_stylesheet() -> None:
+    """Operator 2026-10-20: drop the emojis. The DM composer ships no picker,
+    so it must not pay for the picker's stylesheet either."""
     # Arrange
     # Act
     html = _rendered_chat_page()
     # Assert
-    assert "scitex_cards/ui/emoji_picker.css" in html
+    assert "scitex_cards/ui/emoji_picker.css" not in html
 
 
-def test_served_page_loads_the_module() -> None:
-    """Nothing else references the picker, so a missing script tag removes
-    the feature with no error anywhere to explain the absence."""
+def test_served_page_loads_no_emoji_module() -> None:
+    """The picker script without its mount is dead weight with a console
+    presence; the whole feature left the composer together."""
     # Arrange
     # Act
     html = _rendered_chat_page()
     # Assert
-    assert "scitex_cards/ui/emoji_picker.js" in html
+    assert "scitex_cards/ui/emoji_picker.js" not in html
 
 
-def test_served_page_mounts_the_picker_onto_the_composer_field() -> None:
-    """The declarative mount IS the integration: this attribute names the
-    field the emoji land in, and chat.js contains not one line about it."""
+def test_served_page_has_no_picker_mount_on_the_composer_field() -> None:
+    """No mount attribute, no panel: the composer is attach + field + send."""
     # Arrange
     # Act
     html = _rendered_chat_page()
     # Assert
-    assert 'data-stx-emoji-picker-for="compose-body"' in html
+    assert 'data-stx-emoji-picker-for="compose-body"' not in html
 
 
 def test_the_targeted_composer_field_exists_on_the_page() -> None:

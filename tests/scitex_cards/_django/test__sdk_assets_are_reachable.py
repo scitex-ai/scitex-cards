@@ -64,11 +64,48 @@ _GLOBAL_BUNDLES = {
 }
 
 
+#: `{% include "scitex_cards/<name>" %}` with either quote style. The pages
+#: are composed of partials (unified page, operator 2026-10-20), so an SDK
+#: asset a page serves through an include still counts as the PAGE's
+#: consumption — a scan seeing only direct references would call the board
+#: blind the moment its links moved one file over, which is exactly what
+#: this scan exists to prevent missing.
+_INCLUDE = re.compile(r'{%\s*include\s+["\']scitex_cards/([^"\']+)["\']')
+
+
 def _referenced_assets() -> dict[str, list[str]]:
-    """Map SDK static path -> templates that reference it."""
+    """Map SDK static path -> templates that reference it, INCLUDES FOLLOWED.
+
+    A partial's assets count toward every page that includes it (transitively,
+    cycle-safe): the scan answers "which served pages consume the SDK", not
+    "which files spell static paths".
+    """
+    includes: dict[str, set[str]] = {}
+    for template in sorted(_TEMPLATES.glob("*.html")):
+        text = template.read_text(encoding="utf-8")
+        for partial in _INCLUDE.findall(text):
+            if (_TEMPLATES / partial).is_file():
+                includes.setdefault(template.name, set()).add(partial)
+
+    def _transitive(template: str, seen: set[str]) -> set[str]:
+        out = set()
+        for partial in includes.get(template, ()):
+            if partial in seen:
+                continue
+            seen.add(partial)
+            out.add(partial)
+            out |= _transitive(partial, seen)
+        return out
+
     found: dict[str, list[str]] = {}
     for template in sorted(_TEMPLATES.glob("*.html")):
-        for path in _STATIC.findall(template.read_text(encoding="utf-8")):
+        reachable = {template.name} | _transitive(template.name, set())
+        text = "".join(
+            (_TEMPLATES / name).read_text(encoding="utf-8")
+            for name in sorted(reachable)
+            if (_TEMPLATES / name).is_file()
+        )
+        for path in set(_STATIC.findall(text)):
             found.setdefault(path, []).append(template.name)
     return found
 
