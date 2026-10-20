@@ -32,6 +32,7 @@ import pytest
 from scitex_cards._wake_watcher import (
     DEFAULT_INTERVAL_S,
     MIN_INTERVAL_FLOOR_S,
+    WakeRecord,
     WatcherState,
     _recipients,
     acquire_single_instance_lock,
@@ -736,6 +737,28 @@ class TestNoChangeTick:
         out = run_watcher_once(store, state, post=False, min_wake_interval_s=0.0)
         # Assert
         assert [w.task_id for w in out] == ["b"]
+
+
+# EOF
+
+
+class TestToPayloadText:
+    def test_payload_text_carries_goal_prefix_and_card_context(self):
+        # Arrange
+        record = WakeRecord(
+            agent="scitex-agent-container",
+            trigger_kind="comment",
+            task_id="sac-1",
+            task_title="Fix the header",
+            summary="operator commented: ship it",
+        )
+        # Act
+        text = record.to_payload(store_path="/scitex-cards/tasks.yaml")["text"]
+        # Assert
+        assert text == (
+            "/goal [sac-1] Fix the header (comment):"
+            " operator commented: ship it"
+        )
 
 
 # EOF
