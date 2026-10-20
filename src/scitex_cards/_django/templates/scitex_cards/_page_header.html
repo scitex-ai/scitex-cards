@@ -2,11 +2,13 @@
 Shared page HEADER — the identity band rendered by BOTH top-level pages
 (board_v3.html and chat.html), from this one file.
 
-CCT 3878: row 1 is the shared SDK header (`.stx-app-header`: switcher +
-title + version + project-selector slot + actions, SDK grammar/classes/css),
-row 2 is the cards band (scope). App-specific content starts below.
-The switcher leads the SDK row itself, so it stays leftmost overall —
-that standing instruction is positional, not row-bound.
+Row 1 is the shared SDK header (`.stx-app-header`: title + version +
+project-selector slot + actions, SDK grammar/classes/css). Row 2 is the
+cards tab row (Board | DM switcher). App-specific content starts below.
+The switcher FOLLOWS the title row — it is not inside it. The SDK owns the
+title row's chrome; cards chrome inside that row forks the shared component.
+Tabs below the title is also the fleet idiom, so users meet one shape
+everywhere. That standing instruction is positional, not row-bound.
 
 WHY IT IS A PARTIAL. Operator, 2026-07-29 (TG): the two pages' headers not
 lining up is uncomfortable. They did not line up because each page rolled its
@@ -17,9 +19,10 @@ baselines. Two numbers kept in sync by hand is HOW they drifted; the fix is
 structural, not a third number. This partial owns the band's markup and
 page-header.css owns its geometry, so there is nothing left to keep in sync.
 
-THE SWITCHER COMES FIRST — that is the operator's standing instruction
-(「スイッチャーは左にそろえてください」, restated 2026-07-29 after the board and
-the DM page had drifted to opposite sides). Its position is a property of THIS
+THE SWITCHER FOLLOWS THE TITLE ROW — that is the operator's standing
+instruction (「スイッチャーは左にそろえてください」, restated 2026-07-29 after the board and
+the DM page had drifted to opposite sides), now stated row-wise: first in the
+tab row, never inside the SDK row. Its position is a property of THIS
 file now, so the two pages cannot disagree about it: there is only one file to
 read. Never give `.stx-cards-switcher` a `margin-left: auto` on a host page —
 that pushes it right while leaving this markup looking correct, which is the
@@ -60,9 +63,12 @@ registers no provider are byte-identical to the pre-slot header. The SDK's tag
 independently follows `app_scope` (default user), and renders nothing for an
 unsupported user-scoped app or a viewer who is not signed in. The slot is inside
 the guarded partial and appears only when that canonical tag emits markup.
+
+NO SCOPE BAND. There used to be a second row reading "Signed in as
+<user>". Operator, 2026-10-20: it says nothing — dropped as meaningless.
+The viewer already knows who they are; identity belongs to the shell.
 {% endcomment %}
 <header class="stx-app-header cards-app-header">
-  {% include "scitex_cards/_page_switcher.html" with active=active %}
   <h1 class="stx-app-header__title">{{ page_title }}</h1>
   <span class="stx-app-header__version" title="scitex-cards package serving this page">v{{ scitex_cards_version|default:"?" }}</span>
   <div class="stx-app-header__slot--project-selector">
@@ -73,7 +79,5 @@ the guarded partial and appears only when that canonical tag emits markup.
   <div class="stx-app-header__actions"></div>
 </header>
 <div class="stx-cards-header{% if api_base != '/' %} stx-cards-header--mounted{% endif %}">
-  <span class="stx-cards-header__scope" data-user-scope="{{ cards_user }}">
-    {{ cards_user }}
-  </span>
+  {% include "scitex_cards/_page_switcher.html" with active=active %}
 </div>

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.56.3] - 2026-10-20
+
+- Header split (operator 2026-10-20): the shared `.stx-app-header` title row
+  is values-only per the scitex-sdk contract; the Board | DM switcher moves
+  into its own tab row below (#1109). The 'Signed in as' scope band is
+  dropped, and the DM New button follows the Send primary-button style.
+
 ## [0.56.2] - 2026-10-19
 
 Release-tree fix, second attempt (v0.56.1 tag passed the ancestry gate
