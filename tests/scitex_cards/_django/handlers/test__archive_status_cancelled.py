@@ -30,6 +30,34 @@ def _archive_source() -> str:
     return inspect.getsource(stale_handler.handle_archive)
 
 
+def _board_sources() -> str:
+    """Board markup as served: board_v3.html plus its three partials.
+
+    Since the unified page (operator 2026-10-20) copy like the Archive
+    prompt lives in _board_foot.html — one source served standalone AND
+    embedded. Pins read the concatenation.
+    """
+    from pathlib import Path
+
+    import scitex_cards
+
+    base = (
+        Path(scitex_cards.__file__).parent
+        / "_django"
+        / "templates"
+        / "scitex_cards"
+    )
+    return "\n".join(
+        (base / name).read_text(encoding="utf-8")
+        for name in (
+            "board_v3.html",
+            "_board_pane.html",
+            "_board_head.html",
+            "_board_foot.html",
+        )
+    )
+
+
 def test_archive_source_writes_cancelled():
     # Arrange
     # Arrange
@@ -168,16 +196,8 @@ def test_archive_prompt_copy_names_the_terminal_state_case1():
     # flip; after the fix it must name cancelled, not the old sentinel.
     # Arrange
     # Arrange
-    from pathlib import Path
-    import scitex_cards
     # Act
-    text = (
-        Path(scitex_cards.__file__).parent
-        / "_django"
-        / "templates"
-        / "scitex_cards"
-        / "board_v3.html"
-    ).read_text(encoding="utf-8")
+    text = _board_sources()
     # Assert
     assert "flips status to cancelled (terminal)" in text
 
@@ -187,16 +207,8 @@ def test_archive_prompt_copy_names_the_terminal_state_case2():
     # flip; after the fix it must name cancelled, not the old sentinel.
     # Arrange
     # Arrange
-    from pathlib import Path
-    import scitex_cards
     # Act
-    text = (
-        Path(scitex_cards.__file__).parent
-        / "_django"
-        / "templates"
-        / "scitex_cards"
-        / "board_v3.html"
-    ).read_text(encoding="utf-8")
+    text = _board_sources()
     # Assert
     assert "flips status to deferred" not in text
 

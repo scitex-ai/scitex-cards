@@ -1,0 +1,229 @@
+{% load static i18n %}
+{% comment %}Board head assets — extracted VERBATIM from board_v3.html extra_css (CSS links + defer scripts + graph prefetch). Included by the standalone board AND the unified page: one list, no drift.{% endcomment %}
+<!-- P11b (lead-approved, operator priority 2026-06-12). Load the SDK
+     Combobox bundle (pre-built JS sibling of the TS class shipped in
+     the SDK UI component). The CSS uses the existing SDK design tokens
+     so the popover blends with the board chrome. JS exposes
+     window.STX.Combobox; attachCombobox() below layers a Combobox over
+     every existing <select.filt> + the card-ctx move-picker as a
+     progressive enhancement — if window.STX.Combobox is unavailable
+     (older SDK pin), the page falls back to the plain <select>s
+     and the move-picker's existing inline list. -->
+<!-- board_v3 page CSS (extracted 2026-06-12 from a 3800-line monolith).
+     The inline <style> block was the root cause of squash-merge regressions
+     (P1 #86, P7 #87) — every UI PR edited the same wall of CSS and the
+     merge silently dropped recent additions. See GITIGNORED/REFACTORING.md.
+     Each file stays under the 512-line CSS hook limit. -->
+<!-- 00-theme-scrollbar-select.css ships GLOBAL themed scrollbars + <select>
+     dropdowns so neither falls through to OS-default chrome (which paints
+     WHITE in dark mode). Loaded FIRST so per-file `.filt`, `.columns`,
+     `.col-body`, etc. specificity rules in 01-06 still win where they want
+     to. Lead a2a 510a58d4 (2026-06-14) operator complaint. -->
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/00-theme-scrollbar-select.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/01-filterbar.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/app-header.css' %}">{# CCT 3878: SDK header grammar for the shared .stx-app-header row. #}{# page-header.css: geometry of the header bar SHARED with chat.html — the single place its height/padding/gap are stated. Linked AFTER 01-filterbar.css (so the shared h1 rule wins the desktop baseline) and BEFORE 05-responsive.css (so the phone overrides still win). (hook-bypass: line-limit — pre-existing over-cap template.) #}
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/02-card.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/03-right-and-modal.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/03b-card-actions.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/04-collapse-and-groups.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/05-responsive.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/06-layout-and-recent.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/07-toolbar-groups.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/08-board-states.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/13-details-pane.css' %}">{# 13-details-pane.css: right-hand Details column (filters + legend-aligned stats), scitex-writer convention #}
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/09-timeline.css' %}">{# 09-timeline.css: Timeline layout — raster + per-task simple cards (operator CARD 2026-06-17) #}
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/11-sticky-wall.css' %}">{# 11-sticky-wall.css: Wall layout (notes + islands) + the shared .stx-flash status-transition glow #}
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/14-matrix.css' %}">{# 14-matrix.css: Matrix layout — urgency×importance 5x5 plane + quadrant divide + unscored tray (ADR-0011 §8). (hook-bypass: line-limit) #}
+<link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">{# page-switcher.css: the shared Board|Chat switcher — NOT board-only, chat.html links the same file. Loaded after the board CSS so it reads the board palette off :root. #}
+{% comment %}
+  18-skeleton.css: the open-first shell — skeleton cards + spinner the server
+  paints BEFORE /graph resolves, so first paint carries feedback even when
+  the store rebuild takes seconds. render()/boardStates painters replace it
+  wholesale the moment data (or a named state) lands and flip aria-busy off.
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/18-skeleton.css' %}">
+{% comment %}
+  Prefetch the board JSON this page is about to request anyway. Mount-aware
+  via graph_prefetch_url (the view strips api_base exactly like the API_BASE
+  const does: "" + "/graph" at a root mount, "/apps/cards/graph" on the
+  hub). Low-priority and cache-deduped against loadGraph()'s own call, so
+  revisits and Back/forward navigations start warm.
+{% endcomment %}
+<link rel="prefetch" href="{{ graph_prefetch_url }}" as="fetch" crossorigin="anonymous">
+{# combobox.css (loaded below the page-CSS so its specificity sits ON TOP if needed) #}
+<link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/combobox.css' %}">
+<script defer src="{% static 'scitex_sdk/ui/js/app/combobox.js' %}"></script>
+{% comment %}
+  searchQuery.js — GitHub-style qualifier-syntax parser (project:/agent:/
+  status:/...). Exposes window.STX.searchQuery; the page logic below
+  delegates `fuzzyMatch` to it whenever the input contains a recognized
+  qualifier. Operator TG 12315/12316: photographed typing
+  `project: paper-scitex-clew` into the search bar — they already
+  expected GitHub-style syntax. Pure JS module, no DOM deps; unit
+  tests at tests/scitex_cards/test__search_query.js.
+
+  NB: Django's `{# … #}` syntax is single-line only — a multi-line
+  block leaks its body into the rendered HTML. Use `{% comment %}` for
+  any multi-line note inside a template (board v0.5.4 fix — PR #105).
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/searchQuery.js' %}"></script>
+{% comment %}
+  boardStates.js — the load / empty / error panels. When /graph does not hand
+  back a card list, these turn the reason into words on the board surface.
+  Extracted from this template 2026-08-17 after the operator reported the
+  mounted board as 「何も表示されない」 while it was in fact displaying a complete
+  server diagnosis as a single unreadable red line.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/boardStates.js' %}"></script>
+{% comment %}
+  searchSuggest.js — autocomplete/Tab-completion engine, extends PR #102.
+  Pure module; the inline script in extra_js below wires it to the
+  #f-search input. Exposes window.STX.searchSuggest. Operator TG 12318.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/searchSuggest.js' %}"></script>
+{% comment %}
+  searchDebounce.js — when to rebuild the board while the operator types.
+  Pure module (timers only). render() used to run synchronously from
+  `oninput`, which is dispatched BEFORE paint, so a full-layout rebuild sat
+  on the critical path of showing the character just typed — the caret
+  lagged the keyboard. Exposes window.STX.searchDebounce. Operator
+  2026-07-30.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/searchDebounce.js' %}"></script>
+{% comment %}
+  timelinePack.js — pure beeswarm sub-row packer for the Timeline raster.
+  MUST load BEFORE timeline.js: it publishes window.STX.timelinePack, which
+  timeline.js's IIFE captures at init so co-located markers fan out into
+  sub-rows instead of occluding each other. No DOM; also node-testable.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/timelinePack.js' %}"></script>
+{% comment %}
+  timelineGeo.js — pure time→pixel geometry (ms / barGeo / makeTicks / relTime)
+  for the Timeline raster. MUST load BEFORE timeline.js: publishes
+  window.STX.timelineGeo, captured by timeline.js's IIFE at init. No DOM;
+  node-testable. Factored out so timeline.js stays under the per-file cap.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/timelineGeo.js' %}"></script>
+{% comment %}
+  10-agent-avatar.js — per-agent lane avatar (fleet brand colour/label, or
+  deterministic hash-hue + initials fallback) + status ring for the Timeline
+  raster. MUST load BEFORE timeline.js: publishes window.STX.agentAvatar,
+  captured like _pack/_geo; timeline.js falls back to plain-text lane labels
+  when absent. Operator 2026-07-10 (cards-board-agent-icons-status-rings).
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/10-agent-avatar.js' %}"></script>
+{% comment %}
+  11-sticky-wall.js — the "sticky note wall" layout: notes readable without
+  hover, clustered by assignee/project/status, and each agent's NEXT-UP stack
+  derived here from nodes+depends_on edges (no agent cooperation required).
+  Loads AFTER 10-agent-avatar.js (it reuses window.STX.agentAvatar for the
+  note avatar) and publishes window.STX.stickyWall; render() falls back to the
+  column layout when absent. Operator design, card
+  cards-board-sticky-wall-view-20260710.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/11-sticky-wall.js' %}"></script>
+{% comment %}
+  14-matrix.js — the urgency×importance matrix layout (ADR-0011 §8): a 5x5
+  plane of (urgency, importance) cells, the quadrant divide drawn at the
+  threshold, and an explicit tray for cards with no axes yet. Pure + node-
+  testable (tests/scitex_cards/test__matrix.js runs the REAL file, not a
+  mirror); publishes window.STX.matrix, and render() falls back to Timeline
+  when absent. READ-ONLY: rank is the engine's output (ADR-0011 §1), so
+  this module deliberately contains no scoring function. Operator build
+  order, card scitex-cards-gui-matrix-view-20260717.
+  (hook-bypass: line-limit — pre-existing 3425-line template.)
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/14-matrix.js' %}"></script>
+{% comment %}
+  15-dateinfo.js — date extraction + proximity helpers (dateInfo and its
+  parsers), extracted VERBATIM from the inline <script> as split PR-1. Pure,
+  DOM-free, node-testable against the shipped file (tests/scitex_cards/
+  test__dateinfo.js); publishes window.STX.dateInfo. The filter predicate
+  passes() consumes it at call time. Behaviour unchanged.
+  (hook-bypass: line-limit — pre-existing over-cap template.)
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/15-dateinfo.js' %}"></script>
+{% comment %}
+  16-card-helpers.js — escapeHtml + cardOwner, extracted VERBATIM from the
+  inline <script> as split PR-2. Publishes window.STX.cardHelpers; node-tested
+  against the shipped file. Behaviour unchanged; the module explains why
+  escapeHtml keeps a delegating alias in the template and cardOwner does not.
+  (hook-bypass: line-limit — pre-existing over-cap template.)
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/16-card-helpers.js' %}"></script>
+{% comment %}
+  17-graph-builders.js — the Graph layout's PURE string builders
+  (_graphSrc / _graphHintHtml / _graphEmptyHtml), extracted VERBATIM from
+  the inline <script> as split PR-3. Publishes window.STX.graphBuilders;
+  node-tested against the shipped file. The DOM half (_mountGraphSvg,
+  toggleGraphFit, _ensureMermaid, _renderGraphSvg) deliberately stayed in
+  the template — a module that touches the DOM at import time cannot be
+  require()d by node, so moving it would be churn, not testability.
+  (hook-bypass: line-limit — pre-existing over-cap template.)
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/17-graph-builders.js' %}"></script>
+{% comment %}
+  12-hover-tip.js — cursor-OFFSET hover tooltip for any [data-tip] element.
+  Replaces the browser's native tooltip (SVG <title> / title=""), which
+  renders under the cursor and covers the dot or note being pointed at
+  (operator msg 944). Self-attaches on DOMContentLoaded; one delegated
+  listener, so every current and future view inherits it.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/12-hover-tip.js' %}"></script>
+{% comment %}
+  13-timeline-hover.js — row-hover feedback for the Timeline raster (hovered
+  lane highlights + its scatter dots grow). One delegated listener on #columns;
+  class-toggle only, so a hover never rebuilds the raster. Operator 2026-07-13.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/13-timeline-hover.js' %}"></script>
+{% comment %}
+  timelineGate.js — anti-flash change-detection gate for the Timeline raster.
+  MUST load BEFORE timeline.js: publishes window.STX.timelineGate (rasterSig +
+  a stateful gate that skips identical 4s rebuilds and preserves .tl-scroll
+  scroll across a real rebuild), so the raster stops flashing / jumping to top.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/timelineGate.js' %}"></script>
+{% comment %}
+  timelineSelect.js — marker multi-select + copy-contents + right-click menu
+  for the Timeline raster (operator 2026-06-26). Classic <script defer>;
+  wires itself via event delegation on #columns so timeline.js (at its line
+  cap) needs no change. Publishes window.STX.timelineSelect (pure
+  formatCardCopy / joinCopyBlocks helpers, node-testable).
+  (hook-bypass: line-limit.)
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/timelineSelect.js' %}"></script>
+{% comment %}
+  timelineControls.js — Timeline controls-row builder (incl. the dependency-
+  edge legend) + the edge hover-highlight. MUST load BEFORE timeline.js:
+  publishes window.STX.timelineControls.controlsHtml (captured by timeline.js
+  at init, like timelineGeo) and self-wires the hover delegation on #columns
+  (mouseover/mouseout) so it survives the raster's auto-rebuilds without
+  timeline.js re-attaching. Pure controlsHtml/edgeLegendHtml are node-testable.
+  Factored out so timeline.js stays under the per-file cap.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/timelineControls.js' %}"></script>
+{% comment %}
+  timeline.js — the Timeline layout renderer (raster by agent/project +
+  a rich per-task "simple" list). Classic <script defer> so it shares the
+  page globals (STATE / escapeHtml / openDetail / render); it
+  exposes its entry points on window for the inline render() dispatch.
+  Operator CARD 2026-06-17.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/timeline.js' %}"></script>
+{% comment %}
+  FIRST-PAINT status-color CSS vars — the SINGLE source of truth for the
+  board's per-status color layer (hook-bypass: line-limit). Server-rendered
+  (deterministic, no FE flash) from `status_colors` (views.board_v3_page →
+  handlers.graph._status_colors → _diagram.STATUS_STYLE). Cards, timeline,
+  and the in-board mermaid all consume `--status-fill-<s>` /
+  `--status-stroke-<s>` / `--status-border-<s>` so the 7 statuses render
+  distinct + consistent, matching the python `build_mermaid()` artifacts.
+  The 4 buckets still drive COLUMN placement + the blocked pulse — only the
+  color layer is per-status.
+{% endcomment %}
+<style id="status-color-vars">:root{
+{% for s, c in status_colors.items %}  --status-fill-{{ s }}: {{ c.fill }};
+  --status-stroke-{{ s }}: {{ c.stroke }};
+  --status-border-{{ s }}: {% if c.dashed %}dashed{% else %}solid{% endif %};
+{% endfor %}}</style>

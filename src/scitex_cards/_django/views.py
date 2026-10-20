@@ -459,12 +459,23 @@ def chat_page(request):
     # root-mount guess).
     api_base = _include_root(request.path, _DM_ALIASES)
 
+    # Unified page (operator 2026-10-20): chat.html also embeds the board
+    # pane (same _board_pane partial the standalone board serves), so it
+    # needs the board's context keys too — same readers as board_v3_page,
+    # no new dependencies.
+    from .handlers.graph import _status_colors
+
     context = _cards_shell_context(request, api_base)
     context.update(
         {
             "app_label": f"DM — SciTeX Cards v{_version}",
             "scitex_cards_version": _version,
             "api_base": api_base,
+            "graph_prefetch_url": api_base.rstrip("/") + "/graph",
+            "status_colors": _status_colors(),
+            "cards_internal_chrome_enabled": _cards_internal_chrome_enabled(
+                request
+            ),
         }
     )
     html = render_to_string(

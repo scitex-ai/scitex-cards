@@ -32,7 +32,17 @@ STATIC = DJANGO / "static" / "scitex_cards" / "board_v3"
 
 
 def _board_text() -> str:
-    return TEMPLATE.read_text(encoding="utf-8")
+    """Board markup: board_v3.html PLUS the pane partial it includes.
+
+    Since the unified page (operator 2026-10-20) the board body lives in
+    _board_pane.html — one source served standalone AND embedded — so pins
+    about what the board carries must read both files. What they assert is
+    unchanged: the board carries the shared header (active=board) and no DM.
+    """
+    pane = TEMPLATE.parent / "_board_pane.html"
+    return TEMPLATE.read_text(encoding="utf-8") + pane.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_board_template_carries_no_dm_pane_aside():

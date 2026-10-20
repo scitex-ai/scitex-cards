@@ -76,8 +76,27 @@ BOARD_CSS_DIR = (
 
 @pytest.fixture(scope="module")
 def board_text() -> str:
-    """Read the board template once per test module."""
-    return BOARD_TEMPLATE.read_text(encoding="utf-8")
+    """Read the board template once per test module.
+
+    Since the unified page (operator 2026-10-20) the board markup lives in
+    _board_pane.html (body), _board_head.html (CSS links + defer scripts)
+    and _board_foot.html (inline script), included by board_v3.html — one
+    source served standalone AND embedded. Pins read the concatenation, the
+    same convention as css_text/js_text below, so they assert what the
+    board serves regardless of which file a line landed in.
+    """
+    base = BOARD_TEMPLATE.parent
+    return "\n".join(
+        (BOARD_TEMPLATE if BOARD_TEMPLATE.name == name else base / name).read_text(
+            encoding="utf-8"
+        )
+        for name in (
+            "board_v3.html",
+            "_board_pane.html",
+            "_board_head.html",
+            "_board_foot.html",
+        )
+    )
 
 
 @pytest.fixture(scope="module")

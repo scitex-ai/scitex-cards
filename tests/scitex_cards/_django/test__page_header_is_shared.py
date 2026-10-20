@@ -152,17 +152,28 @@ def _page_css(html: str) -> str:
 
 def test_both_page_templates_include_the_shared_header_partial():
     """The structural fix. Two hand-written headers is HOW the two drifted;
-    naming the missing page in the failure beats a bare False."""
+    naming the missing page in the failure beats a bare False.
+
+    Since the unified page (operator 2026-10-20) the board body lives in
+    _board_pane.html, included by board_v3.html — so the board leg follows
+    that one include level. One file owns the band either way; the chain
+    is the assertion.
+    """
     # Arrange
     pages = ("board_v3.html", "chat.html")
     # Act
-    including = [
-        name
-        for name in pages
-        if _INCLUDE in (_TEMPLATES / name).read_text(encoding="utf-8")
-    ]
+    including = []
+    for name in pages:
+        source = (_TEMPLATES / name).read_text(encoding="utf-8")
+        if _INCLUDE in source:
+            including.append(name)
+            continue
+        for partial in sorted(set(re.findall(r'{% include "([^"]+)"', source))):
+            sub = _TEMPLATES / partial.split("/")[-1]
+            if sub.is_file() and _INCLUDE in sub.read_text(encoding="utf-8"):
+                including.append(name + " (via " + sub.name + ")")
     # Assert
-    assert including == list(pages)
+    assert [i.split(" ")[0] for i in including] == list(pages)
 
 
 def test_both_pages_render_the_shared_header_partial(board_html, dm_html):
