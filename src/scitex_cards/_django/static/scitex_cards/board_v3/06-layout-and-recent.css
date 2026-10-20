@@ -107,7 +107,7 @@
   letter-spacing: 0.06em;
   margin-left: 6px;
   text-transform: uppercase;
-  box-shadow: 0 0 6px 1px rgba(255, 193, 7, 0.45);
+  box-shadow: none;
 }
 
 /* === GRAPH layout (mermaid canvas) ===================================== */

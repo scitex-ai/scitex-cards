@@ -331,7 +331,7 @@
  * card's 8px rounding. */
 .tl-card--selected {
   border-color: var(--purple, #8e6cff);
-  box-shadow: 0 0 0 1px var(--purple, #8e6cff);
+  box-shadow: none;
   border-radius: 0;
 }
 /* Per-status left-bar color (7 distinct, SSOT --status-fill-<s>). */

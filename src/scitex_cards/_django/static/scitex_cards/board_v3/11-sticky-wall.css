@@ -194,44 +194,13 @@
   visibility: visible;
 }
 
-/* === STATUS-TRANSITION GLOW (shared utility, every view) ================
- * Operator (msg 933): "状態遷移時に一瞬エフェクト光らせる" — but only if it
- * stays cheap. Compositor-only properties (box-shadow/opacity); no layout,
- * no timers, no rAF loop, no animation library. One-shot, removed on
- * animationend by the caller. Honours prefers-reduced-motion. */
-@keyframes stx-flash-pulse {
-  0% {
-    box-shadow: 0 0 0 0 var(--stx-flash-color, var(--purple));
-  }
-  35% {
-    box-shadow: 0 0 0 5px var(--stx-flash-color, var(--purple));
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
-  }
-}
+/* === STATUS TRANSITION — NO HIGHLIGHT (operator 2026-10-20) ================
+ * Cards and buttons are accepted targets for restyle, but strictly no curly
+ * highlight: the stx-flash pulse/highlight is removed. State changes show
+ * as the new state itself — no halo, no glow, no pulse. The class is kept
+ * as a no-op so every existing caller keeps working unchanged. */
 .stx-flash {
-  animation: stx-flash-pulse 600ms ease-out 1;
-}
-
-/* SVG elements (timeline dots) ignore box-shadow entirely — the HTML pulse
- * above would be a silent no-op there. Use a drop-shadow filter, which is
- * also compositor-friendly and works on both trees. */
-@keyframes stx-flash-glow {
-  0% {
-    filter: drop-shadow(0 0 0 var(--stx-flash-color, var(--purple)));
-  }
-  35% {
-    filter: drop-shadow(0 0 5px var(--stx-flash-color, var(--purple)));
-  }
-  100% {
-    filter: drop-shadow(0 0 0 rgba(0, 0, 0, 0));
-  }
-}
-circle.stx-flash,
-rect.stx-flash,
-g.stx-flash {
-  animation: stx-flash-glow 600ms ease-out 1;
+  animation: none;
 }
 .stx-flash--goal { --stx-flash-color: var(--status-fill-goal); }
 .stx-flash--done { --stx-flash-color: var(--status-fill-done); }

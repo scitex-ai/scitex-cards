@@ -234,7 +234,7 @@
   outline: none;
   border-color: var(--purple);
   background: rgba(109, 76, 173, 0.12);
-  box-shadow: 0 0 0 2px rgba(109, 76, 173, 0.3);
+  box-shadow: none;
 }
 .filt-search-kbd {
   display: inline-flex;
@@ -288,13 +288,13 @@
   background: var(--red);
   border-color: var(--red);
   /* Calm: static glow — the overdue meaning does not change between frames. */
-  box-shadow: 0 0 8px 1px rgba(244, 67, 54, 0.55);
+  box-shadow: none;
 }
 .date-pill--today {
   color: #000;
   background: var(--gold);
   border-color: var(--gold);
-  box-shadow: 0 0 8px 1px rgba(255, 193, 7, 0.55);
+  box-shadow: none;
 }
 .date-pill--soon {
   color: var(--red);
@@ -360,7 +360,7 @@
   color: #fff;
   background: var(--red);
   border-color: var(--red);
-  box-shadow: 0 0 6px 1px rgba(244, 67, 54, 0.45);
+  box-shadow: none;
 }
 
 /* Activity bucket badge (render side of working-status decay).
@@ -399,7 +399,7 @@
   color: var(--green);
   border-color: var(--green);
   background: rgba(76, 175, 80, 0.14);
-  box-shadow: 0 0 4px 0 rgba(76, 175, 80, 0.35);
+  box-shadow: none;
 }
 .activity-badge--warm {
   color: var(--amber);
