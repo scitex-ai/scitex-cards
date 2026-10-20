@@ -14,11 +14,12 @@ Send far off to the right — three controls arranged around a hole, inside a
 96px band that stayed 96px tall whether or not anything was typed.
 
 TELEGRAM'S SHAPE, which is what these tests pin: attach at the far left, the
-field taking every remaining pixel, emoji at the RIGHT EDGE OF THE FIELD, send
-at the far right; nothing centred WITHIN the row; the row one control tall at
-rest. None of that is checkable by eye in CI — this repo has no browser — so it
-is pinned as structure and as declarations on the SERVED page, which is what
-the operator's phone actually receives. A test that silently could not observe
+field taking every remaining pixel, send at the far right; nothing centred
+WITHIN the row; the row one control tall at rest. (The emoji toggle that
+used to sit at the field's right edge is gone since 2026-10-20 — operator:
+drop the emojis, be professional.) None of that is checkable by eye in CI —
+this repo has no browser — so it is pinned as structure and as declarations
+on the SERVED page, which is what the operator's phone actually receives. A test that silently could not observe
 the property would be worse than none.
 """
 
@@ -145,9 +146,9 @@ def test_send_is_the_last_control_in_the_row(page: str):
     assert send > field
 
 
-def test_the_emoji_toggle_sits_inside_the_field(page: str):
-    """Not a fourth control beside the field — that is the orphan button the
-    operator objected to. Inside the field is where Telegram puts it."""
+def test_the_composer_has_no_emoji_toggle(page: str):
+    """Operator 2026-10-20: drop the emojis, be professional. The composer
+    is attach + field + send — no emoji mount, no panel modifier."""
     # Arrange
     opened = page.index('<div id="compose-field">')
 
@@ -155,21 +156,8 @@ def test_the_emoji_toggle_sits_inside_the_field(page: str):
     field_markup = page[opened : page.index("</div>", opened)]
 
     # Assert
-    assert 'data-stx-emoji-picker-for="compose-body"' in field_markup
-
-
-def test_the_emoji_panel_opens_back_towards_the_screen(page: str):
-    """A toggle at the right edge with a LEFT-anchored panel opens a ~20rem
-    popover rightwards from a point already near the screen edge, so most of it
-    lands outside a phone viewport. The component's own modifier flips it."""
-    # Arrange
-    marker = "stx-emoji-picker--right"
-
-    # Act
-    present = marker in page
-
-    # Assert
-    assert present
+    assert "data-stx-emoji-picker-for" not in field_markup
+    assert "stx-emoji-picker--right" not in page
 
 
 def test_the_composer_and_the_message_list_share_one_column(css: str):
