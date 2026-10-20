@@ -55,6 +55,25 @@ TEMPLATE = (
 )
 
 
+def _board_sources() -> str:
+    """Board markup as served: board_v3.html plus its three partials.
+
+    Since the unified page (operator 2026-10-20) the deferred scripts live
+    in _board_head.html and the inline script (incl. the escapeHtml alias)
+    in _board_foot.html — one source served standalone AND embedded.
+    """
+    base = TEMPLATE.parent
+    return "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in (
+            TEMPLATE,
+            base / "_board_pane.html",
+            base / "_board_head.html",
+            base / "_board_foot.html",
+        )
+    )
+
+
 def _node() -> str:
     """Locate ``node``; skip the suite cleanly if it isn't installed."""
     exe = shutil.which("node")
@@ -288,7 +307,7 @@ def test_the_template_loads_the_module():
     # the page. Drop it and every escapeHtml call in the template throws at
     # runtime — nothing else in the suite would notice.
     # Arrange
-    template = TEMPLATE.read_text(encoding="utf-8")
+    template = _board_sources()
     # Act
     # Assert
     assert "board_v3/16-card-helpers.js" in template
@@ -298,7 +317,7 @@ def test_the_template_alias_delegates_rather_than_reimplementing():
     # A second copy of the escaping rule is the drift this extraction exists
     # to remove; the template must call through, not re-declare the table.
     # Arrange
-    template = TEMPLATE.read_text(encoding="utf-8")
+    template = _board_sources()
     # Act
     # Assert
     assert "return STX.cardHelpers.escapeHtml(s);" in template
@@ -316,7 +335,7 @@ def test_the_template_alias_is_a_function_declaration_not_an_assignment():
     # A comment asking the next reader not to "simplify" this is not a barrier;
     # this assertion is. (Found in review of #847 by scitex-cards.)
     # Arrange
-    template = TEMPLATE.read_text(encoding="utf-8")
+    template = _board_sources()
     # Act
     # Assert
     assert "\n    function escapeHtml(s) {" in template
@@ -335,8 +354,10 @@ def test_the_template_no_longer_carries_its_own_escape_table():
     # the first `//` anywhere would also truncate any line containing an
     # "https://" literal, and truncation can only ever HIDE a table — a false
     # pass. Dropping whole comment lines cannot.
-    # Arrange
-    extra_js = TEMPLATE.read_text(encoding="utf-8").split("{% block extra_js %}", 1)[1]
+    # Arrange — the block tags live in board_v3.html while the script lives
+    # in _board_foot.html; the concatenation carries both, so the split
+    # reads the real inline script in either layout.
+    extra_js = _board_sources().split("{% block extra_js %}", 1)[1]
     # Act
     code_only = "\n".join(
         line for line in extra_js.splitlines() if not line.lstrip().startswith("//")
