@@ -135,6 +135,15 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   #cards-dm-app > header {
     background: var(--panel);
     border-bottom: 1px solid var(--line);
+    /* Stack the shared partial's two rows: the SDK title row (with the
+       phone menu button) rides line one; the tab row breaks onto its own
+       full-width line two. Without wrap the outer flex row squeezes both
+       rows side by side (measured 60px single row on #board, 2026-10-20) —
+       which is exactly the fluctuation the unified page exists to end. */
+    flex-wrap: wrap;
+  }
+  #cards-dm-app .stx-cards-header {
+    flex: 1 1 100%;
   }
   /* Board | DM switcher (shared component — page-switcher.css +
      _page_switcher.html partial, now reached through _page_header.html's tab
