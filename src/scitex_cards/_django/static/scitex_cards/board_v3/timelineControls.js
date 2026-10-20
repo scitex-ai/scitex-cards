@@ -68,6 +68,38 @@
   // TL is timeline.js's view-state object {view, windowKey, error}; esc is
   // escapeHtml. setTimelineView / setTimelineWindow are window globals that
   // timeline.js publishes, referenced here only as inline-onchange strings.
+  //
+  // The Window control is a Day/Week/Month TAB group (operator 2026-10-20),
+  // not a <select>: the board's underline-tab idiom (Board|DM switcher) is
+  // the fleet shape, and a select reads as a toy-like inline switch next to
+  // it. Same windowKey contract — only the chrome changed.
+  var WINDOW_TABS = [
+    ["1d", "Day"],
+    ["1w", "Week"],
+    ["1m", "Month"],
+  ];
+  function windowTabs(cur) {
+    return (
+      '<span class="tl-window-tabs" role="tablist" aria-label="Time window">' +
+      WINDOW_TABS.map(function (kv) {
+        var on = kv[0] === cur;
+        return (
+          '<button type="button" role="tab" class="tl-window-tab' +
+          (on ? " tl-window-tab--on" : "") +
+          '" data-window="' +
+          kv[0] +
+          '" aria-selected="' +
+          (on ? "true" : "false") +
+          "\" onclick=\"setTimelineWindow('" +
+          kv[0] +
+          "')\">" +
+          kv[1] +
+          "</button>"
+        );
+      }).join("") +
+      "</span>"
+    );
+  }
   function controlsHtml(TL, countLabel, esc) {
     TL = TL || {};
     esc =
@@ -105,13 +137,9 @@
       opt("project", TL.view, "By Project") +
       opt("simple", TL.view, "Simple (per task)") +
       "</select></label>" +
-      '<label class="tl-ctl">Window ' +
-      '<select onchange="setTimelineWindow(this.value)" ' +
-      'title="How far back the timeline reaches">' +
-      opt("1d", TL.windowKey, "Day") +
-      opt("1w", TL.windowKey, "Week") +
-      opt("1m", TL.windowKey, "Month") +
-      "</select></label>" +
+      '<span class="tl-ctl">Window ' +
+      windowTabs(TL.windowKey) +
+      "</span>" +
       '<span class="tl-count">' +
       esc(countLabel) +
       "</span>" +
