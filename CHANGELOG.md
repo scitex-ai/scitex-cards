@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [0.56.4] - 2026-10-20
+
+- Timeline Day/Week/Month window control restyled as underline tabs in the
+  Board|DM tab idiom (operator 2026-10-20), replacing the toy-like select
+  (#1112). Same windowKey contract — chrome only.
+
 ## [0.56.3] - 2026-10-20
 
 - Header split (operator 2026-10-20): the shared `.stx-app-header` title row

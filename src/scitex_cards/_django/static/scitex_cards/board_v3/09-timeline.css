@@ -38,6 +38,43 @@
   padding: 3px 6px;
   font-size: 0.8rem;
 }
+/* ── window tabs: Day | Week | Month ────────────────────────────────────
+   The board's underline-tab idiom (same shape as the Board|DM switcher,
+   operator 2026-10-20), sized down to the controls row. The tab that names
+   the current window carries the accent underline; the rest are quiet text.
+   Accent reuses the app-accent token the page switcher reads, so the two
+   tab sets cannot disagree about which colour "active" is. */
+.tl-window-tabs {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 2px;
+}
+.tl-window-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--text-muted, #8a96a8);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tl-window-tab:hover {
+  color: var(--text, #e0e6f0);
+}
+.tl-window-tab--on,
+.tl-window-tab--on:hover {
+  border-bottom-color: var(--app-accent-todo, #7c5cbf);
+  color: var(--text, #e0e6f0);
+  font-weight: 700;
+}
+.tl-window-tab:focus-visible {
+  outline: 2px solid var(--app-accent-todo, #7c5cbf);
+  outline-offset: -2px;
+}
 .tl-count {
   color: var(--text-muted, #8a96a8);
 }
