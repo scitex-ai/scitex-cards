@@ -338,11 +338,11 @@
   color: #fff;
   border: 1px solid var(--green);
   font-weight: 700;
-  box-shadow: 0 0 8px 1px rgba(76, 175, 80, 0.45);
+  box-shadow: none;
 }
 .at-btn-create:hover {
   background: #5dbb60;
-  box-shadow: 0 0 14px 3px rgba(76, 175, 80, 0.65);
+  box-shadow: none;
 }
 .at-btn-create:disabled {
   opacity: 0.55;
@@ -377,7 +377,7 @@
 .detail-delete:hover {
   background: var(--red);
   color: #fff;
-  box-shadow: 0 0 8px 1px rgba(244, 67, 54, 0.45);
+  box-shadow: none;
 }
 .detail-edit-form {
   display: none;
