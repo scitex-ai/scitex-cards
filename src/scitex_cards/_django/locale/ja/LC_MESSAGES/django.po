@@ -20,20 +20,20 @@ msgid "Layout"
 msgstr "レイアウト"
 
 #: templates/scitex_cards/board_v3.html:359
-msgid "⏱ Timeline"
-msgstr "⏱ タイムライン"
+msgid "Timeline"
+msgstr "タイムライン"
 
 #: templates/scitex_cards/board_v3.html:363
-msgid "🗒 Wall"
-msgstr "🗒 ウォール"
+msgid "Wall"
+msgstr "ウォール"
 
 #: templates/scitex_cards/board_v3.html:367
-msgid "📊 Graph"
-msgstr "📊 グラフ"
+msgid "Graph"
+msgstr "グラフ"
 
 #: templates/scitex_cards/board_v3.html:379
-msgid "🎯 Matrix"
-msgstr "🎯 マトリクス"
+msgid "Matrix"
+msgstr "マトリクス"
 
 #: templates/scitex_cards/board_v3.html:394
 msgid "+ Add Task"
@@ -168,8 +168,8 @@ msgid "no date in title"
 msgstr "タイトルに日付なし"
 
 #: templates/scitex_cards/board_v3.html:296
-msgid "🔎 Search… ( / to focus, Esc to blur) — try project:paper-scitex-clew, status:blocked, kind:compute, …"
-msgstr "🔎 検索…（/ でフォーカス、Esc で解除） — 例: project:paper-scitex-clew, status:blocked, kind:compute, …"
+msgid "Search… ( / to focus, Esc to blur) — try project:paper-scitex-clew, status:blocked, kind:compute, …"
+msgstr "検索…（/ でフォーカス、Esc で解除） — 例: project:paper-scitex-clew, status:blocked, kind:compute, …"
 
 #: templates/scitex_cards/board_v3.html (search autocomplete dropdown)
 msgid "Search suggestions"

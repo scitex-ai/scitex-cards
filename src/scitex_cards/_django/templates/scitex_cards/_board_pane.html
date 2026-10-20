@@ -41,7 +41,7 @@
            Search-as-launcher (P1, lead brief 2026-06-12) — the PRIMARY
            filterbar entry point. -->
       <span class="filt-search-wrap" id="f-search-wrap">
-        {% translate '🔎 Search… ( / to focus, Esc to blur) — try project:paper-scitex-clew, status:blocked, kind:compute, …' as search_ph %}
+        {% translate 'Search… ( / to focus, Esc to blur) — try project:paper-scitex-clew, status:blocked, kind:compute, …' as search_ph %}
         <input class="filt filt-search" id="f-search" type="search"
                placeholder="{{ search_ph }}"
                title="Fuzzy match + GitHub-style qualifiers (project: / agent: / status: / kind: / parent: / scope: / id: / priority: / host:). Press / to focus, Esc to blur. Tab to autocomplete the qualifier or value under the cursor."
@@ -106,15 +106,15 @@
                 id="f-layout-timeline"
                 data-layout="timeline" onclick="onLayoutChange('timeline')"
                 role="radio" aria-checked="true"
-                title="Timeline — time raster by agent/project, or a per-task simple list (day/week/month windows) — default">{% translate "⏱ Timeline" %}</button>
+                title="Timeline — time raster by agent/project, or a per-task simple list (day/week/month windows) — default">{% translate "Timeline" %}</button>
         <button type="button" class="filt-layout-btn" id="f-layout-wall"
                 data-layout="wall" onclick="onLayoutChange('wall')"
                 role="radio" aria-checked="false"
-                title="Wall — sticky notes clustered by assignee; the selected agent's next-up stack rises to the top">{% translate "🗒 Wall" %}</button>
+                title="Wall — sticky notes clustered by assignee; the selected agent's next-up stack rises to the top">{% translate "Wall" %}</button>
         <button type="button" class="filt-layout-btn" id="f-layout-graph"
                 data-layout="graph" onclick="onLayoutChange('graph')"
                 role="radio" aria-checked="false"
-                title="Dependency / blocker graph (mermaid)">{% translate "📊 Graph" %}</button>
+                title="Dependency / blocker graph (mermaid)">{% translate "Graph" %}</button>
         {% comment %}
           Matrix — urgency×importance quadrants (ADR-0011 §8). The layout
           itself lives in 14-matrix.js; this is only the toggle.
@@ -125,7 +125,7 @@
         <button type="button" class="filt-layout-btn" id="f-layout-matrix"
                 data-layout="matrix" onclick="onLayoutChange('matrix')"
                 role="radio" aria-checked="false"
-                title="Matrix — urgency × importance quadrants (I urgent+important / II important / III urgent / IV neither)">{% translate "🎯 Matrix" %}</button>
+                title="Matrix — urgency × importance quadrants (I urgent+important / II important / III urgent / IV neither)">{% translate "Matrix" %}</button>
       </div>
     </span>
     </div>{# end VIEW group #}
