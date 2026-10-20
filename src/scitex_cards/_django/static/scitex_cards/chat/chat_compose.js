@@ -3,7 +3,7 @@
  *
  * Operator, verbatim (2026-07-28): 「このスペースの使い方が下手」 and
  * 「telegram を真似てください」. The layout half of that answer is in chat.html
- * (one row: attach, field, emoji at the field's right edge, send). This file
+ * (one row: attach, field, send). This file
  * is the half that has to run:
  *
  * 1. AUTO-GROW. Telegram's composer is ONE line tall at rest and grows only as

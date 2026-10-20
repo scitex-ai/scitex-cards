@@ -66,7 +66,7 @@
       a.appendChild(img);
       return a;
     }
-    var link = el("a", "att-file", "📎 " + name);
+    var link = el("a", "att-file", name);
     link.href = href;
     link.target = "_blank";
     link.rel = "noopener";

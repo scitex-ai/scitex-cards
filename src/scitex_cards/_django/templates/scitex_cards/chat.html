@@ -443,42 +443,13 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     flex: 1 1 auto; width: 100%; resize: none;
     background: var(--panel-2); color: var(--text);
     border: 1px solid var(--line); border-radius: 10px;
-    /* The right inset is the emoji button's seat: the component sizes its
-       toggle at 12px + glyph + 12px + borders (~43px) and it is placed 3px in,
-       so 52px leaves clearance rather than sitting exactly on the estimate.
-       The caret must never run underneath it. */
-    padding: 9px 52px 9px 12px;
+    padding: 9px 12px;
     font: inherit; font-size: 0.9rem; line-height: 1.35;
     min-height: var(--compose-control); overflow-y: hidden;
   }
   #compose-field textarea:focus { outline: 1px solid var(--accent); }
   #compose-field textarea::placeholder { color: var(--dim); opacity: 1; }
   #compose-field textarea:disabled { cursor: not-allowed; }
-  /* The emoji picker is a shared primitive (static/scitex_cards/ui/). The
-     page maps ITS palette onto the component's tokens instead of overriding
-     the component's rules — that is the whole contract, and it is what lets
-     the widget be lifted into the SDK without dragging this page's colors
-     along with it. PLACEMENT is the host's job by the component's own design
-     ("the host page decides WHERE the affordance sits"), so positioning it
-     inside the field is not an override; the bare-toggle look and the
-     right-anchored panel are both ASKED FOR through the component's tokens
-     and its --right modifier rather than by restyling its rules. */
-  #compose-field .stx-emoji-picker {
-    position: absolute; right: 3px; bottom: 3px;
-    --stx-emoji-picker-surface: var(--panel-2);
-    --stx-emoji-picker-border: var(--line);
-    --stx-emoji-picker-text: var(--dim);
-    --stx-emoji-picker-hover: var(--line);
-    --stx-emoji-picker-accent: var(--accent);
-    --stx-emoji-picker-toggle-surface: transparent;
-    --stx-emoji-picker-toggle-border: transparent;
-    /* 38px tall inside a 44px field, and the component's own 12px side padding
-       carries the width to ~43px. Short of this page's 44px floor by design:
-       the toggle sits INSIDE the field, so a full-height square would leave no
-       field edge around it — and 38x43 is still a comfortable thumb target,
-       unlike the ~25px the content-sized default would have given. */
-    --stx-emoji-picker-toggle-min: 38px;
-  }
   /* The long-draft offer (chat_compose.js builds it; see chat_longtext.js for
      the threshold). Same column as the row under it, so the composer reads as
      one block rather than two things that happen to be adjacent. */
@@ -497,8 +468,7 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   /* `hidden` must actually hide. The rule above sets `display: flex` from an
      ID selector, which OUTRANKS the UA's `[hidden] { display: none }` — the
      bar would then sit above the composer permanently, announcing a long
-     message on an empty draft. Exactly the trap emoji_picker.css documents
-     for its own panel. */
+     message on an empty draft. */
   #compose-longtext[hidden] { display: none; }
   /* Attachments render under the bubble, inside the same message column, so
      an image reads as part of the message rather than a separate event. */
@@ -599,12 +569,6 @@ ships alongside this.
 <link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/shell/theme.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/context-menu.css' %}">
 {% comment %}
-Emoji picker — OUR file for now, but written as a harvestable primitive: it
-knows nothing about DMs, messages or `.msg`, and its palette rides
-`--stx-emoji-picker-*` tokens the host page maps (see the #compose block
-above). When the SDK adopts it, this link and the script tag at the bottom
-swap for the base ones and nothing else on this page moves.
-
 Board | DM switcher — the SAME stylesheet board_v3.html links, so the two
 pages cannot drift into two different-looking switchers. This page's palette
 mapping rides its own :root aliases, consumed through the component's
@@ -613,12 +577,7 @@ mapping rides its own :root aliases, consumed through the component's
 page-header.css is the same idea one level up: the SAME stylesheet the board
 links, holding the header bar's height/padding/gap so the two headers line up
 structurally instead of by two hand-synced numbers.
-
-(Both links kept: the emoji picker and the switcher arrived in parallel PRs
-that each added a stylesheet at this spot. They are independent components
-and the page needs both — this was a textual collision, not a real one.)
 {% endcomment %}
-<link rel="stylesheet" href="{% static 'scitex_cards/ui/emoji_picker.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_marquee.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}">
@@ -913,21 +872,9 @@ Forward uses.
       99% of the time is markup nobody maintains.
       {% endcomment %}
       <div id="compose-row">
-        <button id="compose-attach" type="button" title="Attach a file (or paste / drag one in)">&#128206;</button>
+        <button id="compose-attach" type="button" title="Attach a file (or paste / drag one in)">+</button>
         <div id="compose-field">
           <textarea id="compose-body" rows="1" placeholder="Message&hellip;" disabled></textarea>
-          {% comment %}
-          Declarative mount: emoji_picker.js finds this by the attribute and
-          builds its own toggle + panel here, so the composer's behaviour file
-          (chat.js) gains not one line for this feature. The value is the id of
-          the field the emoji land in.
-
-          --right is the component's own modifier for a toggle at the END of
-          its row: the default panel hangs from the toggle's LEFT edge, which
-          from here would open a ~20rem popover rightwards off the side of a
-          phone screen.
-          {% endcomment %}
-          <span class="stx-emoji-picker stx-emoji-picker--right" data-stx-emoji-picker-for="compose-body"></span>
         </div>
         <button id="compose-send" type="submit" disabled>Send</button>
       </div>

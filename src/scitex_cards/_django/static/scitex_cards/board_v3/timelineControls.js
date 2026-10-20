@@ -100,6 +100,33 @@
       "</span>"
     );
   }
+  var VIEW_TABS = [
+    ["agent", "By Agent"],
+    ["project", "By Project"],
+    ["simple", "Simple"],
+  ];
+  function viewTabs(cur) {
+    return (
+      '<span class="tl-view-tabs" role="tablist" aria-label="Timeline view">' +
+      VIEW_TABS.map(function (kv) {
+        var on = kv[0] === cur;
+        return (
+          '<button type="button" role="tab" class="tl-window-tab' +
+          (on ? " tl-window-tab--on" : "") +
+          '" data-view="' +
+          kv[0] +
+          '" aria-selected="' +
+          (on ? "true" : "false") +
+          "\" onclick=\"setTimelineView('" +
+          kv[0] +
+          "')\">" +
+          kv[1] +
+          "</button>"
+        );
+      }).join("") +
+      "</span>"
+    );
+  }
   function controlsHtml(TL, countLabel, esc) {
     TL = TL || {};
     esc =
@@ -107,17 +134,6 @@
       function (s) {
         return String(s == null ? "" : s);
       };
-    function opt(val, cur, label) {
-      return (
-        '<option value="' +
-        val +
-        '"' +
-        (val === cur ? " selected" : "") +
-        ">" +
-        label +
-        "</option>"
-      );
-    }
     var err = TL.error
       ? '<span class="tl-error" title="' +
         esc(TL.error) +
@@ -130,13 +146,9 @@
     var legend = TL.view === "simple" ? "" : edgeLegendHtml(esc);
     return (
       '<div class="tl-controls">' +
-      '<label class="tl-ctl">View ' +
-      '<select onchange="setTimelineView(this.value)" ' +
-      'title="Rows by agent or project, or a rich per-task list">' +
-      opt("agent", TL.view, "By Agent") +
-      opt("project", TL.view, "By Project") +
-      opt("simple", TL.view, "Simple (per task)") +
-      "</select></label>" +
+      '<span class="tl-ctl">View ' +
+      viewTabs(TL.view) +
+      "</span>" +
       '<span class="tl-ctl">Window ' +
       windowTabs(TL.windowKey) +
       "</span>" +

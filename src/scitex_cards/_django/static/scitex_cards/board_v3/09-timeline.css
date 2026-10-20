@@ -38,10 +38,12 @@
   padding: 3px 6px;
   font-size: 0.8rem;
 }
-/* ── window tabs: Day | Week | Month ────────────────────────────────────
+/* ── window + view tabs: Day | Week | Month, By Agent | By Project | Simple ──
    The board's underline-tab idiom (same shape as the Board|DM switcher,
    operator 2026-10-20), sized down to the controls row. The tab that names
-   the current window carries the accent underline; the rest are quiet text.
+   the current value carries the accent underline; the rest are quiet text.
+   View and Window share one rule set — same idiom, same tokens — so the two
+   groups cannot drift into two different tab looks.
    Accent reuses the app-accent token the page switcher reads, so the two
    tab sets cannot disagree about which colour "active" is. */
 .tl-window-tabs {
