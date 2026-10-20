@@ -125,10 +125,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.card-goal::before {
-  content: "🎯 ";
-  opacity: 0.7;
-}
 .card-task {
   font-size: 0.95rem;
   font-weight: 600;
