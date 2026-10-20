@@ -232,12 +232,17 @@ def test_the_page_heading_does_not_change_between_board_and_dm(chat_html):
     CCT 3878: the heading moved into the shared SDK header row and carries
     its selector class — the TEXT contract (product name, identical on both
     pages) is what this pins, not the bare tag.
+
+    2026-10-20: the leaf no longer hand-rolls the row at all — the SDK's
+    AppHeader module renders it from the mount stub (learn-from-stats).
+    The server-side contract is the mount identity, not markup the SDK
+    owns.
     """
     # Arrange
     html = chat_html
 
     # Act
-    heading = '<h1 class="stx-app-header__title">SciTeX Cards</h1>' in html
+    heading = 'data-app-title="SciTeX Cards"' in html
 
     # Assert
     assert heading

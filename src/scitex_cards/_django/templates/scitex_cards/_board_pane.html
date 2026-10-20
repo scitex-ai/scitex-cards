@@ -3,12 +3,15 @@
 <div class="board-app-pane">
   {% if board_header|default_if_none:True %}
   {% comment %}
-  Standalone-board header: the SAME shared partial the DM page renders, one
-  file, so the two pages cannot disagree. It sits ABOVE the filterbar as its
-  own bar (title row, then tab row) — never inside .fb-left: a flex row would
-  lay the two rows out side by side instead of stacked.
+  Standalone-board chrome: the SAME shared title row the DM page renders,
+  plus the SAME tab row beneath it (operator 2026-10-20: title line holds
+  label + version + project selector ONLY; the switcher lives in the tab
+  row, never in the shared line). Both rows sit ABOVE the filterbar as
+  their own stacked rows — never inside .fb-left, whose flex row would lay
+  them out side by side instead of stacked.
   {% endcomment %}
-  {% include "scitex_cards/_page_header.html" with active="board" page_title="SciTeX Cards" %}
+  {% include "scitex_cards/_page_header.html" with page_title="SciTeX Cards" %}
+  {% include "scitex_cards/_page_tabs.html" with active="board" %}
   {% endif %}
   {% comment %}
     Filterbar reorg (operator TG, lead a2a `b48f7c2c438b464698183d2e95d3bb04`,

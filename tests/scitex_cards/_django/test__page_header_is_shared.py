@@ -117,19 +117,19 @@ def _band(html: str) -> str:
     return html[start:end] if end != -1 else html[start:]
 
 
-def _switcher_follows_title(html: str) -> bool:
-    """True when the tab row comes AFTER the SDK title row in the markup.
+def _title_row_precedes_tabs(html: str) -> bool:
+    """True when the SDK title mount comes BEFORE the tab row in the markup.
 
-    The switcher used to sit INSIDE the SDK header row; it now leads the
-    tab row below it (operator, 2026-10-20). The SDK owns the title row's
-    chrome — cards chrome inside it forks the shared component. So the pin
-    is row order: the `<h1>` title must precede the switcher nav.
+    The title line holds label + version + project selector ONLY (operator
+    2026-10-20); the switcher lives in the app tab row below, never nested
+    in the shared line. So the pin is mount order: the
+    ``[data-stx-app-header]`` stub must precede the switcher nav.
     """
+    mount = html.find("data-stx-app-header")
     switcher = html.find('class="stx-cards-switcher"')
-    heading = html.find("<h1")
-    if switcher == -1 or heading == -1:
+    if mount == -1 or switcher == -1:
         return False
-    return heading < switcher
+    return mount < switcher
 
 
 def _switcher_rules(css: str) -> list[str]:
@@ -189,7 +189,12 @@ def test_both_pages_render_the_shared_header_partial(board_html, dm_html):
 
 def test_the_shared_header_markup_lives_in_exactly_one_template():
     """ "Shared" means one file. A second template emitting the same band is a
-    copy, and a copy is a drift waiting to be noticed by the operator."""
+    copy, and a copy is a drift waiting to be noticed by the operator.
+
+    Since 2026-10-20 the band (tab row) lives in _page_tabs.html — the title
+    row above it is SDK-rendered markup, not a band literal. Same rule, new
+    address; update the expected file, not the rule, if the band moves.
+    """
     # Arrange
     templates = sorted(_TEMPLATES.glob("*.html"))
     # Act
@@ -199,23 +204,45 @@ def test_the_shared_header_markup_lives_in_exactly_one_template():
         if _BAND_SOURCE_PREFIX in p.read_text(encoding="utf-8")
     ]
     # Assert
-    assert emitting == ["_page_header.html"]
+    assert emitting == ["_page_tabs.html"]
 
 
-# --- the switcher FOLLOWS the SDK title row, on both pages ------------------
+# --- the title row precedes the tab row, on both pages ----------------------
 
 
-def test_the_switcher_follows_the_sdk_title_row_on_both_pages(board_html, dm_html):
-    """The 2026-10-20 split: SDK title row first, cards tab row second.
+def test_the_title_row_precedes_the_tab_row_on_both_pages(board_html, dm_html):
+    """The 2026-10-20 split: SDK title mount first, cards tab row second.
 
-    A tuple, so a failure says WHICH page regressed into the shared row.
-    A missing mark reads False — absent is not "elsewhere and fine"."""
+    A tuple, so a failure says WHICH page regressed the switcher into the
+    shared line. A missing mark reads False — absent is not "elsewhere and
+    fine"."""
     # Arrange
     pages = (board_html, dm_html)
     # Act
-    following = tuple(_switcher_follows_title(html) for html in pages)
+    ordered = tuple(_title_row_precedes_tabs(html) for html in pages)
     # Assert
-    assert following == (True, True)
+    assert ordered == (True, True)
+
+
+def test_both_pages_reach_the_switcher_through_the_shared_tab_row():
+    """The switcher left the shared title partial (operator 2026-10-20: no
+    app-specific chrome in the shared line) but must stay single-sourced:
+    both pages reach it through _page_tabs.html — and the title partial
+    itself must not name the switcher anymore."""
+    # Arrange
+    titles = (_TEMPLATES / "_page_header.html").read_text(encoding="utf-8")
+    tabs = (_TEMPLATES / "_page_tabs.html").read_text(encoding="utf-8")
+    chat = (_TEMPLATES / "chat.html").read_text(encoding="utf-8")
+    pane = (_TEMPLATES / "_board_pane.html").read_text(encoding="utf-8")
+    # Act
+    composed = (
+        '_page_tabs.html" with active="chat"' in chat,
+        '_page_tabs.html" with active="board"' in pane,
+        '_page_switcher.html" with active=' in tabs,
+        "_page_switcher" not in titles,
+    )
+    # Assert
+    assert composed == (True, True, True, True)
 
 
 def test_no_page_pushes_the_switcher_away_with_an_auto_margin(board_html, dm_html):
