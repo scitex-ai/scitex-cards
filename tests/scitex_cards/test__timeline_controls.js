@@ -100,21 +100,49 @@ test("controlsHtml: simple view OMITS the edge legend (no edges there)", () => {
   assert.ok(!simple.includes("tl-edge-legend"));
 });
 
-test("controlsHtml: renders the View + Window selects and count", () => {
+test("controlsHtml: renders the View select and count", () => {
   const html = controlsHtml(
     { view: "agent", windowKey: "1m" },
     "2 events",
     esc,
   );
   assert.match(html, /setTimelineView\(this\.value\)/);
-  assert.match(html, /setTimelineWindow\(this\.value\)/);
   assert.match(html, /class="tl-count">2 events</);
 });
 
-test("controlsHtml: marks the active view + window option selected", () => {
+test("controlsHtml: Window is a D/W/M tab group, not a select", () => {
+  const html = controlsHtml({ view: "agent", windowKey: "1d" }, "x", esc);
+  assert.match(html, /role="tablist"/);
+  assert.match(html, /aria-label="Time window"/);
+  assert.ok(!html.includes("setTimelineWindow(this.value)"));
+  assert.ok(!html.includes('<option value="1d"'));
+  assert.match(html, /<select/); // the View control stays a select
+});
+
+test("controlsHtml: three window tabs wiring setTimelineWindow per key", () => {
+  const html = controlsHtml({ view: "agent", windowKey: "1d" }, "x", esc);
+  assert.match(html, /data-window="1d"/);
+  assert.match(html, /data-window="1w"/);
+  assert.match(html, /data-window="1m"/);
+  assert.match(html, /onclick="setTimelineWindow\('1d'\)"/);
+  assert.match(html, /onclick="setTimelineWindow\('1w'\)"/);
+  assert.match(html, /onclick="setTimelineWindow\('1m'\)"/);
+});
+
+test("controlsHtml: active window tab is marked, others are not", () => {
+  const html = controlsHtml(
+    { view: "project", windowKey: "1w" },
+    "x",
+    esc,
+  );
+  assert.match(html, /data-window="1w" aria-selected="true"/);
+  assert.match(html, /tl-window-tab--on/);
+  assert.match(html, /data-window="1d" aria-selected="false"/);
+});
+
+test("controlsHtml: marks the active view option selected", () => {
   const html = controlsHtml({ view: "project", windowKey: "1w" }, "x", esc);
   assert.match(html, /<option value="project" selected>/);
-  assert.match(html, /<option value="1w" selected>/);
 });
 
 test("controlsHtml: surfaces TL.error in a .tl-error span", () => {
