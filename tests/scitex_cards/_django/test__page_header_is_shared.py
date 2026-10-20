@@ -109,7 +109,7 @@ def dm_html():
 
 
 def _band(html: str) -> str:
-    """The rendered identity band — switcher, heading, version — or ""."""
+    """The rendered tab row — switcher below the SDK title, or ""."""
     start = html.find(_BAND_OPEN)
     if start == -1:
         return ""
@@ -117,19 +117,19 @@ def _band(html: str) -> str:
     return html[start:end] if end != -1 else html[start:]
 
 
-def _switcher_side(html: str) -> str:
-    """Which end of the header the switcher sits at, read off the markup.
+def _switcher_follows_title(html: str) -> bool:
+    """True when the tab row comes AFTER the SDK title row in the markup.
 
-    CCT 3878 moved the heading into the SDK header row above the band, so
-    the band no longer contains both marks — compare across the whole page:
-    the switcher must precede the heading (leftmost overall). That
-    positional instruction is row-independent.
+    The switcher used to sit INSIDE the SDK header row; it now leads the
+    tab row below it (operator, 2026-10-20). The SDK owns the title row's
+    chrome — cards chrome inside it forks the shared component. So the pin
+    is row order: the `<h1>` title must precede the switcher nav.
     """
     switcher = html.find('class="stx-cards-switcher"')
     heading = html.find("<h1")
     if switcher == -1 or heading == -1:
-        return "absent"
-    return "left" if switcher < heading else "right"
+        return False
+    return heading < switcher
 
 
 def _switcher_rules(css: str) -> list[str]:
@@ -191,18 +191,20 @@ def test_the_shared_header_markup_lives_in_exactly_one_template():
     assert emitting == ["_page_header.html"]
 
 
-# --- the switcher is on the LEFT, and both pages AGREE about it ------------
+# --- the switcher FOLLOWS the SDK title row, on both pages ------------------
 
 
-def test_the_switcher_is_on_the_left_of_both_headers(board_html, dm_html):
-    """The operator's instruction and the agreement guard in one statement: a
-    tuple, so a failure says WHICH page moved and where it moved to."""
+def test_the_switcher_follows_the_sdk_title_row_on_both_pages(board_html, dm_html):
+    """The 2026-10-20 split: SDK title row first, cards tab row second.
+
+    A tuple, so a failure says WHICH page regressed into the shared row.
+    A missing mark reads False — absent is not "elsewhere and fine"."""
     # Arrange
     pages = (board_html, dm_html)
     # Act
-    sides = tuple(_switcher_side(html) for html in pages)
+    following = tuple(_switcher_follows_title(html) for html in pages)
     # Assert
-    assert sides == ("left", "left")
+    assert following == (True, True)
 
 
 def test_no_page_pushes_the_switcher_away_with_an_auto_margin(board_html, dm_html):
