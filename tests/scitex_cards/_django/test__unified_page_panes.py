@@ -96,3 +96,17 @@ def test_unified_page_carries_no_duplicate_ids(unified_html):
     duplicated = sorted({i for i in ids if ids.count(i) > 1})
     # Assert
     assert duplicated == []
+
+
+def test_unified_page_tab_row_is_not_inside_the_title_row(unified_html):
+    # Arrange — the SDK title row holds label + version + project selector
+    # ONLY (operator 2026-10-20); the tab row is its sibling, never nested.
+    # Nested, the outer flex row squeezes both side by side (measured 60px
+    # single row on #board) instead of stacking them.
+    title_row = re.search(
+        r'<header class="stx-app-header.*?</header>', unified_html, re.DOTALL
+    )
+    # Act
+    nested = "stx-cards-header" in (title_row.group(0) if title_row else "")
+    # Assert
+    assert title_row is not None and not nested
