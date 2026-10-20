@@ -44,9 +44,10 @@
   flex: 0 0 auto;
 }
 
-/* The IDENTITY BAND inside the bar: switcher, heading, version. Its content
- * and ORDER come from _page_header.html — read that file's header before
- * changing anything here. */
+/* The TAB ROW below the SDK title row: Board | DM switcher, full width.
+ * Its content and ORDER come from _page_header.html — read that file's header
+ * before changing anything here. The SDK row above owns the title; this row
+ * owns navigation, so the shared component stays unforked. */
 .stx-cards-header {
   display: flex;
   align-items: center;
@@ -84,8 +85,8 @@ body:has(.site-dock) .stx-cards-header--mounted {
   margin-inline-start: 0;
 }
 
-/* Phone: one row — menu, Board/DM switcher, then the title truncated. The
- * version and signed-in scope are desktop-only. */
+/* Phone: one tab row under the title, then content. The switcher is already
+ * full-width tabs; keep the row tight. */
 @media (max-width: 720px) {
   .stx-cards-headerbar {
     flex-wrap: nowrap;
@@ -96,20 +97,11 @@ body:has(.site-dock) .stx-cards-header--mounted {
     flex: 1 1 auto;
     min-width: 0;
   }
-  .stx-cards-header h1 {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .stx-cards-header__ver,
-  .stx-cards-header__scope {
-    display: none;
-  }
 }
 
-/* THE SWITCHER SITS AT THE LEFT EDGE OF THE HEADER, on both pages (operator's
- * standing instruction). It is first in the partial's markup, so this rule
- * only has to make sure nothing pushes it away: `margin-left: auto` on the
+/* THE SWITCHER LEADS THE TAB ROW, on both pages (operator's
+ * standing instruction). It is first in the partial's tab row, so this rule
+ * only has to make sure nothing pushes it away: `margin-left: auto` on a host
  * DM page was the whole reason the two pages disagreed, and it looked correct
  * in the template while doing it. Stated here so a host page that re-adds it
  * is overridden rather than obeyed — the guard is the CSS, the alarm is
@@ -119,66 +111,22 @@ body:has(.site-dock) .stx-cards-header--mounted {
   margin-right: 0;
 }
 
-/* The heading takes its colour from the PAGE'S PALETTE, and this rule is the
- * fix for the second half of that same bug.
- *
- * WHAT IT USED TO SAY, and why it was wrong:
- *     .stx-cards-headerbar.filterbar { --stx-cards-header-fg: var(--text-primary); }
- * with the note "a literal white here was invisible on the light theme
- * (01-filterbar.css still feeds #fff)". Forcing the SHELL's text token fixed
- * the foreground and left the SURFACE where it was — the board's palette never
- * flipped — so the light theme produced dark surfaces under shell-coloured
- * text. Measured on the served board 2026-09-17: title rgb(51,51,51) on
- * rgb(33,38,45) = 1.20:1 (12.88:1 in dark). A foreground fixed without its
- * surface is not a fix, it is the same defect pointing the other way.
- *
- * The two sides of a contrast decision now come from ONE source: the board
- * declares both its palette and this header variable in 01-filterbar.css
- * (including its [data-theme="light"] block), and `color:` below still carries
- * `var(--text-primary)` as the fallback for any page that declares neither —
- * which is what the removed rule was really providing. */
-.stx-cards-header h1 {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 700;
-  white-space: nowrap;
-  color: var(--stx-cards-header-fg, var(--text-primary));
-}
+/* The SDK title row owns the heading now (`.stx-app-header__title`, SDK
+ * app-header.css) — no cards override here, by design: one chrome, one
+ * source. The rules below that used to paint the old identity band
+ * (`.stx-cards-header h1`, `__ver`, `__scope` + its "Signed in as" prefix)
+ * were removed with the scope band itself, 2026-10-20. Do not re-add a
+ * heading colour here; that re-creates the two-colours fault measured
+ * 2026-09-17 (1.20:1 in light theme).
+ */
 
-.stx-cards-header__ver {
-  font-size: 0.72rem;
-  font-weight: 400;
-  white-space: nowrap;
-  color: var(--stx-cards-header-dim, var(--text-muted));
-}
-
-.stx-cards-header__scope {
-  max-width: 14rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--stx-cards-header-dim, var(--text-muted));
-  font-size: 0.72rem;
-}
-
-.stx-cards-header__scope::before {
-  content: "Signed in as ";
-}
-
-/* JA chrome (operator: board chrome entirely English) — the shell renders
- * `<html lang="ja">` when the JA catalog is active, so the CSS-generated
- * prefix follows without touching the template. */
-html[lang="ja"] .stx-cards-header__scope::before {
-  content: "ログイン: ";
-}
-
-/* THE PROJECT SLOT — the canonical SDK picker, last in the band and pushed to
- * the right edge. `margin-left: auto` is correct HERE and would be wrong on the
- * switcher: the switcher's left edge is the operator's standing instruction and
+/* THE PROJECT SLOT — the canonical SDK picker, last in the SDK title row and
+ * pushed to the right edge. `margin-left: auto` is correct HERE and would be
+ * wrong on the switcher: the switcher leads the tab row below and
  * an auto margin on it is the exact way that instruction came undone once
- * (see the rule above), whereas this slot is deliberately the band's right-hand
- * end — identity on the left, the selector on the right, the same shape Writer
- * and the shell use.
+ * (see the rule above), whereas this slot is deliberately the title row's
+ * right-hand end — identity on the left, the selector on the right, the same
+ * shape Writer and the shell use.
  *
  * `flex: 0 1 auto` before the viewport runs out: the slot must SHRINK rather
  * than push anything off-screen, because a clipped control is a control the

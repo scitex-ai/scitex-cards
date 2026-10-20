@@ -136,16 +136,13 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     background: var(--panel);
     border-bottom: 1px solid var(--line);
   }
-  /* Board | DM switcher (shared component — page-switcher.css + the
-     _page_switcher.html partial, now reached through _page_header.html). It
-     REPLACED the old "← board" link: the operator could reach the board from
-     here, but not the reverse, which is what made /chat/ a hidden URL. The
-     component reads six --sw-* variables; this page has its own fixed-dark
-     palette (the :root above shadows the SDK theme tokens), so feed
-     that palette in here. This block sits BEFORE the page-switcher.css link
-     further down <head>, which is fine: `header .stx-cards-switcher` outranks
-     the component's own `.stx-cards-switcher` defaults on specificity, so
-     source order does not decide the winner.
+  /* Board | DM switcher (shared component — page-switcher.css +
+     _page_switcher.html partial, now reached through _page_header.html's tab
+     row). It REPLACED the old "← board" link: the operator could reach the
+     board from here, but not the reverse, which is what made /chat/ a hidden
+     URL. The component reads six --sw-* variables; this page has its own
+     fixed-dark palette (the :root above shadows the SDK theme tokens), so
+     feed that palette in here.
 
      THERE IS NO `margin-left: auto` HERE ANY MORE, and adding one back is the
      regression. It is what put this page's switcher on the RIGHT while the
@@ -177,14 +174,34 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
      token — the matcher comes from the SDK and so does the palette. */
   #agent-filter-row {
     flex: 0 0 auto; padding: 8px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px;
   }
   #agent-filter {
-    width: 100%; background: var(--panel-2); color: var(--text);
+    flex: 1 1 auto; min-width: 0; background: var(--panel-2); color: var(--text);
     border: 1px solid var(--line); border-radius: 6px;
     padding: 6px 8px; font-size: 0.78rem; font-family: inherit;
   }
   #agent-filter::placeholder { color: var(--dim); }
   #agent-filter:focus { outline: none; border-color: var(--accent); }
+  /* #dm-new — the "start a conversation" affordance beside the filter.
+     It was a bare browser-default button next to a styled input (operator,
+     2026-10-20: "not polished well"). It follows the page's ONE primary-
+     button style — the Send rule below (`--text-link` fill, inverse text,
+     600 weight) — sized to this denser row, with the same visible hover +
+     keyboard focus. The label stays "New". */
+  #dm-new {
+    flex: 0 0 auto; padding: 6px 12px;
+    font-size: 0.78rem; font-weight: 600; font-family: inherit;
+    color: var(--text-inverse); background: var(--text-link);
+    border: 1px solid var(--text-link); border-radius: 6px;
+    cursor: pointer; white-space: nowrap; touch-action: manipulation;
+  }
+  #dm-new:hover { filter: brightness(1.08); }
+  #dm-new:active { filter: brightness(0.95); }
+  #dm-new:focus-visible { outline: 2px solid var(--text-link); outline-offset: 2px; }
+  #dm-new:disabled {
+    background: var(--panel-2); color: var(--dim); border-color: var(--line); cursor: not-allowed;
+  }
   #agents .agent {
     display: flex; flex-direction: row; align-items: center; gap: 9px;
     padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--line);
@@ -580,8 +597,9 @@ above). When the SDK adopts it, this link and the script tag at the bottom
 swap for the base ones and nothing else on this page moves.
 
 Board | DM switcher — the SAME stylesheet board_v3.html links, so the two
-pages cannot drift into two different-looking switchers. Palette mapping for
-this page is in the <style> above (header .stx-cards-switcher).
+pages cannot drift into two different-looking switchers. This page's palette
+mapping rides its own :root aliases, consumed through the component's
+--sw-* variables.
 
 page-header.css is the same idea one level up: the SAME stylesheet the board
 links, holding the header bar's height/padding/gap so the two headers line up
@@ -703,14 +721,14 @@ must therefore ALWAYS be rendered.
          data-user-scope="{{ cards_user }}">
 {% comment %}
 The header is the SHARED partial board_v3.html renders too, so the two pages
-cannot drift into two different heights or two different switcher sides again
+cannot drift into two different heights or two different tab rows again
 (operator, 2026-07-29). `.stx-cards-headerbar` carries the geometry; the
 palette above is all this page still says about it.
 
 `#menu-btn` stays FIRST because it is the phone-only agent-list toggle and a
 leading hamburger is the platform convention there — it is `display: none` on
-every viewport wide enough for the list to be visible, so on the desktop the
-switcher IS the leftmost thing in the header, exactly as on the board.
+every viewport wide enough for the list to be visible. The SDK title row and
+the tab row below it arrive via the shared partial, identical on both pages.
 {% endcomment %}
 <header class="stx-cards-headerbar">
   <button id="menu-btn" aria-label="Toggle agent list">&#9776;</button>
