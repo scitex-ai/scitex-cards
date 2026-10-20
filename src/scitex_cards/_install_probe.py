@@ -84,6 +84,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.metadata as _md
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -232,12 +233,32 @@ def _classify(module_file: Path) -> str:
     return KIND_EDITABLE
 
 
+def _over_overlay(is_overlay: Callable[[], bool] | None) -> bool:
+    """True when the caller runs inside a layered container overlay.
+
+    ``is_overlay`` is the test seam (PA-306 §3): callers/tests supply the
+    verdict as an argument instead of rewriting ``sys.modules`` or the
+    environment. ``None`` (the default) resolves to the single detector
+    :func:`scitex_cards._currency._running_over_overlay` via a LAZY import,
+    so this dependency-light probe gains no import-time coupling to the
+    currency gate.
+    """
+    if is_overlay is not None:
+        return bool(is_overlay())
+    try:
+        from ._currency import _running_over_overlay
+    except Exception:  # noqa: BLE001 -- detector absent means bare host
+        return False
+    return bool(_running_over_overlay())
+
+
 def probe_install(
     dist: str,
     module: str | None = None,
     *,
     features: dict[str, str] | None = None,
     read_version=_md.version,
+    is_overlay: Callable[[], bool] | None = None,
 ) -> InstallProbe:
     """Probe ``dist``'s install and report whether its version string can be trusted.
 
@@ -259,6 +280,13 @@ def probe_install(
     controlling the claim. Supplying it as an argument is the mock-free way
     (PA-306 §3); it must still raise ``_md.PackageNotFoundError`` to mean "no
     metadata", because that is the signal this function branches on.
+
+    ``is_overlay`` names the layered-container detector (default: the currency
+    gate's ``_running_over_overlay`` via lazy import). It exists so the
+    drifted-editable hint can prescribe the overlay-safe remedy (base-image
+    rebake) instead of the bare-host one (in-place reinstall) — an install
+    inside an apptainer overlay stacks a second dist-info over the base image
+    and manufactures the duplicate-metadata failure this probe detects.
 
     Never raises. Any internal failure comes back in ``probe_error`` with a hint.
     """
@@ -470,6 +498,20 @@ def probe_install(
         f"VERSION STRING LIES: metadata says {dist} {probe.metadata_version}, but "
         f"the code actually loaded from {root} is {probe.code_version}."
     )
+    if _over_overlay(is_overlay):
+        probe.hint = (
+            f"The .dist-info is a FOSSIL — it outlived the code it describes, so every "
+            f"version-based deploy/drift check against {dist} is currently meaningless "
+            f"(it will cry stale on a current install, or bless a stale one). "
+            f"Do NOT reinstall in place here: this process runs over a LAYERED "
+            f"(overlay) filesystem, and an in-place install only stacks a second "
+            f"dist-info over the base image (overlayfs whiteout), manufacturing the "
+            f"duplicate-metadata failure this probe detects. The repair is an "
+            f"operator REBAKE of the base image at {probe.code_version}; until then, "
+            f"trust ONLY content checks, never the version "
+            f"(escape hatch: SCITEX_DEV_CURRENCY_SEVERITY=silent)."
+        )
+        return probe
     probe.hint = (
         f"The .dist-info is a FOSSIL — it outlived the code it describes, so every "
         f"version-based deploy/drift check against {dist} is currently meaningless "
@@ -494,7 +536,10 @@ def _has_feature(target: str) -> bool:
 
 
 def check_install_honest(
-    dist: str = "scitex-cards", *, read_version=_md.version
+    dist: str = "scitex-cards",
+    *,
+    read_version=_md.version,
+    is_overlay: Callable[[], bool] | None = None,
 ) -> dict[str, object]:
     """Health-doctor check: is ``dist``'s reported version actually true?
 
@@ -503,9 +548,10 @@ def check_install_honest(
     that has drifted from the code it claims to describe.
 
     ``read_version`` is forwarded to :func:`probe_install`; see there for why it
-    is a parameter.
+    is a parameter. ``is_overlay`` is forwarded the same way so the hint can
+    prescribe the overlay-safe remedy inside containers.
     """
-    probe = probe_install(dist, read_version=read_version)
+    probe = probe_install(dist, read_version=read_version, is_overlay=is_overlay)
     return {
         "ok": probe.trustworthy,
         "detail": probe.detail,

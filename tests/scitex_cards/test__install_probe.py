@@ -276,9 +276,11 @@ def test_fossil_hint_names_the_fossil(fossilised_probe):
     assert "FOSSIL" in hint
 
 
-def test_fossil_hint_names_the_actual_repair(fossilised_probe):
-    # Arrange
-    p = fossilised_probe
+def test_fossil_hint_names_the_actual_repair(fake_pkg):
+    # Arrange — a fossil probed AS A BARE HOST (overlay seam pinned off: the
+    # bare-host remedy is environment-dependent by design since the overlay
+    # branch prescribes a rebake instead of an install).
+    p = probe_install("fakepkg", read_version=_claims("1.0.0"), is_overlay=lambda: False)
     # Act
     hint = p.hint or ""
     # Assert — the hint must name the repair, not just complain.
