@@ -148,7 +148,7 @@ def test_send_is_the_last_control_in_the_row(page: str):
 
 def test_the_composer_has_no_emoji_toggle(page: str):
     """Operator 2026-10-20: drop the emojis, be professional. The composer
-    is attach + field + send — no emoji mount, no panel modifier."""
+    is attach + field + send — no emoji mount in the field."""
     # Arrange
     opened = page.index('<div id="compose-field">')
 
@@ -157,7 +157,18 @@ def test_the_composer_has_no_emoji_toggle(page: str):
 
     # Assert
     assert "data-stx-emoji-picker-for" not in field_markup
-    assert "stx-emoji-picker--right" not in page
+
+
+def test_the_composer_has_no_emoji_panel_modifier(page: str):
+    """The panel modifier went with the toggle — no orphaned marker."""
+    # Arrange
+    html = page
+
+    # Act
+    present = "stx-emoji-picker--right" in html
+
+    # Assert
+    assert present is False
 
 
 def test_the_composer_and_the_message_list_share_one_column(css: str):

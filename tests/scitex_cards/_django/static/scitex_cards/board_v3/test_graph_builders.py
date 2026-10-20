@@ -49,6 +49,25 @@ TEMPLATE = (
 )
 
 
+def _board_sources() -> str:
+    """Board markup as served: board_v3.html plus its three partials.
+
+    Since the unified page (operator 2026-10-20) the DOM-half builders and
+    guards the graph tests pin live in _board_foot.html — one source served
+    standalone AND embedded.
+    """
+    base = TEMPLATE.parent
+    return "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in (
+            TEMPLATE,
+            base / "_board_pane.html",
+            base / "_board_head.html",
+            base / "_board_foot.html",
+        )
+    )
+
+
 def _node() -> str:
     """Locate ``node``; skip the suite cleanly if it isn't installed."""
     exe = shutil.which("node")
@@ -1034,7 +1053,7 @@ def test_the_template_loads_the_module():
     # The <script defer> tag is the ONLY thing that registers this module with
     # the page. Drop it and the Graph layout throws at runtime.
     # Arrange
-    template = TEMPLATE.read_text(encoding="utf-8")
+    template = _board_sources()
     # Act
     # Assert
     assert "board_v3/17-graph-builders.js" in template
@@ -1047,7 +1066,7 @@ def test_the_template_loads_the_module():
 def test_the_template_no_longer_defines_the_builders_itself(builder):
     # A second copy is the drift this extraction exists to remove.
     # Arrange
-    template = TEMPLATE.read_text(encoding="utf-8")
+    template = _board_sources()
     # Act
     # Assert
     assert builder not in template
@@ -1065,7 +1084,7 @@ def test_the_template_passes_the_page_globals_it_used_to_read(call):
     # arguments now. If a call site is left bare the module reads undefined
     # and the diagram silently loses its edges or its button label.
     # Arrange
-    template = TEMPLATE.read_text(encoding="utf-8")
+    template = _board_sources()
     # Act
     # Assert
     assert call in template
@@ -1079,7 +1098,7 @@ def test_the_dom_half_deliberately_stayed_in_the_template(kept):
     # them a DOM-free shape would make the module un-require()-able by node
     # and quietly kill every test in this file.
     # Arrange
-    template = TEMPLATE.read_text(encoding="utf-8")
+    template = _board_sources()
     # Act
     # Assert
     assert kept in template
@@ -1103,7 +1122,7 @@ def test_the_render_path_consults_the_new_guards(call):
     # measures against — omit it and the check silently compares against
     # undefined and passes everything.
     # Arrange
-    template = TEMPLATE.read_text(encoding="utf-8")
+    template = _board_sources()
     # Act
     # Assert
     assert call in template
@@ -1114,7 +1133,7 @@ def test_the_template_pins_the_ceiling_it_guards_against():
     # default it means a library change silently puts them on different
     # ceilings and the error image comes back.
     # Arrange
-    template = TEMPLATE.read_text(encoding="utf-8")
+    template = _board_sources()
     # Act
     # Assert
     assert "maxTextSize: STX.graphBuilders.MERMAID_MAX_TEXT," in template
@@ -1124,7 +1143,7 @@ def test_the_template_no_longer_hardcodes_the_failure_message():
     # It moved into _graphFailureHtml so the two failure causes could be told
     # apart; a leftover copy would be the drift this split exists to remove.
     # Arrange
-    template = TEMPLATE.read_text(encoding="utf-8")
+    template = _board_sources()
     # Act
     # Assert
     assert "the mermaid bundle failed to load (offline?)" not in template

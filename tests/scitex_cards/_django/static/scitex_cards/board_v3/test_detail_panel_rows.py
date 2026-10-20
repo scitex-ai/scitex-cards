@@ -214,7 +214,22 @@ def test_the_em_dash_placeholder_is_not_a_person():
 
 @pytest.fixture(scope="module")
 def template_text() -> str:
-    return TEMPLATE.read_text(encoding="utf-8")
+    """Board markup as served: board_v3.html plus its three partials.
+
+    Since the unified page (operator 2026-10-20) the pane markup the
+    detail-panel pins assert lives in _board_pane.html — one source served
+    standalone AND embedded.
+    """
+    base = TEMPLATE.parent
+    return "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in (
+            TEMPLATE,
+            base / "_board_pane.html",
+            base / "_board_head.html",
+            base / "_board_foot.html",
+        )
+    )
 
 
 def test_the_panel_renders_last_activity_through_fmtLocalTime(template_text):
