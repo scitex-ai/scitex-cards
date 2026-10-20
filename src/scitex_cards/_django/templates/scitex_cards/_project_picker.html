@@ -1,6 +1,8 @@
 {% load scitex_project_picker %}{% comment %}
-  _project_picker.html — the canonical SDK project picker, wrapped so that NO
-  page `{% load %}`s the tag library directly.
+  _project_picker.html — the canonical SDK project picker, reached ONLY
+  through a guarded `{% templatetag openblock %} include {% templatetag closeblock %}`
+  so that NO page `{% templatetag openblock %} load {% templatetag closeblock %}`s
+  the tag library directly.
 
   WHY THE LOAD LIVES HERE AND NOWHERE ELSE. `{% templatetag openblock %} load
   scitex_project_picker {% templatetag closeblock %}` against a library that is
@@ -19,16 +21,22 @@
   TemplateSyntaxError verbatim), and the SDK ships `scitex_project_picker`
   as part of its UI component.
 
-  The caller passes the project to mark as current, and gates the include on the
-  availability flag that suits its context — `host_picker_available` on the
-  project board, `cards_project_picker_available` in the shared header:
+  NO CARDS CHROME AROUND THE OUTPUT (operator 2026-10-20: shared components
+  from scitex-sdk, including the project selector). The tag's own
+  `[data-stx-project-picker]` root goes straight into the caller's mount —
+  `app_header.js` moves it into the SDK header's canonical slot. There used
+  to be a cards-owned wrapper div here; it forked the SDK's slot styling and
+  is gone.
+
+  The caller passes the project to mark as current, and gates the include on
+  the availability flag that suits its context — `host_picker_available` on
+  the project board, `cards_project_picker_available` in the shared header:
 
       {% templatetag openblock %} include "scitex_cards/_project_picker.html" with current=board.project {% templatetag closeblock %}
 
   `picker_scope` is optional: when absent the canonical tag reads `app_scope`
   and defaults to user. Only the distinct project-board caller explicitly
   requests project scope. Shared headers must not override a user-scoped app.
-  `picker_slot` asks for header chrome, rendered only when the tag emits markup.
 
   The SDK's own tag decides whether the scope, viewer and host provider permit
   a picker. Including this partial adds no second selector and no standalone
@@ -39,7 +47,5 @@
   {% scitex_project_picker current=current as project_picker_markup %}
 {% endif %}
 {% if project_picker_markup %}
-  {% if picker_slot %}<div class="stx-cards-header__project" data-stx-project-slot>{% endif %}
-    {{ project_picker_markup }}
-  {% if picker_slot %}</div>{% endif %}
+  {{ project_picker_markup }}
 {% endif %}

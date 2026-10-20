@@ -48,7 +48,7 @@ and DM.
      data-app-version="{{ scitex_cards_version|default:"?" }}"
      data-stx-cards-header>
   {% if cards_project_picker_available %}
-    {% include "scitex_cards/_project_picker.html" with current=cards_current_project_id picker_scope=app_scope picker_slot=True %}
+    {% include "scitex_cards/_project_picker.html" with current=cards_current_project_id picker_scope=app_scope %}
   {% endif %}
 </div>
 <script type="module" src="{% static 'scitex_sdk/ui/js/app/app-header.js' %}"></script>
