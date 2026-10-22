@@ -456,10 +456,10 @@
           "</div>" +
           (meta ? '<div class="tl-card-meta">' + meta + "</div>" : "") +
           commentHtml +
-          (comments.length
+          (cs.length
             ? '<div class="tl-card-count">' +
-              comments.length +
-              (comments.length === 1 ? " comment" : " comments") +
+              cs.length +
+              (cs.length === 1 ? " comment" : " comments") +
               "</div>"
             : "") +
           "</div>"
