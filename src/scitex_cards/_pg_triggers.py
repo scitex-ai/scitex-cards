@@ -80,6 +80,17 @@ BEGIN
 END;
 $function$""",
     """CREATE OR REPLACE TRIGGER dm_threads_no_delete BEFORE DELETE ON dm_threads FOR EACH ROW EXECUTE FUNCTION dm_threads_no_delete_fn()""",
+    # --- dm_visibility_events_no_delete (v16, card
+    # cards-dm-spaces-crud-hide-20261022) ---
+    """CREATE OR REPLACE FUNCTION dm_visibility_events_no_delete_fn()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'dm_visibility_events is append-only: unhiding is an unhide event';
+END;
+$function$""",
+    """CREATE OR REPLACE TRIGGER dm_visibility_events_no_delete BEFORE DELETE ON dm_visibility_events FOR EACH ROW EXECUTE FUNCTION dm_visibility_events_no_delete_fn()""",
     # --- schema_meta_retirement_is_one_way ---
     """CREATE OR REPLACE FUNCTION schema_meta_retirement_is_one_way_fn()
  RETURNS trigger
@@ -225,6 +236,17 @@ BEGIN
 END;
 $function$""",
         """CREATE OR REPLACE TRIGGER dm_threads_no_delete BEFORE DELETE ON dm_threads FOR EACH ROW EXECUTE FUNCTION dm_threads_no_delete_fn()""",
+    ),
+    "dm_visibility_events_no_delete": (
+        """CREATE OR REPLACE FUNCTION dm_visibility_events_no_delete_fn()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'dm_visibility_events is append-only: unhiding is an unhide event';
+END;
+$function$""",
+        """CREATE OR REPLACE TRIGGER dm_visibility_events_no_delete BEFORE DELETE ON dm_visibility_events FOR EACH ROW EXECUTE FUNCTION dm_visibility_events_no_delete_fn()""",
     ),
     "schema_meta_retirement_is_one_way": (
         """CREATE OR REPLACE FUNCTION schema_meta_retirement_is_one_way_fn()
