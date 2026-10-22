@@ -52,7 +52,8 @@
     "writable_routes": [
       "dm/thread/<str:peer>",
       "dm/thread/<str:peer>/reaction",
-      "dm/upload"
+      "dm/upload",
+      "dm/thread/<str:peer>/hidden"
     ]
   }
 }
