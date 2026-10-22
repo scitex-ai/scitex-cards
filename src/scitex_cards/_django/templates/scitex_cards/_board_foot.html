@@ -217,6 +217,7 @@
         // repainting this panel every few seconds.
         if (renderEmptyState(STATE.graph)) {
           markBoardPhase("state-rendered");
+          _syncDetailsBoardPane();
           LAST_GRAPH_JSON = _freshJson;
           return;
         }
@@ -259,7 +260,18 @@
         // as "nothing displayed" (2026-08-17).
         renderLoadError(e);
         markBoardPhase("state-rendered");
-      }
+        // Error-state board: the pane still syncs (View/Span/Layout/Live
+        // chrome is meaningful even when the canvas shows the error card).
+        _syncDetailsBoardPane();
+
+    // Pane sync subscription: Details > Board re-syncs on EVERY completed
+    // loadGraph paint (success, empty, or error — the canvas error path
+    // returns before render(), so render() alone misses it). Single re-sync
+    // point; render()'s own call covers the data path, the boot .then
+    // covers first paint.
+    // (hook-bypass: line-limit — pre-existing over-cap template.)
+    function _syncDetailsBoardPane() {
+      try { renderDetailsBoard(); } catch { /* pane not mounted — board still loads */ }
     }
 
     function passes(t) {
@@ -1706,13 +1718,17 @@
     function renderDetailsBoard() {
       const host = document.getElementById("details-board-timeline");
       if (host) {
-        const TL = _detailsTL() || {};
+        // NOTE: `ts` — never `TL`. The timeline module owns a global `TL`
+        // (its IIFE state); a local `const TL` here shadowed nothing at
+        // runtime, but the name invited exactly this misread during review,
+        // so the pane state carries its own name.
+        const ts = _detailsTL() || {};
         const ctl = (window.STX && window.STX.timelineControls) || null;
         if (ctl && ctl.detailsBoardHtml) {
-          host.innerHTML = ctl.detailsBoardHtml(TL, escapeHtml);
+          host.innerHTML = ctl.detailsBoardHtml(ts, escapeHtml);
         } else {
           // Degraded: sibling module not loaded — plain text beats silence.
-          host.textContent = "View " + (TL.view || "?") + " · Span " + (TL.windowKey || "?");
+          host.textContent = "View " + (ts.view || "?") + " · Span " + (ts.windowKey || "?");
         }
       }
       const live = document.getElementById("details-live");
@@ -2984,9 +3000,7 @@
     // timelineControls sibling has published detailsBoardHtml — an
     // ungated boot call painted the degraded text fallback. render()
     // re-syncs the tab states on every data paint.
-    BOARD_MODULES_READY.then(() => {
-      try { renderDetailsBoard(); } catch { /* pane not mounted — board still loads */ }
-    });
+    BOARD_MODULES_READY.then(_syncDetailsBoardPane);
     attachFilters();
     loadGraph();
     setInterval(autoRefreshTick, 5000);

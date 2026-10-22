@@ -177,8 +177,25 @@
   // detailsBoardHtml(TL, esc) — the FULL View / Span tabs row for
   // Details > Board. Same builders, same setters, same TL — the canvas
   // row (compact) and this pane row are two views of one state.
+  // Fail LOUD on a state/view-model mix-up (operator 2026-10-22: a stale
+  // paint showed Week-ON while TL said 1d — invisible because both sides
+  // were "valid"). The pane state carries exactly {view, windowKey, error};
+  // anything else (e.g. a full task row) is a caller bug — throw, don't
+  // render a confident wrong tab.
+  var _PANE_KEYS = { view: 1, windowKey: 1, error: 1 };
+  function _assertPaneState(TL, where) {
+    if (TL == null || typeof TL !== "object") return;
+    var extra = Object.keys(TL).filter(function (k) {
+      return !_PANE_KEYS[k];
+    });
+    if (extra.length)
+      throw new Error(
+        "[detailsBoardHtml@" + where + "] pane state carries non-pane keys: " + extra.join(",")
+      );
+  }
   function detailsBoardHtml(TL, esc) {
     TL = TL || {};
+    _assertPaneState(TL, "detailsBoardHtml");
     esc =
       esc ||
       function (s) {
