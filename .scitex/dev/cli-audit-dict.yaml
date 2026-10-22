@@ -64,6 +64,10 @@ intransitive_verbs:
                # implicitly resolved store. The source is deliberately
                # implicit under the existing one-store contract, so this verb
                # takes options rather than a positional object.
+  - unhide     # `scitex-cards hide/unhide` — DM thread visibility pair;
+               # `hide` is in Moby, `unhide` is the regular morphological
+               # counterpart (un-hide a hidden thread). Renaming would split
+               # a pair operators read as one verb.
 
 # §1d vocabulary the Moby POS classifier does not carry. Each is a real name
 # in THIS CLI, not a token that would read better renamed — which is the test
