@@ -213,47 +213,50 @@ def test_template_loads_toolbar_css() -> None:
     )
 
 
-def _view_group_body(html: str) -> str:
+def _details_board_body(html: str):
     m = re.search(
-        r"stx-cards-filterbar__group--view[^>]*>(.*?)\{#\s*end VIEW group",
+        r'data-id="board"[^>]*>(.*?)data-id="stats"',
         html,
         flags=re.DOTALL,
     )
-    assert m, "could not locate VIEW group block in template"
+    assert m, "could not locate Details > Board section in template"
     return m.group(1)
 
 
-def test_template_view_group_block_exists() -> None:
-    """The VIEW group wrapper must still be in the template."""
+def test_template_details_board_section_exists() -> None:
+    """Details > Board hosts View / Span / Layout / Live (2026-10-22)."""
     # Arrange
     html = _read_board_family()
     # Act
-    body = _view_group_body(html)
+    body = _details_board_body(html)
     # Assert
-    assert body.strip(), "VIEW group block is empty"
+    assert body.strip(), "Details > Board section is empty"
 
 
-def test_template_view_group_contains_layout() -> None:
-    """The VIEW group holds the Layout segmented control. Sort and Group
-    are NOT here any more — they were removed with the Column layout."""
+def test_template_details_board_contains_layout() -> None:
+    """Details > Board holds the Layout segmented control — the SAME
+    buttons the header VIEW group carried (ids/classes/onclick unchanged),
+    so onLayoutChange() needs no migration. Sort and Group are NOT here —
+    they left with the Column layout."""
     # Arrange
     html = _read_board_family()
     # Act
-    view_body = _view_group_body(html)
+    board_body = _details_board_body(html)
     # Assert
-    assert 'class="filt-layout"' in view_body, "VIEW group missing Layout"
+    assert 'id="details-layout-timeline"' in board_body, "Details > Board missing Layout"
 
 
 @pytest.mark.parametrize("gone", ['class="filt-sort"', 'class="filt-groupby"'])
 def test_template_view_group_dropped_sort_and_group(gone: str) -> None:
     """Sort + Group only ever ordered/clustered COLUMN cards. The Column
-    layout is gone, so they are too (operator TG 2026-07-13)."""
+    layout is gone, so they are too (operator TG 2026-07-13). Neither the
+    header VIEW group nor Details > Board may re-introduce them."""
     # Arrange
     html = _read_board_family()
     # Act
-    view_body = _view_group_body(html)
+    bodies = _details_board_body(html)
     # Assert
-    assert gone not in view_body, f"VIEW group still carries retired control {gone!r}"
+    assert gone not in bodies, f"Details > Board carries retired control {gone!r}"
 
 
 def _primary_zone_match(html: str):
@@ -325,15 +328,19 @@ def test_template_search_group_contains_search_input() -> None:
     "needle",
     [
         'id="f-search"',  # Search input
-        'id="f-layout-timeline"',  # Layout: Timeline (the DEFAULT)
-        'id="f-layout-wall"',  # Layout: Wall
-        'id="f-layout-graph"',  # Layout: Graph
-        'id="add-task-btn"',  # + Add Task
+        'id="details-layout-timeline"',  # Layout: Timeline (Details > Board)
+        'id="details-layout-wall"',  # Layout: Wall (Details > Board)
+        'id="details-layout-graph"',  # Layout: Graph (Details > Board)
+        'id="details-layout-matrix"',  # Layout: Matrix (Details > Board)
+        'id="details-live"',  # Live chip (Details > Board)
+        'id="details-board-timeline"',  # View/Span tabs mount (Details > Board)
+        'id="add-task-btn"',  # + Add Task (header PRIMARY)
     ],
 )
 def test_template_preserves_every_surviving_control(needle: str) -> None:
-    """The declutter removes controls on purpose; it must not take the
-    survivors with it. This guards against an accidental drop."""
+    """The declutter + re-home remove controls on purpose; they must not
+    take the survivors with them. This guards against an accidental drop —
+    Layout/Live now pin their Details > Board mounts, not the header."""
     # Arrange
     # Act
     html = _read_board_family()
@@ -404,3 +411,64 @@ def test_details_stats_panel_hosts_the_moved_counter() -> None:
     html = _read_board_family()
     # Assert
     assert 'id="details-stats"' in html, "Details > Stats panel is missing"
+
+
+# ============================================================================
+# Re-home — View/Span/Layout/Live live in Details > Board (2026-10-22)
+# ============================================================================
+
+
+def test_template_header_view_group_retired_to_hidden_contract_mount() -> None:
+    """The header VIEW group stays as an (empty, hidden) mount so the
+    contract selector still resolves — but it must NOT render a visible
+    Layout control any more. The visible one lives in Details > Board."""
+    # Arrange
+    html = _read_board_family()
+    # Act
+    m = re.search(
+        r"stx-cards-filterbar__group--view[^>]*>(.*?)\{#\s*end VIEW group",
+        html,
+        flags=re.DOTALL,
+    )
+    # Assert
+    assert m, "could not locate VIEW group block in template"
+    assert 'hidden' in m.group(0).split(">")[0] or "hidden" in m.group(1)[:2000], (
+        "header VIEW group is visible again — Layout belongs in Details > Board"
+    )
+
+
+def test_template_details_board_hosts_view_span_tabs_mount() -> None:
+    """Details > Board carries the View/Span tabs mount painted by
+    detailsBoardHtml() — the same setters the canvas row used to own."""
+    # Arrange
+    html = _read_board_family()
+    # Act
+    body = _details_board_body(html)
+    # Assert
+    assert 'id="details-board-timeline"' in body
+    assert "data-details-board" in body
+
+
+def test_template_details_board_hosts_live_chip() -> None:
+    """The LIVE chip moved out of .fb-left into Details > Board."""
+    # Arrange
+    html = _read_board_family()
+    # Act
+    body = _details_board_body(html)
+    # Assert
+    assert 'id="details-live"' in body
+    assert "live-dot" in body
+
+
+def test_template_header_identity_band_carries_no_live_chip() -> None:
+    """Fail-loud the other direction: .fb-left must NOT render its own LIVE
+    chip any more — one live indicator, in Details > Board."""
+    # Arrange
+    html = _read_board_family()
+    # Act
+    m = re.search(
+        r'<div class="fb-left">(.*?)</div>', html, flags=re.DOTALL
+    )
+    # Assert
+    assert m, "could not locate .fb-left band in template"
+    assert "live-dot" not in m.group(1), ".fb-left still renders a LIVE chip"
