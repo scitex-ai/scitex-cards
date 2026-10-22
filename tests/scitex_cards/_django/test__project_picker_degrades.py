@@ -136,7 +136,7 @@ def _render_header() -> str:
         {
             "api_base": "/",
             "active": "board",
-            "page_title": "SciTeX Cards",
+            "page_title": "Cards",
             "scitex_cards_version": "0.0.0",
             "cards_user": "alice",
             "cards_project_picker_available": True,
@@ -395,7 +395,7 @@ def test_the_shared_header_renders_unchanged_when_the_picker_is_unavailable():
         {
             "api_base": "/",
             "active": "board",
-            "page_title": "SciTeX Cards",
+            "page_title": "Cards",
             "scitex_cards_version": "0.0.0",
             "cards_user": "alice",
             "cards_project_picker_available": False,
@@ -424,7 +424,7 @@ def test_the_picker_appears_exactly_when_the_views_own_flag_says_it_can():
         "scitex_cards/_page_header.html",
         {
             "api_base": "/",
-            "page_title": "SciTeX Cards",
+            "page_title": "Cards",
             "scitex_cards_version": "0.0.0",
             "cards_user": "alice",
             "cards_project_picker_available": flag,
