@@ -472,3 +472,23 @@ def test_template_header_identity_band_carries_no_live_chip() -> None:
     # Assert
     assert m, "could not locate .fb-left band in template"
     assert "live-dot" not in m.group(1), ".fb-left still renders a LIVE chip"
+
+
+def test_toolbar_css_kills_the_retired_header_layout_mount() -> None:
+    """The header VIEW group is a hidden contract mount — but
+    `.filt-layout{display:inline-flex}` beats the UA `[hidden]` rule by
+    specificity, so without an explicit kill the retired Layout renders
+    anyway (caught live 2026-10-22: 272px visible). Pin the kill."""
+    # Arrange
+    # Act
+    css_path = (
+        _REPO_ROOT / "src" / "scitex_cards" / "_django" / "static"
+        / "scitex_cards" / "board_v3" / "06-layout-and-recent.css"
+    )
+    css = css_path.read_text(encoding="utf-8")
+    # Assert
+    assert ".filt-layout[hidden]" in css, "missing .filt-layout[hidden] kill rule"
+    m = re.search(r"\.filt-layout\[hidden\]\s*\{([^}]*)\}", css)
+    assert m and "display" in m.group(1) and "none" in m.group(1), (
+        ".filt-layout[hidden] must set display:none"
+    )

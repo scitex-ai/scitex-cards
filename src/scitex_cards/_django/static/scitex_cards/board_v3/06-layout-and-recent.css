@@ -20,6 +20,15 @@
   gap: 6px;
   margin-right: 4px;
 }
+
+/* Retired header mount (operator 2026-10-22: Layout lives in Details >
+ * Board). The span carries `hidden`, but this sheet's own
+ * `.filt-layout{display:inline-flex}` beats the UA `[hidden]{display:none}`
+ * by specificity — without this rule the retired control renders anyway.
+ * display:none (not visibility) so the flex group collapses to zero. */
+.filt-layout[hidden] {
+  display: none;
+}
 .filt-layout-label {
   font-size: 0.7rem;
   color: var(--text-muted);
