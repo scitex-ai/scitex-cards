@@ -198,6 +198,20 @@ submission, or accepts `--client-request-id`; reuse that key after an uncertain
 timeout to receive the original `m_`, `n_`, and `xch_` rather than duplicating
 the request.
 
+Hide a conversation without deleting it (view state, not content — the
+append-only store is untouched):
+
+```bash
+scitex-cards dm hide agent:worker --sender agent:me --json
+scitex-cards dm unhide agent:worker --sender agent:me --json
+```
+
+The JSON result is `{"thread", "peer", "hidden", "changed"}`; `changed`
+answers the state flip, so repeating the current state changes nothing.
+Hiding names an existing conversation — a peer with no thread is an error.
+The same verb is `scitex_cards.dm_hide` (Python), the `dm_hide` MCP tool,
+and `POST /dm/thread/<peer>/hidden` (board API).
+
 When SAC owns the Cards-to-Hermes delivery loop, launch the stdio MCP surface
 with `scitex-cards mcp start --tools-only`. That keeps
 `SCITEX_CARDS_AGENT_ID` available for tool attribution while disabling Cards'
