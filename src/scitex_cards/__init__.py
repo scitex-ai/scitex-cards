@@ -270,6 +270,9 @@ def __getattr__(name: str):
     elif name == 'ack_notifications':
         _m = import_module("scitex_cards._messaging")
         _v = _m.ack_notifications
+    elif name == 'dm_hide':
+        _m = import_module("scitex_cards._messaging")
+        _v = _m.dm_hide
     elif name == 'dm_list':
         _m = import_module("scitex_cards._messaging")
         _v = _m.dm_list
@@ -323,6 +326,7 @@ __all__ = [
     "complete_task",
     "dedup_agents",
     "delete_task",
+    "dm_hide",
     "dm_list",
     "dm_send",
     "dm_send_document",
