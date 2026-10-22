@@ -228,12 +228,12 @@ export function TimelineView({
         </div>
         <div className="stx-cards-timeline__controls">
           <label className="stx-cards-timeline__ctl-label">
-            Window
+            Span
             <select
               className="stx-cards-timeline__select"
               value={windowKey}
               onChange={(e) => setWindowKey(e.target.value as WindowKey)}
-              aria-label="Window length"
+              aria-label="Time span"
               title="How far back the raster reaches"
             >
               <option value="1h">1h</option>

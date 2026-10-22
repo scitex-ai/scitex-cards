@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Board header declutter (operator 2026-10-22): View, Span, Layout and
+  Live move out of the header into a new Details > Board section; the
+  header keeps search + Add Task only. "Window" renamed to "Span"
+  (Day/Week/Month name a time span) on both the Django board and the
+  React TimelineView. Canvas controls row goes compact; Details paints
+  the full tabs from the same timeline state (fail-loud pane-state
+  shape assert + re-sync on every paint path; rendered inline-script
+  parse pin).
+
 ## [0.56.4] - 2026-10-20
 
 - Timeline Day/Week/Month window control restyled as underline tabs in the
