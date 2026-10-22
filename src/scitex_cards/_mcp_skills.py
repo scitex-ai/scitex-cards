@@ -328,7 +328,7 @@ async def dm_send(
     """Send a DIRECT MESSAGE to a peer (operator or another agent).
 
     Appends the canonical DM record ``{id, thread, from, to, body, ts, read}``
-    to the pair's thread in the ``threads.json`` sidecar (thread id
+    to the pair's thread in the canonical store (thread id
     ``dm:<a>::<b>``, peers sorted) and enqueues a ``dm`` notification into the
     recipient's pull-inbox so the unified channel server delivers it into
     their live session. ``from`` is THIS agent's resolved identity
@@ -432,8 +432,36 @@ async def dm_list(
     return json.dumps(result)
 
 
+@mcp.tool()
+async def dm_hide(
+    peer: str,
+    hidden: bool = True,
+    tasks_path: str | None = None,
+) -> str:
+    """Hide (or unhide) THIS agent's DM conversation with ``peer``.
+
+    View state, not content: the thread's messages are untouched, so this is
+    NOT deletion under the append-only ruling — it only decides whether this
+    agent's list shows the row. Returns ``{\"thread\", \"peer\", \"hidden\",
+    \"changed\"}`` as JSON. Hiding names an existing conversation: a peer
+    with no thread answers ``{\"error\": ...}`` rather than a row.
+    """
+    try:
+        result = await anyio.to_thread.run_sync(
+            functools.partial(
+                _messaging.dm_hide, peer, hidden, store=tasks_path
+            )
+        )
+    except _messaging.AgentIdentityUnresolved as exc:
+        return _refusal(exc)
+    except KeyError as exc:
+        return _refusal(exc, prefix="dm_hide: ")
+    return json.dumps(result)
+
+
 __all__ = [
     "ack_notifications",
+    "dm_hide",
     "dm_list",
     "dm_send",
     "dm_send_document",

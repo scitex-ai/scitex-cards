@@ -121,6 +121,7 @@ _CONVENTION_A_NAMES = {
     # convention v1, threads.yaml sidecar).
     "dm_send",
     "dm_list",
+    "dm_hide",
     # ...and the FILE half of the same surface — `_attachments.store_local_file`
     # composed with `dm_send`. Text-only DMs meant a real deliverable reached
     # the operator as prose describing a deliverable; this is the entry point

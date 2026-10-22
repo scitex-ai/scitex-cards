@@ -453,6 +453,18 @@ class HubBackend:
         self._forbid_store(store)
         return self._call("dm_list", {"sender": sender, "peer": peer, "ack": ack})
 
+    def dm_hide(
+        self,
+        sender: str,
+        peer: str,
+        hidden: bool = True,
+        store: Any = None,
+    ) -> dict:
+        self._forbid_store(store)
+        return self._call(
+            "dm_hide", {"sender": sender, "peer": peer, "hidden": hidden}
+        )
+
 
 __all__ = ["HubBackend", "HubBackendError", "default_token_file"]
 

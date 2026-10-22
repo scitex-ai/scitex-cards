@@ -78,6 +78,7 @@ BACKEND_VERBS: tuple[str, ...] = (
     "ack_notifications",
     "dm_send",
     "dm_list",
+    "dm_hide",
 )
 
 
@@ -525,6 +526,22 @@ class LocalBackend:
         # cross-host conversation, so an agent could not read its own peer DMs.
         messages = _dm_read.messages_in(key, store=store)
         return {"thread": key, "peer": other, "messages": messages}
+
+    def dm_hide(
+        self,
+        sender: str,
+        peer: str,
+        hidden: bool = True,
+        store: Any = None,
+    ) -> dict:
+        # Same composition shape as dm_list: derive the thread id from the
+        # authenticated sender + the named peer, then fold the write through
+        # the one verb that owns it. Hiding is view state, not content —
+        # see set_thread_visibility — so this rides the DM rail, not delete.
+        from ._dm import write as _dm_write
+
+        key = _threads.thread_key(sender, peer)
+        return _dm_write.set_thread_visibility(key, sender, hidden, store=store)
 
 
 _LOCAL_BACKEND = LocalBackend()

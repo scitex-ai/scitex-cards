@@ -368,6 +368,27 @@ def test_dm_list_through_the_seam_names_the_requested_peer(store):
     assert thread["peer"] == "seam-alice"
 
 
+def test_dm_hide_through_the_seam_flips_visibility(store):
+    # Arrange
+    backend = get_backend()
+    backend.dm_send("seam-alice", "seam-bob", "hello", store=store)
+    # Act
+    result = backend.dm_hide("seam-alice", "seam-bob", store=store)
+    # Assert
+    assert result["hidden"] is True and result["changed"] is True
+
+
+def test_dm_hide_through_the_seam_is_idempotent(store):
+    # Arrange
+    backend = get_backend()
+    backend.dm_send("seam-alice", "seam-bob", "hello", store=store)
+    backend.dm_hide("seam-alice", "seam-bob", store=store)
+    # Act
+    result = backend.dm_hide("seam-alice", "seam-bob", store=store)
+    # Assert
+    assert result["hidden"] is True and result["changed"] is False
+
+
 def test_poll_notifications_through_the_seam_names_the_agent(store):
     # Arrange
     backend = get_backend()

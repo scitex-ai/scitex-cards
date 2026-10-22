@@ -41,6 +41,7 @@ __all__ = [
     "AgentIdentityUnresolved",
     "RemoteHubAttachmentUnsupported",
     "ack_notifications",
+    "dm_hide",
     "dm_list",
     "dm_send",
     "dm_send_document",
@@ -326,6 +327,40 @@ def dm_list(
     return get_backend().dm_list(
         resolve_sender(sender), peer=canonical_peer, ack=ack, store=store
     )
+
+
+def dm_hide(
+    peer: str,
+    hidden: bool = True,
+    *,
+    store: Any = None,
+    sender: str | None = None,
+) -> dict:
+    """Hide (or unhide) this agent's DM conversation with ``peer``.
+
+    View state, not content: the thread's messages are untouched, so this is
+    NOT deletion under the append-only ruling — it only decides whether this
+    agent's list shows the row. Returns ``{\"thread\": <id>, \"peer\":
+    <peer>, \"hidden\": <bool>, \"changed\": <bool>}``; ``changed`` answers
+    the state flip, so repeating the current state changes nothing.
+    ``peer`` is required (hiding names an existing conversation) and the
+    thread id is derived server-side from the resolved sender, the same
+    authority rule the HTTP endpoint enforces.
+    """
+    from ._backend import get_backend
+
+    result = get_backend().dm_hide(
+        resolve_sender(sender),
+        canonical_agent_identity(peer),
+        hidden,
+        store=store,
+    )
+    return {
+        "thread": result.get("thread_id", result.get("thread")),
+        "peer": peer,
+        "hidden": result.get("hidden", hidden),
+        "changed": result.get("changed", False),
+    }
 
 
 # EOF
