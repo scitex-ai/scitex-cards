@@ -35,7 +35,16 @@
     if (!doc) return null;
     var api =
       typeof window !== "undefined" ? window.stxAppHeader : undefined;
-    return adopt(doc, api);
+    /* Scope to the mount stub, not the document: the DM page renders the
+     * canonical picker in its sidebar (card cards-dm-spaces-crud-hide-20261022)
+     * and a document-wide query would adopt THAT one into the header slot.
+     * Without a stub there is nothing to adopt into — return null. */
+    var stub =
+      typeof doc.querySelector === "function"
+        ? doc.querySelector("[data-stx-app-header]")
+        : null;
+    if (!stub) return null;
+    return adopt(stub, api);
   }
 
   var _api = { adopt: adopt, run: run };

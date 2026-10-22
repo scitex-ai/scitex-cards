@@ -14,6 +14,7 @@ from .handlers.dm import (
     dm_reaction_view,
     dm_thread_view,
     dm_threads_view,
+    dm_visibility_view,
 )
 from .handlers.fleet import (
     fleet_ci_status_view,
@@ -144,6 +145,15 @@ urlpatterns = [
         "dm/thread/<str:peer>/reaction",
         dm_reaction_view,
         name="dm_reaction",
+    ),
+    # Hide/unhide a conversation for the current reader (card
+    # cards-dm-spaces-crud-hide-20261022). Nested under the thread like the
+    # reaction route, for the same authority reason: the peer names the
+    # conversation and the thread id is derived server-side.
+    path(
+        "dm/thread/<str:peer>/hidden",
+        dm_visibility_view,
+        name="dm_visibility",
     ),
     # Chat attachments — the operator's top blocker was a text-only chat.
     # Upload returns a relative URL the composer puts in the message body;

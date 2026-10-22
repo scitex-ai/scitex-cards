@@ -32,6 +32,12 @@ breaking, operator 2026-07-30):
 
     {% templatetag openblock %} include "scitex_cards/_page_header.html" with page_title="SciTeX Cards" {% templatetag closeblock %}
 
+A page that renders the canonical picker in its OWN ui instead (the DM
+sidebar — card cards-dm-spaces-crud-hide-20261022) passes
+`header_picker=False`: the SDK tag is a singleton per page, so a page that
+places it must also unplace it here. Pages that do not pass it are
+unaffected.
+
 `scitex_cards_version` is the BARE number — the SDK prefixes "v" itself —
 and `api_base` is inherited from the page context.
 `cards_project_picker_available` is the view-computed flag ("the library
@@ -47,7 +53,7 @@ and DM.
      data-app-title="{{ page_title }}"
      data-app-version="{{ scitex_cards_version|default:"?" }}"
      data-stx-cards-header>
-  {% if cards_project_picker_available %}
+  {% if cards_project_picker_available and header_picker != False %}
     {% include "scitex_cards/_project_picker.html" with current=cards_current_project_id picker_scope=app_scope %}
   {% endif %}
 </div>

@@ -48,6 +48,12 @@ MSG_ID_PREFIX = "m_"
 #: Member-event ids minted by the backfill (deterministic) share this prefix.
 MEMBER_EVENT_PREFIX = "dme_"
 
+#: Visibility-event ids (hide/unhide) share this prefix. Distinct from ``dme_``
+#: so a reader can tell a membership fact from a view-state fact without a
+#: table lookup — they answer different questions ("who may see" vs "who
+#: currently looks away").
+VISIBILITY_EVENT_PREFIX = "dmv_"
+
 #: Opaque group-thread prefix. Deliberately distinct from ``dm:`` so a reader
 #: can tell a pair id from a group id without a table lookup.
 GROUP_THREAD_PREFIX = "dmg:"
@@ -132,6 +138,13 @@ def derived_message_id(thread_id: str, sender: str, to: str, ts: str, body: str)
 def derived_member_event_id(thread_id: str, member: str, action: str, ts: str) -> str:
     """Deterministic id for a membership event the backfill synthesises."""
     return MEMBER_EVENT_PREFIX + _digest(thread_id, member, action, ts)
+
+
+def derived_visibility_event_id(
+    thread_id: str, reader: str, action: str, ts: str
+) -> str:
+    """Deterministic id for a hide/unhide event. Same shape as membership's."""
+    return VISIBILITY_EVENT_PREFIX + _digest(thread_id, reader, action, ts)
 
 
 def origin_host() -> str:
@@ -259,8 +272,10 @@ __all__ = [
     "GROUP_THREAD_PREFIX",
     "MEMBER_EVENT_PREFIX",
     "MSG_ID_PREFIX",
+    "VISIBILITY_EVENT_PREFIX",
     "derived_member_event_id",
     "derived_message_id",
+    "derived_visibility_event_id",
     "is_pair_thread",
     "new_group_thread_id",
     "new_message_id",
