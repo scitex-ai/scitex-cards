@@ -488,7 +488,7 @@ def test_toolbar_css_kills_the_retired_header_layout_mount() -> None:
     css = css_path.read_text(encoding="utf-8")
     # Assert
     assert ".filt-layout[hidden]" in css, "missing .filt-layout[hidden] kill rule"
-    m = re.search(r"\.filt-layout\[hidden\]\s*\{([^}]*)\}", css)
+    m = re.search(r"\.filt-layout\[hidden\][^{]*\{([^}]*)\}", css)
     assert m and "display" in m.group(1) and "none" in m.group(1), (
         ".filt-layout[hidden] must set display:none"
     )

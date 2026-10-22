@@ -26,7 +26,8 @@
  * `.filt-layout{display:inline-flex}` beats the UA `[hidden]{display:none}`
  * by specificity — without this rule the retired control renders anyway.
  * display:none (not visibility) so the flex group collapses to zero. */
-.filt-layout[hidden] {
+.filt-layout[hidden],
+.stx-cards-filterbar__group--view > .filt-layout[hidden] {
   display: none;
 }
 .filt-layout-label {
