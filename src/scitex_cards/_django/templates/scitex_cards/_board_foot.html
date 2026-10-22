@@ -2978,6 +2978,10 @@
     _syncDetailsPane();
     _syncDetailsSections();
     renderStats();
+    // Details > Board paints even when the graph fails (operator sees the
+    // View/Span/Layout/Live chrome on an error-state board, not an empty
+    // Details column). render() re-syncs it on every data paint.
+    try { renderDetailsBoard(); } catch { /* pane not mounted — board still loads */ }
     attachFilters();
     loadGraph();
     setInterval(autoRefreshTick, 5000);
