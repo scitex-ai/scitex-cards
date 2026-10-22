@@ -492,3 +492,63 @@ def test_toolbar_css_kills_the_retired_header_layout_mount() -> None:
     assert m and "display" in m.group(1) and "none" in m.group(1), (
         ".filt-layout[hidden] must set display:none"
     )
+
+
+# ============================================================================
+# Fail-loud: the rendered inline board script must parse (2026-10-22)
+# ============================================================================
+
+_BOARD_INLINE_MARKER = "Mount-aware API base"
+
+
+def _render_board_inline_script() -> str:
+    """Render the real board page and return its inline board <script> body.
+
+    Raw-template ``node --check`` is meaningless (Django tags are not JS),
+    so this checks what the browser actually runs. No store needed: the
+    page shell renders before any store read (cards load client-side via
+    /graph), so this parses the template output, not the database.
+    """
+    import re
+
+    from django.test import RequestFactory
+
+    from scitex_cards._django import views
+
+    html = views.board_v3_page(RequestFactory().get("/")).content.decode("utf-8")
+    assert _BOARD_INLINE_MARKER in html, "board inline script marker missing"
+    o = html.rfind("<script", 0, html.find(_BOARD_INLINE_MARKER))
+    tag_end = html.find(">", o) + 1
+    c = html.find("</script>", html.find(_BOARD_INLINE_MARKER))
+    body = html[tag_end:c]
+    assert len(body) > 10000, f"board inline script suspiciously short: {len(body)}"
+    return body
+
+
+def test_board_inline_script_renders_parseable_javascript() -> None:
+    """An unclosed catch killed the whole inline script — render /
+    onLayoutChange / renderDetailsBoard ALL undefined, dead board with an
+    empty Details mount. This pins the served script parses."""
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node executable not found on PATH")
+    import tempfile
+
+    body = _render_board_inline_script()
+    # NOTE: `node --check /dev/stdin` cannot read the pytest pipe on this
+    # node build (ENOENT on /proc/<pid>/fd/pipe) — stage through a file.
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+        f.write(body)
+        tmp = f.name
+    proc = subprocess.run(
+        [node, "--check", tmp],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc.returncode == 0, (
+        f"rendered board inline script does not parse: {proc.stderr[:500]}"
+    )
