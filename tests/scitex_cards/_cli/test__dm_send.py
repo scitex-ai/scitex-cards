@@ -206,6 +206,16 @@ print(json.dumps({"exit_code": result.exit_code, "payload": payload}))
         "LANG": "C.UTF-8",
         "PATH": str(Path(sys.executable).parent) + ":/usr/bin:/bin",
         "PYTHONPATH": str(Path(subject.__file__).parents[2]),
+        # The suite silences the currency gate globally (conftest.py), or
+        # every CLI test fails on a checkout scitex-dev reads as behind its
+        # remote (CI incident 2026-07-21, PR #550). A scrubbed fresh process
+        # drops that knob, so the gate preempts --json with plain text and
+        # this test fails on ANY stale checkout — including the release
+        # pipeline's tag checkout once develop advances past the cut
+        # (0.56.3/0.56.4 red, 2026-10-20). `silent` runs the check, raises
+        # nothing, prints nothing: stdout stays pure JSON. Never the bypass
+        # var here — it prints a warning to stdout (same conftest note).
+        "SCITEX_DEV_CURRENCY_SEVERITY": "silent",
         "TMPDIR": str(tmp_path),
         "TZ": "UTC",
     }
