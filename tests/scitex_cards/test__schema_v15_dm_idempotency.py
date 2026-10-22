@@ -3,7 +3,7 @@
 """v15 persists caller retry identity under a database uniqueness guard."""
 
 from scitex_cards._database.schema_rungs import _migrate_v14_to_v15
-from scitex_cards._db import SCHEMA_VERSION, connect
+from scitex_cards._db import connect
 from scitex_cards._db_migrations import table_columns
 from scitex_cards._schema_ladder import SHAPE_LADDER
 
@@ -25,10 +25,12 @@ def test_migration_adds_client_request_id(new_store):
 def test_version_and_physical_ladder_have_v15():
     # Arrange
     versions = {version for version, *_ in SHAPE_LADDER}
-    # Act
-    version = SCHEMA_VERSION
+    # Act — literal 15, NOT the live constant: the newest version file owns
+    # the "current" assertion (v16 holds it now), and every older file keeps
+    # pinning its own rung so a dropped rung fails HERE, naming its version.
+    version = 15
     # Assert
-    assert version == 15 and version in versions
+    assert version in versions
 
 
 # EOF

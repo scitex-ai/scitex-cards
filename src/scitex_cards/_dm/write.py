@@ -77,6 +77,7 @@ from .write_rows import (  # noqa: E402,F401
     next_member_seq,
     next_seq,
     record_member_event,
+    record_visibility_event,
 )
 
 
@@ -291,6 +292,59 @@ def remove_member(
     return _member_change(thread_id, who, "leave", db, store, actor)
 
 
+def set_thread_visibility(
+    thread_id: str,
+    reader: str,
+    hidden: bool,
+    *,
+    db: str | Path | None = None,
+    store: str | Path | None = None,
+    actor: str | None = None,
+) -> dict:
+    """Hide (or unhide) ``thread_id`` for ``reader``. View state, not content.
+
+    Hiding appends a ``hide`` event; unhiding appends a later ``unhide``
+    event — never a deletion, which ``dm_visibility_events_no_delete``
+    refuses. The thread's messages, members and receipts are untouched, so
+    hiding is NOT deletion under the operator's append-only ruling: it only
+    decides whether this reader's list shows the row.
+
+    Raises :class:`KeyError` for an unknown thread: hiding names an existing
+    conversation, so a peer with no thread is a caller error, not a row.
+
+    ``changed`` answers the STATE flip, not the row insert: repeating the
+    current state appends a (deduplicated) event but changes nothing, and
+    the tapping client renders from state, not from log length.
+    """
+    from .read import hidden_for_conn as _currently_hidden
+
+    action = "hide" if hidden else "unhide"
+    conn = _open(db, store)
+    try:
+        begin_write_transaction(conn)
+        if not conn.execute(
+            "SELECT 1 FROM dm_threads WHERE id = ?", (thread_id,)
+        ).fetchone():
+            raise KeyError(f"unknown thread {thread_id!r}")
+        was_hidden = thread_id in _currently_hidden(conn, reader)
+        changed = hidden != was_hidden
+        record_visibility_event(
+            conn, thread_id, reader, action, actor=actor
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {
+        "thread_id": thread_id,
+        "reader": reader,
+        "hidden": hidden,
+        "changed": changed,
+    }
+
+
 def _known_messages(conn: StoreConnection, message_ids: list[str]) -> list[str]:
     """Those of ``message_ids`` the store actually holds, order preserved."""
     placeholders = ", ".join("?" for _ in message_ids)
@@ -384,7 +438,9 @@ __all__ = [
     "next_member_seq",
     "next_seq",
     "record_member_event",
+    "record_visibility_event",
     "remove_member",
+    "set_thread_visibility",
     "tombstone",
 ]
 

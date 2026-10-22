@@ -185,7 +185,16 @@ ENV_STORE_DSN = "SCITEX_STORE_DSN"
 #: ``require_pinned_store`` REPORTS and gates nothing while nothing is pinned.
 #: The artifact exists and its effect does not yet, which is a state worth being
 #: able to name.
-SCHEMA_VERSION = 15
+#:
+#: v16 (DM spaces hide/unhide, card cards-dm-spaces-crud-hide-20261022) adds
+#: ``dm_visibility_events`` — the per-reader hide/unhide event log. Additive,
+#: ``IF NOT EXISTS`` throughout; older clients opening a v16 store get the
+#: loud ``SchemaMigrationRequired`` (fail-loud, never silent), and an
+#: administrator advances the shared store with ``scitex-cards init-store
+#: --shared``. Hiding is view state, not content: the append-only triggers on
+#: ``dm_messages`` are untouched, and unhiding is a later event row, never a
+#: deletion (``dm_visibility_events_no_delete``).
+SCHEMA_VERSION = 16
 
 
 def resolve_db_path(explicit: str | Path | None = None) -> Path:

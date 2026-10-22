@@ -49,6 +49,7 @@ from .._schema_probe import _sole_value
 # package, so a module-level import here cannot cycle.
 from .ids import (
     derived_member_event_id,
+    derived_visibility_event_id,
     origin_host,
     resolve_dm_db,
     utc_now_iso,
@@ -265,13 +266,78 @@ def insert_receipt(
     return cur.rowcount > 0
 
 
+def record_visibility_event(
+    conn: StoreConnection,
+    thread_id: str,
+    reader: str,
+    action: str,
+    *,
+    ts: str | None = None,
+    actor: str | None = None,
+    host: str | None = None,
+    event_id: str | None = None,
+) -> bool:
+    """Append one hide/unhide event. True iff it was new.
+
+    ``action`` is ``'hide'`` or ``'unhide'``. Unhiding is a LATER ROW, never
+    a deleted one — the same rule ``record_member_event`` states for leave,
+    which is what keeps an old hide answerable after the fact and what the
+    ``dm_visibility_events_no_delete`` trigger enforces.
+
+    The ``seq`` counter is load-bearing, not decoration: timestamps here are
+    second-resolution, so a hide and an unhide in the same second (a double
+    tap on the row) are indistinguishable by ``ts``. The fold's tie-break
+    would then fall through to the content-hash id — the exact coin flip
+    ``record_member_event``'s docstring records for membership.
+    """
+    if action not in ("hide", "unhide"):
+        raise ValueError(
+            f"visibility action must be 'hide' or 'unhide', got {action!r}"
+        )
+    stamp = ts or utc_now_iso()
+    cur = conn.execute(
+        "INSERT INTO dm_visibility_events"
+        "(id, thread_id, reader, action, ts, seq, actor, origin_host,"
+        " record_json) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        " ON CONFLICT DO NOTHING",
+        (
+            event_id or derived_visibility_event_id(thread_id, reader, action, stamp),
+            thread_id,
+            reader,
+            action,
+            stamp,
+            next_visibility_seq(conn, thread_id, reader),
+            actor,
+            host or origin_host(),
+            _dumps({}),
+        ),
+    )
+    return cur.rowcount > 0
+
+
+def next_visibility_seq(conn: StoreConnection, thread_id: str, reader: str) -> int:
+    """``1 + MAX(seq)`` for this ``(thread, reader)`` — the visibility counter.
+
+    Read inside the caller's ``BEGIN IMMEDIATE``, like ``next_member_seq``,
+    so two writers cannot observe the same maximum.
+    """
+    row = conn.execute(
+        "SELECT COALESCE(MAX(seq), 0) FROM dm_visibility_events"
+        " WHERE thread_id = ? AND reader = ?",
+        (thread_id, reader),
+    ).fetchone()
+    return int(_sole_value(row)) + 1
+
+
 __all__ = [
     "ensure_thread",
     "insert_message",
     "insert_receipt",
     "next_member_seq",
     "next_seq",
+    "next_visibility_seq",
     "record_member_event",
+    "record_visibility_event",
 ]
 
 # EOF

@@ -233,6 +233,51 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   #agents .agent .preview { color: var(--dim); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #agents .empty { color: var(--dim); font-size: 0.8rem; padding: 14px; }
+  /* Project selector row (operator 2026-10-22: at the top of the
+     conversation list, like other applications). The canonical SDK partial
+     renders inside; this only gives it the row's spacing so a missing
+     provider costs nothing and a present one aligns with the filter row. */
+  #dm-project { flex: 0 0 auto; padding: 8px 8px 0; }
+  #dm-project:empty { display: none; }
+  /* ---- hide/unhide (card cards-dm-spaces-crud-hide-20261022) ----
+     iOS pattern: the row slides left over a Hide action (touch swipe);
+     on desktop the same action appears on hover/focus instead of a slide.
+     ONE button serves both — a second one would drift. The wrap is the
+     positioned parent; .agent translates, the action sits beneath it. */
+  #agents .agent-wrap { position: relative; overflow: hidden; }
+  #agents .agent { position: relative; z-index: 1; background: var(--panel); transition: transform 0.18s ease-out; touch-action: pan-y; }
+  #agents .agent-wrap.open .agent { transform: translateX(-72px); }
+  #agents .row-act {
+    position: absolute; top: 0; bottom: 0; right: 0; width: 72px; z-index: 0;
+    border: none; border-left: 1px solid var(--line); cursor: pointer;
+    font-size: 0.75rem; font-weight: 600; font-family: inherit;
+    opacity: 0; pointer-events: none;
+  }
+  /* Touch: the slide reveals the action sitting BENEATH the row (iOS).
+     Desktop: no slide — the action overlays the row's end on hover/focus,
+     so the row never shifts under a mouse that is about to click it. */
+  #agents .agent-wrap.open .row-act { opacity: 1; pointer-events: auto; }
+  #agents .agent-wrap:not(.open):hover .row-act, #agents .agent-wrap:not(.open):focus-within .row-act { opacity: 1; pointer-events: auto; z-index: 2; }
+  #agents .row-hide { background: var(--panel-2); color: var(--dim); }
+  #agents .row-hide:hover { color: var(--text); }
+  #agents .row-unhide { background: var(--panel-2); color: var(--text-link); }
+  /* Hidden section: a disclosure row at the end of the list, iOS Hidden-album
+     style. Collapsed by default; expanding shows the hidden rows with an
+     Unhide action each. Unread hidden threads count into the disclosure. */
+  #agents .hidden-toggle {
+    display: flex; width: 100%; align-items: center; gap: 6px;
+    background: transparent; border: none; border-top: 1px solid var(--line);
+    color: var(--dim); font-size: 0.78rem; font-family: inherit;
+    padding: 10px 12px; cursor: pointer; text-align: left;
+  }
+  #agents .hidden-toggle:hover { color: var(--text); }
+  #agents .hidden-toggle .chev { display: inline-block; transition: transform 0.15s ease-out; }
+  #agents .hidden-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+  #agents .hidden-toggle .count {
+    margin-left: auto; background: var(--panel-2); color: var(--dim);
+    border-radius: 9px; font-size: 0.68rem; font-weight: 700; padding: 1px 7px;
+  }
+  #agents .agent-wrap.is-hidden .agent .name { color: var(--dim); font-weight: 400; }
 
   /* ---- thread (right) ---- */
   #thread-pane { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
@@ -726,7 +771,7 @@ the tab row below it arrive via the shared partial, identical on both pages.
   messages with the agents", and the browser tab reads "DM — SciTeX Cards v…").
   The band above the switcher names the PRODUCT; the switcher names the page.
   {% endcomment %}
-  {% include "scitex_cards/_page_header.html" with page_title="SciTeX Cards" %}
+  {% include "scitex_cards/_page_header.html" with page_title="SciTeX Cards" header_picker=False %}
 </header>
 {% include "scitex_cards/_page_tabs.html" with active="chat" %}
 <div id="dm-pane">
@@ -750,6 +795,21 @@ template). `#agents` keeps its id because the mobile drawer is mounted on it and
 every `#agents .agent` rule still matches through the new wrapper.
 {% endcomment %}
   <nav id="agents" aria-label="Agents">
+{% comment %}
+The project selector lives HERE — at the top of the conversation list —
+not in the header. Operator 2026-10-22: it "must be placed there just like
+other applications", and there is the agent-list sidebar they inspected.
+The canonical SDK partial renders it (same markup the header used to serve,
+so behaviour and styling are identical); this page passes
+`header_picker=False` above so the header slot stays empty and the page
+carries exactly ONE selector. Like the filter row, it CANNOT live inside
+`#agent-list` — `renderAgents` clears that element on every poll.
+{% endcomment %}
+    {% if cards_project_picker_available %}
+    <div id="dm-project">
+      {% include "scitex_cards/_project_picker.html" with current=cards_current_project_id picker_scope=app_scope %}
+    </div>
+    {% endif %}
     <div id="agent-filter-row">
       <input id="agent-filter" type="search" autocomplete="off"
              placeholder="Filter agents&hellip;" aria-label="Filter agents"
@@ -904,6 +964,8 @@ off `window` and never the reverse.
   chat_attach.js   attachment uploads AND their rendering (no deps)
   chat_drawer.js   the mobile drawer: state, inert-when-closed, scrim (no deps)
   chat_filter.js   fuzzy filter over the agent list (reads STX.Combobox)
+  chat_visibility.js per-reader hide/unhide decisions, pure (no deps)
+  chat_hide.js     hide/unhide rows + Hidden disclosure (reads ChatVisibility)
   chat_longtext.js the long-body clamp + .txt download (no deps)
   chat_compose.js  the composer: auto-grow + the long-draft offer
                    (reads ChatLongText for the threshold, and is handed
@@ -943,6 +1005,8 @@ if the symbol is missing, so an old SDK costs behaviour, not the page.
 <script defer src="{% static 'scitex_cards/chat/chat_attach.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_drawer.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_filter.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_visibility.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_hide.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_new.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_markdown.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_longtext.js' %}"></script>
@@ -984,7 +1048,7 @@ silent failure for a worse loud one.
 {% endcomment %}
 <script>
 window.addEventListener("load", function () {
-  var required = ["ChatDiff", "ChatWindow", "ChatAvatar"];
+  var required = ["ChatDiff", "ChatWindow", "ChatAvatar", "ChatVisibility", "ChatHide"];
   var missing = required.filter(function (name) { return !window[name]; });
   if (missing.length) {
     console.error(

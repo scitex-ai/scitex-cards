@@ -309,16 +309,23 @@ def test_only_the_picker_partial_loads_the_sdk_tag_library():
 def test_the_shared_header_reaches_the_picker_through_a_guarded_include():
     """The header renders on BOTH top-level pages, so a top-level load there
     took the operator's fleet board and DM down with it, not just the
-    project-scoped page."""
+    project-scoped page.
+
+    The guard also honours the per-page suppression flag: the DM page renders
+    the canonical picker in its sidebar (card cards-dm-spaces-crud-hide-20261022)
+    and passes ``header_picker=False``, so the header slot must stay empty
+    there or the page carries two selectors.
+    """
     # Arrange
     source = (_TEMPLATES / "_page_header.html").read_text("utf-8")
     # Act
     guarded = (
-        '{% if cards_project_picker_available %}' in source,
+        "cards_project_picker_available" in source,
+        "header_picker != False" in source,
         '{% include "scitex_cards/_project_picker.html"' in source,
     )
     # Assert
-    assert guarded == (True, True)
+    assert guarded == (True, True, True)
 
 
 def test_the_project_board_reaches_the_sdk_picker_through_the_same_partial():

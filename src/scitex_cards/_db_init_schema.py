@@ -34,6 +34,7 @@ if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
 
 from ._database.schema_rungs import _migrate_v13_to_v14, _migrate_v14_to_v15
 from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
+from ._db_dm_schema import migrate_v15_to_v16 as _migrate_v15_to_v16
 from ._db_foreign_keys import _migrate_v10_to_v11
 from ._db_lifecycle_columns import _migrate_v12_to_v13
 from ._db_migrations import (
@@ -205,6 +206,10 @@ def init_schema(
     _migrate_v12_to_v13(conn)
     _migrate_v13_to_v14(conn)
     _migrate_v14_to_v15(conn)
+    # v15 -> v16 is a plain additive CREATE TABLE + trigger rung with no lock,
+    # so it belongs with the cheap ones and must not be pushed behind the
+    # advisory-lock rung below (same rule as v11 -> v12 above).
+    _migrate_v15_to_v16(conn)
     # LAST, and after every column rung, because it is the only rung that takes
     # locks on tables the fleet is actively writing. It also SERIALISES ~90
     # clients on an advisory lock rather than letting them race — the same width

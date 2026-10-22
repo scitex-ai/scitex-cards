@@ -41,6 +41,7 @@ DM_TABLES: tuple[str, ...] = (
     "dm_thread_member_events",
     "dm_messages",
     "dm_receipts",
+    "dm_visibility_events",
 )
 
 #: Every trigger this script creates. Named so a guard can assert the ENGINE
@@ -51,6 +52,7 @@ DM_TRIGGERS: tuple[str, ...] = (
     "dm_receipts_no_delete",
     "dm_messages_no_delete",
     "dm_messages_immutable",
+    "dm_visibility_events_no_delete",
 )
 
 SCHEMA_SQL_V5 = """
@@ -146,6 +148,47 @@ BEGIN
 END;
 """
 
+#: v16 delta — the per-reader hide/unhide event log (card
+#: cards-dm-spaces-crud-hide-20261022). Appended to SCHEMA_SQL_V5 above so a
+#: fresh database and a migrated one run BYTE-IDENTICAL statements (the same
+#: rule this module's docstring states for v5), and executed alone by
+#: :func:`migrate_v15_to_v16` on stores that already carry v15.
+#:
+#: AN EVENT LOG, NOT A FLAG COLUMN, for the same reason membership is one:
+#: hiding is a fact that happened ("reader hid thread T at ts"), and unhiding
+#: is a LATER fact, not the deletion of the earlier one
+#: (``dm_thread_member_events``: "Removing a member is a LEAVE ROW, never a
+#: deleted one"). A ``hidden`` column on ``dm_threads`` would also be the wrong
+#: shape — visibility is per-READER, and the thread row is shared.
+#: The ``thread_id`` REFERENCES ``dm_threads(id)`` like the member events do:
+#: hiding names an existing conversation (iOS hides rows, not directory
+#: entries), so hiding a peer with no thread is a 400, not a row.
+SCHEMA_SQL_V16_DELTA = """
+CREATE TABLE IF NOT EXISTS dm_visibility_events (
+    id           TEXT PRIMARY KEY,
+    thread_id    TEXT NOT NULL REFERENCES dm_threads(id),
+    reader       TEXT NOT NULL,
+    action       TEXT NOT NULL,
+    ts           TEXT NOT NULL,
+    seq          INTEGER NOT NULL DEFAULT 0,
+    actor        TEXT,
+    origin_host  TEXT NOT NULL,
+    record_json  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dm_visibility_thread
+    ON dm_visibility_events(thread_id, ts, id);
+CREATE INDEX IF NOT EXISTS idx_dm_visibility_reader
+    ON dm_visibility_events(reader);
+
+CREATE TRIGGER IF NOT EXISTS dm_visibility_events_no_delete
+BEFORE DELETE ON dm_visibility_events BEGIN
+    SELECT RAISE(ABORT,
+        'dm_visibility_events is append-only: unhiding is an unhide event');
+END;
+"""
+
+SCHEMA_SQL_V5 = SCHEMA_SQL_V5 + SCHEMA_SQL_V16_DELTA
+
 
 def migrate_v4_to_v5(conn) -> None:
     """Create the v5 DM tables + triggers on ANY database. Idempotent, additive.
@@ -197,6 +240,25 @@ def _ensure_column(conn, table: str, column: str, decl: str) -> None:
             raise
 
 
-__all__ = ["DM_TABLES", "DM_TRIGGERS", "SCHEMA_SQL_V5", "migrate_v4_to_v5"]
+def migrate_v15_to_v16(conn) -> None:
+    """Create the v16 DM visibility event log on ANY database. Idempotent.
+
+    Same contract as :func:`migrate_v4_to_v5`: every statement is
+    ``IF NOT EXISTS``, so this is a no-op where the table already exists and
+    a plain create where it does not. The SQL is :data:`SCHEMA_SQL_V16_DELTA`
+    — the identical text a fresh database receives as part of
+    ``SCHEMA_SQL_V5`` — so the two paths cannot drift apart.
+    """
+    execute_ddl(conn, SCHEMA_SQL_V16_DELTA)
+
+
+__all__ = [
+    "DM_TABLES",
+    "DM_TRIGGERS",
+    "SCHEMA_SQL_V5",
+    "SCHEMA_SQL_V16_DELTA",
+    "migrate_v4_to_v5",
+    "migrate_v15_to_v16",
+]
 
 # EOF
