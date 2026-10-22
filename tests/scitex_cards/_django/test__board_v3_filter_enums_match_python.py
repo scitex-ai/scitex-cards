@@ -51,12 +51,25 @@ _BOARD_V3_HTML = (
     / "board_v3.html"
 )
 
+#: The board render set. #1116 split board_v3.html into a shell composing
+#: these partials (unified #dm/#board page) — the inline filter enum and
+#: the Stale Review block now live in _board_foot.html. Scan the family,
+#: in include order, wherever a test means "the board template".
+_BOARD_FAMILY = (
+    _BOARD_V3_HTML,
+    _BOARD_V3_HTML.parent / "_board_head.html",
+    _BOARD_V3_HTML.parent / "_board_pane.html",
+    _BOARD_V3_HTML.parent / "_board_foot.html",
+)
+
 _STATUS_VOCAB = frozenset(VALID_STATUSES) | frozenset(ABOLISHED_STATUSES)
 
 
 @pytest.fixture(scope="module")
 def template_source() -> str:
-    return _BOARD_V3_HTML.read_text(encoding="utf-8")
+    return "\n".join(
+        path.read_text(encoding="utf-8") for path in _BOARD_FAMILY
+    )
 
 
 def _status_arrays(source: str) -> list[set[str]]:

@@ -65,10 +65,25 @@ _BOARD_V3_TEMPLATE = (
     / "board_v3.html"
 )
 
+#: The board render set. #1116 split board_v3.html into a shell composing
+#: these partials (unified #dm/#board page, one shared header), so a pin
+#: reading the shell alone sees nothing. Read the family, in include
+#: order, wherever a test means "the board template".
+_BOARD_FAMILY = (
+    _BOARD_V3_TEMPLATE,
+    _BOARD_V3_TEMPLATE.parent / "_board_head.html",
+    _BOARD_V3_TEMPLATE.parent / "_board_pane.html",
+    _BOARD_V3_TEMPLATE.parent / "_board_foot.html",
+)
+
 
 def _read(path: Path) -> str:
     assert path.is_file(), f"expected file missing: {path}"
     return path.read_text(encoding="utf-8")
+
+
+def _read_board_family() -> str:
+    return "\n".join(_read(path) for path in _BOARD_FAMILY)
 
 
 # ============================================================================
@@ -176,14 +191,14 @@ def test_toolbar_css_balanced_braces() -> None:
     ],
 )
 def test_template_renders_group_class(selector_class: str) -> None:
-    """board_v3.html must mount each surviving group / primary / divider
+    """The board template family must mount each surviving group / primary / divider
     class on at least one element so the CSS rules actually find targets."""
     # Arrange
     # Act
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read_board_family()
     # Assert
     assert selector_class in html, (
-        f"board_v3.html missing class {selector_class!r} on any element"
+        f"board template family missing class {selector_class!r} on any element"
     )
 
 
@@ -191,10 +206,10 @@ def test_template_loads_toolbar_css() -> None:
     """The toolbar CSS must be wired into the template."""
     # Arrange
     # Act
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read_board_family()
     # Assert
     assert "07-toolbar-groups.css" in html, (
-        "board_v3.html never <link>s 07-toolbar-groups.css"
+        "board template family never <link>s 07-toolbar-groups.css"
     )
 
 
@@ -211,7 +226,7 @@ def _view_group_body(html: str) -> str:
 def test_template_view_group_block_exists() -> None:
     """The VIEW group wrapper must still be in the template."""
     # Arrange
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read_board_family()
     # Act
     body = _view_group_body(html)
     # Assert
@@ -222,7 +237,7 @@ def test_template_view_group_contains_layout() -> None:
     """The VIEW group holds the Layout segmented control. Sort and Group
     are NOT here any more — they were removed with the Column layout."""
     # Arrange
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read_board_family()
     # Act
     view_body = _view_group_body(html)
     # Assert
@@ -234,7 +249,7 @@ def test_template_view_group_dropped_sort_and_group(gone: str) -> None:
     """Sort + Group only ever ordered/clustered COLUMN cards. The Column
     layout is gone, so they are too (operator TG 2026-07-13)."""
     # Arrange
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read_board_family()
     # Act
     view_body = _view_group_body(html)
     # Assert
@@ -260,7 +275,7 @@ def _search_group_match(html: str):
 def test_template_primary_zone_block_exists() -> None:
     """The PRIMARY action zone wrapper must still be in the template."""
     # Arrange
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read_board_family()
     # Act
     m = _primary_zone_match(html)
     # Assert
@@ -271,7 +286,7 @@ def test_template_primary_zone_contains_add_task() -> None:
     """The PRIMARY action zone must wrap the +Add Task button so it pops
     as the right-most, brand-accent element."""
     # Arrange
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read_board_family()
     # Act
     m = _primary_zone_match(html)
     # Assert
@@ -283,7 +298,7 @@ def test_template_primary_zone_contains_add_task() -> None:
 def test_template_search_group_block_exists() -> None:
     """The SEARCH group wrapper must still be in the template."""
     # Arrange
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read_board_family()
     # Act
     m = _search_group_match(html)
     # Assert
@@ -294,7 +309,7 @@ def test_template_search_group_contains_search_input() -> None:
     """The SEARCH group must wrap the search input. The Filters popover is
     no longer here — the filters moved to the right-hand Details column."""
     # Arrange
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read_board_family()
     # Act
     m = _search_group_match(html)
     # Assert
@@ -321,9 +336,11 @@ def test_template_preserves_every_surviving_control(needle: str) -> None:
     survivors with it. This guards against an accidental drop."""
     # Arrange
     # Act
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read_board_family()
     # Assert
-    assert needle in html, f"board_v3.html lost a surviving toolbar control: {needle!r}"
+    assert needle in html, (
+        f"board template family lost a surviving toolbar control: {needle!r}"
+    )
 
 
 # ============================================================================
@@ -350,10 +367,10 @@ def test_template_dropped_every_retired_control(needle: str) -> None:
     remove, so pin their ABSENCE."""
     # Arrange
     # Act
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read_board_family()
     # Assert
     assert needle not in html, (
-        f"retired toolbar control is back in board_v3.html: {needle!r}"
+        f"retired toolbar control is back in the board template family: {needle!r}"
     )
 
 
@@ -362,10 +379,10 @@ def test_status_group_is_gone_from_the_template() -> None:
     blocking-me + hidden) left the header. Its wrapper must be gone too."""
     # Arrange
     # Act
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read_board_family()
     # Assert
     assert "stx-cards-filterbar__group--status" not in html, (
-        "the STATUS toolbar group is back in board_v3.html"
+        "the STATUS toolbar group is back in the board template family"
     )
 
 
@@ -374,7 +391,7 @@ def test_recent_count_pill_moved_to_details_not_deleted() -> None:
     still exist somewhere in the template."""
     # Arrange
     # Act
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read_board_family()
     # Assert
     assert 'id="recent-count-pill"' in html, "the 'N new / 24 h' counter was deleted"
 
@@ -384,6 +401,6 @@ def test_details_stats_panel_hosts_the_moved_counter() -> None:
     the filterbar."""
     # Arrange
     # Act
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read_board_family()
     # Assert
     assert 'id="details-stats"' in html, "Details > Stats panel is missing"
