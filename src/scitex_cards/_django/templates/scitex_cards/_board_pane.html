@@ -27,11 +27,12 @@
   <div class="filterbar stx-cards-headerbar">
     <div class="fb-left">
       {% comment %}
-        Identity band — switcher, heading, version — from the SHARED partial
-        the DM page renders too, so the two headers cannot drift (operator,
-        2026-07-29: 「ヘッダーがそろっていないのが気持ち悪い」).
+        Identity band — kept as a spacer so the search input stays centred.
+        The LIVE chip moved to Details > Board (operator 2026-10-22: View,
+        Span, Layout AND Live all belong in the Details column, so the
+        freed header width goes to the search box). renderLiveRow() paints
+        the live state there; see the details-board section.
       {% endcomment %}
-      <span class="small"><span class="live-dot"></span>LIVE</span>
     </div>
 
     <div class="fb-center stx-cards-filterbar__group stx-cards-filterbar__group--search">
@@ -74,12 +75,17 @@
        PR); fix-forward in this PR per lead a2a
        `f7a5d37930b9479ca7e53a7e316c132d`, 2026-06-14, after the operator
        reported it live. {% endcomment %}
+    {% comment %}
+      VIEW group RETIRED 2026-10-22 (operator: View, Span, Layout, Live all
+      belong in the Details column). The Layout segmented control moved to
+      Details > Board; its buttons (ids, classes, onclick) are unchanged so
+      onLayoutChange() + the contract tests need no JS-side migration — the
+      test now reads the Details section instead of this band. This group
+      wrapper stays as an (empty) mount point so the contract selector still
+      resolves; the CSS keeps its rules for the Details-hosted control.
+    {% endcomment %}
     <div class="stx-cards-filterbar__group stx-cards-filterbar__group--view"
          role="group" aria-label="View controls — layout, sort, group">
-    <!-- P9 (lead brief 2026-06-12) — sort-by control. The headline use
-         is "sort by deadline" (pairs with the P4 deadline schema landing
-         later). For now the operator can sort by deadline (parsed from
-         title), priority rank, status, project, last-activity. -->
     <!-- LAYOUT AXIS — the board renders the SAME data in one of three
          orthogonal layouts: Timeline (time raster), Wall (sticky notes),
          Graph (dependency map, mermaid SVG).
@@ -98,8 +104,8 @@
          so the boot path + onLayoutChange() coerce any stored
          column/table/stale value to timeline — otherwise an operator whose
          localStorage still said "column" would land on a BLANK board). -->
-    <span class="filt-layout"
-          title="Switch layout: Timeline (time raster) | Wall (sticky notes) | Graph (dep map)">
+    <span class="filt-layout" hidden
+          title="Moved to Details > Board — kept for contract">
       <label class="filt-layout-label">{% translate "Layout" %}</label>
       <div class="filt-layout-seg" role="radiogroup" aria-label="{% translate 'Layout' %}">
         <button type="button" class="filt-layout-btn filt-layout-btn--on"
@@ -295,6 +301,61 @@
                 title="Collapse / expand the Details column">›</button>
       </div>
       <div class="stx-shell-sidebar__content details-body">
+
+        <div class="details-section open" data-id="board">
+          <button type="button" class="details-section-toggle"
+                  onclick="toggleDetailsSection('board')">
+            <span class="details-section-title">{% translate "Board" %}</span>
+            <span class="details-chevron" aria-hidden="true">▸</span>
+          </button>
+          <div class="details-section-body">
+            {% comment %}
+              BOARD VIEW CONTROLS (operator 2026-10-22: View, Span, Layout
+              and Live move out of the header into the Details column, so
+              the freed header width goes to the search box). ONE state, one
+              set of setters — this section only re-homes the chrome:
+                View / Span — the timeline's own tabs (detailsBoardHtml),
+                  same setTimelineView/setTimelineWindow setters the canvas
+                  row used to call. "Span" is the operator-approved rename
+                  of "Window" (Day/Week/Month name a time SPAN, not a window
+                  manager).
+                Layout — the same filt-layout segmented buttons the header
+                  carried (ids/classes/onclick UNCHANGED), so
+                  onLayoutChange() and its boot sync need no migration.
+                Live — the live-update chip, repainted by renderLiveRow()
+                  from the same rev/auto-refresh tick that drives the board.
+            {% endcomment %}
+            <div class="details-row" data-details-board="timeline">
+              <div id="details-board-timeline"></div>
+            </div>
+            <div class="details-row" data-details-board="layout">
+              <label for="f-layout-timeline">{% translate "Layout" %}</label>
+              <div class="filt-layout-seg details-layout-seg" role="radiogroup" aria-label="{% translate 'Layout' %}">
+                <button type="button" class="filt-layout-btn filt-layout-btn--on"
+                        id="details-layout-timeline"
+                        data-layout="timeline" onclick="onLayoutChange('timeline')"
+                        role="radio" aria-checked="true"
+                        title="Timeline — time raster by agent/project, or a per-task simple list (day/week/month spans) — default">{% translate "Timeline" %}</button>
+                <button type="button" class="filt-layout-btn" id="details-layout-wall"
+                        data-layout="wall" onclick="onLayoutChange('wall')"
+                        role="radio" aria-checked="false"
+                        title="Wall — sticky notes clustered by assignee">{% translate "Wall" %}</button>
+                <button type="button" class="filt-layout-btn" id="details-layout-graph"
+                        data-layout="graph" onclick="onLayoutChange('graph')"
+                        role="radio" aria-checked="false"
+                        title="Dependency / blocker graph (mermaid)">{% translate "Graph" %}</button>
+                <button type="button" class="filt-layout-btn" id="details-layout-matrix"
+                        data-layout="matrix" onclick="onLayoutChange('matrix')"
+                        role="radio" aria-checked="false"
+                        title="Matrix — urgency × importance quadrants">{% translate "Matrix" %}</button>
+              </div>
+            </div>
+            <div class="details-row" data-details-board="live">
+              <label>{% translate "Live" %}</label>
+              <span class="details-live" id="details-live"><span class="live-dot"></span>LIVE</span>
+            </div>
+          </div>
+        </div>
 
         <div class="details-section open" data-id="stats">
           <button type="button" class="details-section-toggle"

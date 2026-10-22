@@ -225,11 +225,7 @@
         // the Layout segment buttons reflect STATE.layout (sticky across
         // reloads).
         const _curLayout = normalizeLayout(STATE.layout);
-        document.querySelectorAll(".filt-layout-btn").forEach(btn => {
-          const active = btn.getAttribute("data-layout") === _curLayout;
-          btn.classList.toggle("filt-layout-btn--on", active);
-          btn.setAttribute("aria-checked", active ? "true" : "false");
-        });
+        syncLayoutButtons(_curLayout);
         // Sync the Show-done checkbox to the persisted STATE so the
         // popover reflects the actual filter state on first paint.
         const _sdBox = document.getElementById("f-showdone");
@@ -980,6 +976,7 @@
       // nothing "transitions" into existence.
       _flashStatusTransitions(canvas);
       renderStats();
+      renderDetailsBoard();
       _renderRecentCountPill(visible);
       // Update the "show hidden (N)" counter in the filter bar so the
       // operator sees how many cards are currently being filtered out.
@@ -1694,6 +1691,39 @@
       });
     }
 
+    // === Details > Board (View / Span / Layout / Live) ════════════════
+    // Operator 2026-10-22: the header is search + Add Task only; View, Span
+    // (renamed from Window), Layout and Live live in the Details column.
+    // ONE state, two chrome homes — this paints the pane side from the same
+    // TL object + setters the canvas row used to own.
+    function _detailsTL() {
+      if (typeof window._timelineReadState === "function") {
+        try { return window._timelineReadState(); } catch { return null; }
+      }
+      if (window._TL) return { view: window._TL.view, windowKey: window._TL.windowKey, error: window._TL.error };
+      return { view: "agent", windowKey: "1d", error: null };
+    }
+    function renderDetailsBoard() {
+      const host = document.getElementById("details-board-timeline");
+      if (host) {
+        const TL = _detailsTL() || {};
+        const ctl = (window.STX && window.STX.timelineControls) || null;
+        if (ctl && ctl.detailsBoardHtml) {
+          host.innerHTML = ctl.detailsBoardHtml(TL, escapeHtml);
+        } else {
+          // Degraded: sibling module not loaded — plain text beats silence.
+          host.textContent = "View " + (TL.view || "?") + " · Span " + (TL.windowKey || "?");
+        }
+      }
+      const live = document.getElementById("details-live");
+      if (live) {
+        const ok = !!(STATE.graph);
+        live.innerHTML = '<span class="live-dot"></span>' + (ok ? "LIVE" : "CONNECTING");
+        live.classList.toggle("details-live--off", !ok);
+      }
+      syncLayoutButtons(normalizeLayout(STATE.layout));
+    }
+
     // === Stats (Details > Stats) ═════════════════════════════════════
     // "Legend と対応させて … 可視化してください" — the stats MUST read as the
     // legend's twin, so both are generated from the SAME source: the server's
@@ -2032,16 +2062,22 @@
     function normalizeLayout(mode) {
       return VALID_LAYOUTS.includes(mode) ? mode : DEFAULT_LAYOUT;
     }
-    function onLayoutChange(mode) {
-      const m = normalizeLayout(mode);
-      STATE.layout = m;
-      try { localStorage.setItem("scitex-cards:layout", m); } catch {}
-      // Repaint the segment buttons' active state without a full render.
+    // Sync BOTH layout button sets — the Details > Board buttons are
+    // the live ones; the header set stays hidden as the contract mount.
+    // Buttons are keyed by data-layout, so both sets repaint together.
+    function syncLayoutButtons(m) {
       document.querySelectorAll(".filt-layout-btn").forEach(btn => {
         const active = btn.getAttribute("data-layout") === m;
         btn.classList.toggle("filt-layout-btn--on", active);
         btn.setAttribute("aria-checked", active ? "true" : "false");
       });
+    }
+    function onLayoutChange(mode) {
+      const m = normalizeLayout(mode);
+      STATE.layout = m;
+      try { localStorage.setItem("scitex-cards:layout", m); } catch {}
+      // Repaint the segment buttons' active state without a full render.
+      syncLayoutButtons(m);
       render();
     }
 

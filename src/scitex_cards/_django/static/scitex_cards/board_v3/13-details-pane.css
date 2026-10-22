@@ -276,3 +276,42 @@
     border-top: 1px solid var(--border);
   }
 }
+
+/* --- Board controls (Details > Board, operator 2026-10-22) --------------- *
+ * View / Span / Layout / Live moved out of the header so the search box gets
+ * the width. Rows reuse .details-row; the tab chrome reuses the .tl-*
+ * builders (same setters, same state). Only pane-local layout tweaks here.
+ * No hardcoded colors — tokens only (same guard as 07-toolbar-groups). */
+[data-details-board="timeline"] {
+  display: block;
+}
+[data-details-board="timeline"] #details-board-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+[data-details-board="timeline"] .tl-ctl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.details-layout-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.details-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.details-live--off {
+  color: var(--text-muted);
+}
+.details-live--off .live-dot {
+  background: var(--text-muted);
+}

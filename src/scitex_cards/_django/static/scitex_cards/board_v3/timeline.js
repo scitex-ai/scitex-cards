@@ -162,9 +162,12 @@
       globalThis.STX &&
       globalThis.STX.agentAvatar) ||
     null;
+  // View / Span tabs MOVED to Details > Board (operator 2026-10-22):
+  // the canvas keeps only the count + error line. The tabs still call these
+  // same setters, so no call-site migration — the chrome moved, not the API.
   function controlsHtml(countLabel) {
     if (_ctl && _ctl.controlsHtml)
-      return _ctl.controlsHtml(TL, countLabel, escapeHtml);
+      return _ctl.controlsHtml(TL, countLabel, escapeHtml, { compact: true });
     return (
       '<div class="tl-controls"><span class="tl-count">' +
       escapeHtml(countLabel) +
@@ -537,9 +540,15 @@
   }, TL_LIVE_MS);
 
   // Publish the entry points the inline board code + onclick handlers use.
+  // `_timelineState` exposes the READ-ONLY view/window selection so the
+  // Details > Board section can repaint its tabs without reaching into the
+  // IIFE's locals (same stance as window._TL one block up).
   window._renderTimelineView = renderTimeline;
   window.setTimelineView = setTimelineView;
   window.setTimelineWindow = setTimelineWindow;
+  window._timelineReadState = function () {
+    return { view: TL.view, windowKey: TL.windowKey, error: TL.error };
+  };
   window.loadTimeline = loadTimeline;
   window.timelineOnStoreChange = timelineOnStoreChange;
 })();
