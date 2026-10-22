@@ -41,10 +41,18 @@
   The SDK's own tag decides whether the scope, viewer and host provider permit
   a picker. Including this partial adds no second selector and no standalone
   behaviour of its own.
+{% endcomment %}{% comment %}
+  allow_user_scope=True is the whole reason a USER-scoped leaf (board, DM)
+  can carry the canonical picker: without it the SDK tag renders nothing
+  unless the app is project-scoped (measured 2026-10-22 — the header slot
+  was empty on every page despite a registered host provider, because the
+  scope gate fires before any provider is consulted). The project board
+  passes scope="project" and is unaffected by the flag. Card
+  cards-dm-spaces-crud-hide-20261022.
 {% endcomment %}{% if picker_scope %}
-  {% scitex_project_picker scope=picker_scope current=current as project_picker_markup %}
+  {% scitex_project_picker scope=picker_scope current=current allow_user_scope=True as project_picker_markup %}
 {% else %}
-  {% scitex_project_picker current=current as project_picker_markup %}
+  {% scitex_project_picker current=current allow_user_scope=True as project_picker_markup %}
 {% endif %}
 {% if project_picker_markup %}
   {{ project_picker_markup }}

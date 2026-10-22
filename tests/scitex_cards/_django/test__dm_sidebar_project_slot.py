@@ -116,6 +116,19 @@ def test_header_slot_honours_the_suppression_flag():
     honoured
 
 
+def test_picker_partial_opts_user_scoped_leaves_in():
+    """The SDK tag renders nothing for user-scoped apps unless the leaf
+    opts in — measured 2026-10-22: the slot was empty on every page
+    despite a registered host provider. The partial must carry the
+    opt-in or the sidebar/header slots stay empty forever."""
+    # Arrange
+    source = (_TEMPLATES / "_project_picker.html").read_text(encoding="utf-8")
+    # Act
+    opted_in = source.count("allow_user_scope=True") >= 2
+    # Assert
+    assert opted_in
+
+
 # --- hide/unhide wiring ----------------------------------------------------
 
 
