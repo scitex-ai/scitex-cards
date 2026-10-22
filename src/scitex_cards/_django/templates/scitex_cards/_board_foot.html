@@ -2980,8 +2980,13 @@
     renderStats();
     // Details > Board paints even when the graph fails (operator sees the
     // View/Span/Layout/Live chrome on an error-state board, not an empty
-    // Details column). render() re-syncs it on every data paint.
-    try { renderDetailsBoard(); } catch { /* pane not mounted — board still loads */ }
+    // Details column). Gated on BOARD_MODULES_READY so the deferred
+    // timelineControls sibling has published detailsBoardHtml — an
+    // ungated boot call painted the degraded text fallback. render()
+    // re-syncs the tab states on every data paint.
+    BOARD_MODULES_READY.then(() => {
+      try { renderDetailsBoard(); } catch { /* pane not mounted — board still loads */ }
+    });
     attachFilters();
     loadGraph();
     setInterval(autoRefreshTick, 5000);
