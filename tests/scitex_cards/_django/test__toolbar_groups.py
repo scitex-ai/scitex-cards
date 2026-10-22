@@ -55,15 +55,18 @@ _TOOLBAR_CSS = (
     / "board_v3"
     / "07-toolbar-groups.css"
 )
-_BOARD_V3_TEMPLATE = (
+_BOARD_PANE_TEMPLATE = (
     _REPO_ROOT
     / "src"
     / "scitex_cards"
     / "_django"
     / "templates"
     / "scitex_cards"
-    / "board_v3.html"
+    / "_board_pane.html"
 )
+# board_v3.html includes _board_pane.html, so reads fall through to the
+# pane for the markup that moved there (VIEW group → Details > View).
+_BOARD_V3_TEMPLATE = _BOARD_PANE_TEMPLATE
 
 
 def _read(path: Path) -> str:
@@ -169,7 +172,6 @@ def test_toolbar_css_balanced_braces() -> None:
 @pytest.mark.parametrize(
     "selector_class",
     [
-        "stx-cards-filterbar__group--view",
         "stx-cards-filterbar__group--search",
         "stx-cards-filterbar__primary",
         "stx-cards-filterbar__divider",
@@ -188,57 +190,81 @@ def test_template_renders_group_class(selector_class: str) -> None:
 
 
 def test_template_loads_toolbar_css() -> None:
-    """The toolbar CSS must be wired into the template."""
+    """The toolbar CSS must be wired into the template tree."""
     # Arrange
     # Act
-    html = _read(_BOARD_V3_TEMPLATE)
+    head = _read(
+        _REPO_ROOT
+        / "src"
+        / "scitex_cards"
+        / "_django"
+        / "templates"
+        / "scitex_cards"
+        / "_board_head.html"
+    )
     # Assert
-    assert "07-toolbar-groups.css" in html, (
-        "board_v3.html never <link>s 07-toolbar-groups.css"
+    assert "07-toolbar-groups.css" in head, (
+        "_board_head.html never <link>s 07-toolbar-groups.css"
     )
 
 
-def _view_group_body(html: str) -> str:
+def _view_section_body(html: str) -> str:
     m = re.search(
-        r"stx-cards-filterbar__group--view[^>]*>(.*?)\{#\s*end VIEW group",
+        r'data-id="view"[^>]*>(.*?data-id="filters")',
         html,
         flags=re.DOTALL,
     )
-    assert m, "could not locate VIEW group block in template"
+    assert m, "could not locate Details > View section in template"
     return m.group(1)
 
 
-def test_template_view_group_block_exists() -> None:
-    """The VIEW group wrapper must still be in the template."""
+def test_template_view_section_block_exists() -> None:
+    """The Details > View section wrapper must be in the template
+    (moved 2026-10-22, operator: filterbar VIEW group → Details)."""
     # Arrange
     html = _read(_BOARD_V3_TEMPLATE)
     # Act
-    body = _view_group_body(html)
+    body = _view_section_body(html)
     # Assert
-    assert body.strip(), "VIEW group block is empty"
+    assert body.strip(), "Details > View section is empty"
 
 
-def test_template_view_group_contains_layout() -> None:
-    """The VIEW group holds the Layout segmented control. Sort and Group
+def test_template_view_section_contains_layout() -> None:
+    """Details > View holds the Layout segmented control. Sort and Group
     are NOT here any more — they were removed with the Column layout."""
     # Arrange
     html = _read(_BOARD_V3_TEMPLATE)
     # Act
-    view_body = _view_group_body(html)
+    view_body = _view_section_body(html)
     # Assert
-    assert 'class="filt-layout"' in view_body, "VIEW group missing Layout"
+    assert 'class="filt-layout"' in view_body, "Details > View missing Layout"
+    assert 'id="f-layout-timeline"' in view_body
+    assert 'id="f-layout-wall"' in view_body
+    assert 'id="f-layout-graph"' in view_body
+    assert 'id="f-layout-matrix"' in view_body
+
+
+def test_template_filterbar_view_group_is_gone() -> None:
+    """The filterbar VIEW group wrapper must NOT be in the template any
+    more — Layout moved to Details > View (operator 2026-10-22)."""
+    # Arrange
+    html = _read(_BOARD_V3_TEMPLATE)
+    # Act / Assert
+    assert "stx-cards-filterbar__group--view" not in html, (
+        "filterbar VIEW group is back — Layout belongs in Details > View"
+    )
 
 
 @pytest.mark.parametrize("gone", ['class="filt-sort"', 'class="filt-groupby"'])
-def test_template_view_group_dropped_sort_and_group(gone: str) -> None:
+def test_template_view_section_dropped_sort_and_group(gone: str) -> None:
     """Sort + Group only ever ordered/clustered COLUMN cards. The Column
     layout is gone, so they are too (operator TG 2026-07-13)."""
     # Arrange
     html = _read(_BOARD_V3_TEMPLATE)
     # Act
-    view_body = _view_group_body(html)
+    view_body = _view_section_body(html)
     # Assert
-    assert gone not in view_body, f"VIEW group still carries retired control {gone!r}"
+    assert gone not in view_body, f"Details > View still carries retired control {gone!r}"
 
 
 def _primary_zone_match(html: str):
@@ -369,12 +395,23 @@ def test_status_group_is_gone_from_the_template() -> None:
     )
 
 
+_BOARD_FOOT_TEMPLATE = (
+    _REPO_ROOT
+    / "src"
+    / "scitex_cards"
+    / "_django"
+    / "templates"
+    / "scitex_cards"
+    / "_board_foot.html"
+)
+
+
 def test_recent_count_pill_moved_to_details_not_deleted() -> None:
     """ "114 new/24h ですが、それも details のほうで" — the counter MOVED. It must
-    still exist somewhere in the template."""
+    still exist somewhere in the template tree."""
     # Arrange
     # Act
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read(_BOARD_PANE_TEMPLATE) + _read(_BOARD_FOOT_TEMPLATE)
     # Assert
     assert 'id="recent-count-pill"' in html, "the 'N new / 24 h' counter was deleted"
 
@@ -384,6 +421,6 @@ def test_details_stats_panel_hosts_the_moved_counter() -> None:
     the filterbar."""
     # Arrange
     # Act
-    html = _read(_BOARD_V3_TEMPLATE)
+    html = _read(_BOARD_PANE_TEMPLATE)
     # Assert
     assert 'id="details-stats"' in html, "Details > Stats panel is missing"

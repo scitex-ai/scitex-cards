@@ -59,7 +59,8 @@
     <div class="fb-right">
     {% comment %} board UI overhaul part 2 (2026-06-14, operator complaint via lead
        a2a `d1af161e`) — explicit subgroups in the right band so the
-       controls stop visually colliding:
+       controls stop visually colliding. VIEW group removed 2026-10-22
+       (operator): Layout segmented control moved to Details > View.
          VIEW    = Layout + Sort + Group
          STATUS  = recent-count + Reload + hide-project + blocking-me + hidden
          PRIMARY = + Add Task (separated by a divider, brand-accent)
@@ -74,61 +75,9 @@
        PR); fix-forward in this PR per lead a2a
        `f7a5d37930b9479ca7e53a7e316c132d`, 2026-06-14, after the operator
        reported it live. {% endcomment %}
-    <div class="stx-cards-filterbar__group stx-cards-filterbar__group--view"
-         role="group" aria-label="View controls — layout, sort, group">
-    <!-- P9 (lead brief 2026-06-12) — sort-by control. The headline use
-         is "sort by deadline" (pairs with the P4 deadline schema landing
-         later). For now the operator can sort by deadline (parsed from
-         title), priority rank, status, project, last-activity. -->
-    <!-- LAYOUT AXIS — the board renders the SAME data in one of three
-         orthogonal layouts: Timeline (time raster), Wall (sticky notes),
-         Graph (dependency map, mermaid SVG).
-
-         Column (kanban) + Table (flat rows) were REMOVED 2026-07-13
-         (operator TG: "Column, Table view がいらないです、削除してください").
-         Their renderers, chrome (pin / drag-reorder / column ctx-menu /
-         per-card checkboxes) and the controls that only drove them (Sort,
-         Group, Group-by-time, bulk-select toolbar, project-column hide)
-         went with them — every one of those acted on column CARDS, which
-         no longer exist. The Stale layout was removed the same way on
-         2026-07-10.
-
-         Timeline is FIRST *and* the DEFAULT (operator 2026-07-10 —
-         "Timeline view 本丸なので一番左に"; Column used to be the default,
-         so the boot path + onLayoutChange() coerce any stored
-         column/table/stale value to timeline — otherwise an operator whose
-         localStorage still said "column" would land on a BLANK board). -->
-    <span class="filt-layout"
-          title="Switch layout: Timeline (time raster) | Wall (sticky notes) | Graph (dep map)">
-      <label class="filt-layout-label">{% translate "Layout" %}</label>
-      <div class="filt-layout-seg" role="radiogroup" aria-label="{% translate 'Layout' %}">
-        <button type="button" class="filt-layout-btn filt-layout-btn--on"
-                id="f-layout-timeline"
-                data-layout="timeline" onclick="onLayoutChange('timeline')"
-                role="radio" aria-checked="true"
-                title="Timeline — time raster by agent/project, or a per-task simple list (day/week/month windows) — default">{% translate "Timeline" %}</button>
-        <button type="button" class="filt-layout-btn" id="f-layout-wall"
-                data-layout="wall" onclick="onLayoutChange('wall')"
-                role="radio" aria-checked="false"
-                title="Wall — sticky notes clustered by assignee; the selected agent's next-up stack rises to the top">{% translate "Wall" %}</button>
-        <button type="button" class="filt-layout-btn" id="f-layout-graph"
-                data-layout="graph" onclick="onLayoutChange('graph')"
-                role="radio" aria-checked="false"
-                title="Dependency / blocker graph (mermaid)">{% translate "Graph" %}</button>
-        {% comment %}
-          Matrix — urgency×importance quadrants (ADR-0011 §8). The layout
-          itself lives in 14-matrix.js; this is only the toggle.
-          (hook-bypass: line-limit — this template is 3425 lines, already
-          over the 1024 cap before this change; splitting it is tracked
-          separately rather than smuggled into the matrix PR.)
-        {% endcomment %}
-        <button type="button" class="filt-layout-btn" id="f-layout-matrix"
-                data-layout="matrix" onclick="onLayoutChange('matrix')"
-                role="radio" aria-checked="false"
-                title="Matrix — urgency × importance quadrants (I urgent+important / II important / III urgent / IV neither)">{% translate "Matrix" %}</button>
-      </div>
-    </span>
-    </div>{# end VIEW group #}
+    {# VIEW group REMOVED 2026-10-22 (operator): Layout segmented control
+       moved to Details > View (data-id="view"). The divider + PRIMARY
+       stay so the Add Task action keeps its right-most slot. #}
 
     <span class="stx-cards-filterbar__divider" aria-hidden="true"></span>
 
@@ -144,7 +93,7 @@
             title="Add a new task (Cmd/Ctrl-N)">{% translate "+ Add Task" %}</button>
     </div>{# end PRIMARY action zone #}
     </div>{# end .fb-right #}
-  </div>{# end .filterbar #}
+  </div>{# end .filterbar — VIEW group removed 2026-10-22, Layout lives in Details > View #}
 
   {% comment %}
     Filterbar second row — active filter chips + qualifier-hint pills.
@@ -192,6 +141,7 @@
     {% endfor %}
   </div>
   </details>
+</div>
 
   {% comment %}
     BLOCKING-YOU 360 px aside REMOVED (P12, lead a2a 2026-06-12). The
@@ -319,6 +269,46 @@
                       onclick="setBoardWindow('1m')" title="Last 30 days">M</button>
             </div>
             <div id="details-stats"></div>
+          </div>
+        </div>
+
+        <div class="details-section open" data-id="view">
+          <button type="button" class="details-section-toggle"
+                  onclick="toggleDetailsSection('view')">
+            <span class="details-section-title">{% translate "View" %}</span>
+            <span class="details-chevron" aria-hidden="true">▸</span>
+          </button>
+          <div class="details-section-body">
+              <span class="filt-layout"
+                    title="Switch layout: Timeline (time raster) | Wall (sticky notes) | Graph (dep map)">
+                <label class="filt-layout-label">{% translate "Layout" %}</label>
+                <div class="filt-layout-seg" role="radiogroup" aria-label="{% translate 'Layout' %}">
+                  <button type="button" class="filt-layout-btn filt-layout-btn--on"
+                          id="f-layout-timeline"
+                          data-layout="timeline" onclick="onLayoutChange('timeline')"
+                          role="radio" aria-checked="true"
+                          title="Timeline — time raster by agent/project, or a per-task simple list (day/week/month windows) — default">{% translate "Timeline" %}</button>
+                  <button type="button" class="filt-layout-btn" id="f-layout-wall"
+                          data-layout="wall" onclick="onLayoutChange('wall')"
+                          role="radio" aria-checked="false"
+                          title="Wall — sticky notes clustered by assignee; the selected agent's next-up stack rises to the top">{% translate "Wall" %}</button>
+                  <button type="button" class="filt-layout-btn" id="f-layout-graph"
+                          data-layout="graph" onclick="onLayoutChange('graph')"
+                          role="radio" aria-checked="false"
+                          title="Dependency / blocker graph (mermaid)">{% translate "Graph" %}</button>
+                  {% comment %}
+                    Matrix — urgency×importance quadrants (ADR-0011 §8). The layout
+                    itself lives in 14-matrix.js; this is only the toggle.
+                    (hook-bypass: line-limit — this template is 3425 lines, already
+                    over the 1024 cap before this change; splitting it is tracked
+                    separately rather than smuggled into the matrix PR.)
+                  {% endcomment %}
+                  <button type="button" class="filt-layout-btn" id="f-layout-matrix"
+                          data-layout="matrix" onclick="onLayoutChange('matrix')"
+                          role="radio" aria-checked="false"
+                          title="Matrix — urgency × importance quadrants (I urgent+important / II important / III urgent / IV neither)">{% translate "Matrix" %}</button>
+                </div>
+              </span>
           </div>
         </div>
 

@@ -112,29 +112,36 @@
   outline-offset: 2px;
 }
 
-/* Override the earlier layout sheet only inside this toolbar. Status
- * tokens and layout selection/callbacks keep their existing meaning.
- * Underline-tab restyle (CCT 3881): no fills here either. */
+/* Override the earlier layout sheet only inside the Layout control —
+ * in the filterbar (pre-2026-10-22 home) AND in Details > View (current
+ * home). The selector lists both scopes so the move never drops the
+ * underline-tab restyle (CCT 3881). Status tokens and layout
+ * selection/callbacks keep their existing meaning. */
 .stx-cards-filterbar__group--view .filt-layout-btn--on,
-.stx-cards-filterbar__group--view .filt-layout-btn--on:hover {
+.stx-cards-filterbar__group--view .filt-layout-btn--on:hover,
+.details-section[data-id="view"] .filt-layout-btn--on,
+.details-section[data-id="view"] .filt-layout-btn--on:hover {
   background: transparent;
   color: var(--text);
   border-bottom-color: var(--stx-brand, var(--text));
 }
-.stx-cards-filterbar__group--view .filt-layout-btn:focus-visible {
+.stx-cards-filterbar__group--view .filt-layout-btn:focus-visible,
+.details-section[data-id="view"] .filt-layout-btn:focus-visible {
   outline: 2px solid var(--stx-brand, var(--text));
   outline-offset: -3px;
 }
-.stx-cards-filterbar__group--view .filt-layout-btn--on:focus-visible {
+.stx-cards-filterbar__group--view .filt-layout-btn--on:focus-visible,
+.details-section[data-id="view"] .filt-layout-btn--on:focus-visible {
   outline-color: var(--stx-on-brand, var(--text-inverse, var(--bg)));
 }
 
 /* ── Group-local refinements ──────────────────────────────────────────── */
-/* The VIEW group's only inner control is the Layout segment (the Sort and
- * Group selects left with the Column layout on 2026-07-13). It is itself a
- * flex-row span; give it a tighter inner gap so the label stays glued to
- * the control. */
-.stx-cards-filterbar__group--view > .filt-layout {
+/* The Layout segment (the Sort and Group selects left with the Column
+ * layout on 2026-07-13). It is itself a flex-row span; give it a tighter
+ * inner gap so the label stays glued to the control — in the filterbar
+ * (legacy scope) and in Details > View (current home). */
+.stx-cards-filterbar__group--view > .filt-layout,
+.details-section[data-id="view"] .filt-layout {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -168,7 +175,8 @@
   .stx-cards-filterbar__group--search {
     flex-wrap: wrap;
   }
-  .stx-cards-filterbar__group--view > .filt-layout {
+  .stx-cards-filterbar__group--view > .filt-layout,
+  .details-section[data-id="view"] .filt-layout {
     flex-wrap: wrap;
     min-width: 0;
     max-width: 100%;
