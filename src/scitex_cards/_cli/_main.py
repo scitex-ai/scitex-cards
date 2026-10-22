@@ -427,6 +427,7 @@ from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; mini
     _completion,
     _deliver,
     _export,
+    _forget,
     _gui,
     _hooks,
     _inbox,
@@ -522,6 +523,11 @@ _deliver.register(main)
 # src/scitex_cards/_delivery/_daemon.py + _systemd.py.
 _notifyd.register(main)
 _cardsync.register(main)  # hook-bypass: line-limit (pre-existing over-cap; minimal wire)
+# forget (the forgetting sweep's terminal twin) — stale blocked/deferred/
+# goal cards closed by age alone. Pure decision core in `_forget.py`;
+# DRY-RUN by default, --apply to mutate. Paired with the
+# scitex-cards-forget JobSpec below.
+_forget.register(main)
 
 
 if __name__ == "__main__":

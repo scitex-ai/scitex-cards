@@ -161,4 +161,79 @@ def test_snapshot_command_still_pushes_off_site():
     assert "--push" in job.command
 
 
+# WHY the `forget` tests below pin the mutation path, not just the shape:
+#: the reconcile-merged-prs precedent (2026-08-20) closed a 9-minute-old live
+#: card on a timer because the JobSpec carried `--apply` on an INFERENCE
+#: ("merged PR = done"). Forgetting carries `--apply` on a MEASUREMENT (age
+#: alone, `in_progress` structurally excluded) — the tests pin that the
+#: command really mutates (otherwise the sweep is a second report nobody
+#: reads), that it carries `--yes` (off-TTY the verb needs no prompt, and a
+#: cron has nobody to answer one), and that the horizon comes from config
+#: (the command carries no `--days`, so `forgetting.days: null` disarms the
+#: sweep without touching this declaration).
+
+
+def _forget() -> object:
+    return next(j for j in provide_jobs() if j.name == "scitex-cards-forget")
+
+
+def test_provide_jobs_includes_the_forget_sweep():
+    # Arrange
+    # Act
+    names = {j.name for j in provide_jobs()}
+    # Assert
+    assert "scitex-cards-forget" in names
+
+
+def test_forget_kind_is_cron():
+    # Arrange
+    # Act
+    job = _forget()
+    # Assert — a periodic sweep, not a long-running service.
+    assert job.kind == "cron"
+
+
+def test_forget_command_is_the_forget_verb():
+    # Arrange
+    # Act
+    job = _forget()
+    # Assert
+    assert "scitex-cards forget" in job.command
+
+
+def test_forget_command_applies_the_mutation():
+    # Arrange
+    # Act
+    job = _forget()
+    # Assert — the sweep closes; a report-only sweep is a second
+    # reconcile-merged-prs report nobody acts on.
+    assert "--apply" in job.command
+
+
+def test_forget_command_skips_the_prompt():
+    # Arrange
+    # Act
+    job = _forget()
+    # Assert — a cron tick has nobody to answer a confirmation.
+    assert "--yes" in job.command
+
+
+def test_forget_command_takes_no_days_flag():
+    # Arrange
+    # Act
+    job = _forget()
+    # Assert — the horizon resolves env > config > default at CALL time, so
+    # `forgetting.days: null` disarms the sweep without a redeploy.
+    assert "--days" not in job.command
+
+
+def test_forget_schedule_is_daily():
+    # Arrange
+    # Act
+    job = _forget()
+    # Assert — staleness matures over days; a */15 cadence re-derives the
+    # same verdict 96 times a day for one effect.
+    assert job.schedule == "0 3 * * *"
+
+
 # EOF

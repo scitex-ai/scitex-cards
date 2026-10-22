@@ -23,7 +23,7 @@ This runbook gives the **canonical command lines** every agent uses for the same
 - Each agent reconciles **its own lane** (cards where `assignee` or `agent` = its own id, OR `project` = the package it owns).
 - Mark done **with a PR pointer** so the lineage is traceable.
 - Close stale **with a reason** so future audits know why.
-- The operator is the only one who **deletes** cards (we surface stale lists, he decides). Agents do NOT auto-close cards they don't own.
+- The operator is the only one who **deletes** cards. The **forgetting sweep** (`scitex-cards forget`, §5–§6) auto-closes stale blocked/deferred/goal cards by age alone (2026-10-22 doctrine, recreate on demand) — never `in_progress`; `--days none` disarms.
 
 ---
 
@@ -129,7 +129,9 @@ scitex-cards close <card-id> --reason "<short why>"
 # 3) For every deferred card that's STILL valid but you have new context: comment it.
 scitex-cards comment <card-id> "<update>"
 
-# 4) Re-snapshot + diff to verify your sweep landed:
+# 4) Or forget by age alone: `scitex-cards forget --assignee <id> --apply` (report with no --apply; in_progress never touched).
+
+# 5) Re-snapshot + diff to verify your sweep landed:
 scitex-cards list-tasks --assignee $SCITEX_CARDS_AGENT_ID --json > /tmp/my-cards-after.json
 diff <(jq -S . /tmp/my-cards-before.json) <(jq -S . /tmp/my-cards-after.json) | head -200
 ```
@@ -148,7 +150,7 @@ Criteria for inclusion:
 - `status=deferred` AND `created_at > 14d` (or no `created_at`/`last_activity`), OR
 - title/owner unclear/orphaned (no clear deliverable).
 
-Format: per-project tables, oldest-first, `id | title | age | reasons`. Agents do NOT auto-close these — the operator scans + decides + applies `scitex-cards close <id> --reason "<text>"` himself (or the owning agent does it WITH his go-ahead).
+Format: per-project tables, oldest-first, `id | title | age | reasons`. The **forgetting sweep** (`scitex-cards forget`, dry-run by default, `--apply` to close) auto-closes these by age alone under the 2026-10-22 doctrine (triage costs more than recreation — recreate on demand); the list remains the audit trail of what the sweep sees. Scope with `--assignee`, widen with `--days 7`, disarm with `--days none`. Horizon: flag > env > config > 3d; `null`/`none` disarms. `in_progress` is NEVER a candidate.
 
 Regenerate the list:
 ```sh
@@ -186,9 +188,8 @@ non-destructive guarantees, and the lead-coordinated broadcast shape) lives in
 ## 8. Gotchas
 
 1. **Store resolution.** The store identity is `$SCITEX_STORE_DSN` — a DSN or a path, since the deployment picks the backend. Check with `scitex-cards resolve-store` and READ the `backend` it reports rather than assuming one.
-2. **`done` vs `update --status done`.** `done` is shorthand without PR-pointer recording. Prefer `update` when there's a PR.
-3. **PR pointer field.** It's `pr_url` (string), not `pr-url` (the CLI flag).
-4. **Close writes `cancelled` (terminal), not `deferred`.** `deferred` is OPEN since the 2026-07-10 ruling — see §3 above; the old "grows a dedicated `closed` value" plan is superseded by `cancelled`.
+2. **`done` vs `update --status done`.** `done` is shorthand without PR-pointer recording. Prefer `update` when there's a PR (see §3 above).
+3. **PR pointer: `pr_url`, not `pr-url`. Close writes `cancelled` (terminal), not `deferred`** — OPEN since 2026-07-10.
 
 ---
 
@@ -196,5 +197,4 @@ non-destructive guarantees, and the lead-coordinated broadcast shape) lives in
 
 - Operator directive 2026-06-13 (via lead a2a) — "make every agent reconcile their project's cards; 85 merges / 56 marked done is the drift signal".
 - Operator "all agents use scitex-cards, no parallel card formats" → P3a fleet MCP rollout.
-- Verbs and bundle: #144 (comment verb), #149 (skill bundle refresh), #151 (`close` verb), #155 (`mcp install --apply`, the fleet MCP enabler).
-- Stale review: #153 (backend `/stale` + `/archive`) + #154 (FE 🧹 Stale layout + Archive button). The stale-list generator is still ad-hoc Python; a CLI verb is a follow-up.
+- Verbs: #144 (comment), #149 (bundle refresh), #151 (`close`), #155 (`mcp install --apply`); `forget` (2026-10-22).
