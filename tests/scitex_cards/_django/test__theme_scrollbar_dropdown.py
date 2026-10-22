@@ -59,10 +59,36 @@ _BOARD_V3_TEMPLATE = (
     / "board_v3.html"
 )
 
+#: The board render set. #1116 split board_v3.html into a shell composing
+#: these partials — the stylesheet links now live in _board_head.html.
+#: Read the family, in include order, wherever a test means "the board
+#: template".
+_BOARD_FAMILY = (
+    _BOARD_V3_TEMPLATE,
+    _BOARD_V3_TEMPLATE.parent / "_board_head.html",
+    _BOARD_V3_TEMPLATE.parent / "_board_pane.html",
+    _BOARD_V3_TEMPLATE.parent / "_board_foot.html",
+)
+
 
 def _read(path: Path) -> str:
     assert path.is_file(), f"expected CSS surface missing: {path}"
     return path.read_text(encoding="utf-8")
+
+
+def _read_board_family() -> str:
+    return "\n".join(_read(path) for path in _BOARD_FAMILY)
+
+
+def _link_idx(html: str, name: str) -> int:
+    """Index of the `<link>` element loading `name`, or -1.
+
+    A raw substring search also matches prose (board_v3.html comments on
+    where a sheet lives), which is not a stylesheet load — compare link
+    elements so the order pin keeps meaning render order.
+    """
+    m = re.search(r"<link[^>]*" + re.escape(name), html)
+    return m.start() if m else -1
 
 
 # ============================================================================
@@ -231,10 +257,10 @@ def test_board_v3_template_loads_global_theme_first_theme_idx() -> None:
     01-filterbar.css so its rules form the global fallback, and per-file
     overrides win on specificity."""
     # Arrange
-    html = _read(_BOARD_V3_TEMPLATE)
-    theme_idx = html.find("00-theme-scrollbar-select.css")
+    html = _read_board_family()
+    theme_idx = _link_idx(html, "00-theme-scrollbar-select.css")
     # Act
-    filterbar_idx = html.find("01-filterbar.css")
+    filterbar_idx = _link_idx(html, "01-filterbar.css")
     # Assert
     assert theme_idx != -1, "template never links 00-theme-scrollbar-select.css"
 
@@ -244,10 +270,10 @@ def test_board_v3_template_loads_global_theme_first_filterbar_idx() -> None:
     01-filterbar.css so its rules form the global fallback, and per-file
     overrides win on specificity."""
     # Arrange
-    html = _read(_BOARD_V3_TEMPLATE)
-    theme_idx = html.find("00-theme-scrollbar-select.css")
+    html = _read_board_family()
+    theme_idx = _link_idx(html, "00-theme-scrollbar-select.css")
     # Act
-    filterbar_idx = html.find("01-filterbar.css")
+    filterbar_idx = _link_idx(html, "01-filterbar.css")
     # Assert
     assert filterbar_idx != -1, "template never links 01-filterbar.css"
 
@@ -257,10 +283,10 @@ def test_board_v3_template_loads_global_theme_first_theme_idx_2() -> None:
     01-filterbar.css so its rules form the global fallback, and per-file
     overrides win on specificity."""
     # Arrange
-    html = _read(_BOARD_V3_TEMPLATE)
-    theme_idx = html.find("00-theme-scrollbar-select.css")
+    html = _read_board_family()
+    theme_idx = _link_idx(html, "00-theme-scrollbar-select.css")
     # Act
-    filterbar_idx = html.find("01-filterbar.css")
+    filterbar_idx = _link_idx(html, "01-filterbar.css")
     # Assert
     assert (
         theme_idx < filterbar_idx
