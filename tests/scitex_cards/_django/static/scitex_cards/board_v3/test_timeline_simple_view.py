@@ -35,6 +35,7 @@ import json
 import re
 import shutil
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -131,11 +132,18 @@ def _render(nodes: list[dict]) -> str:
 
 
 def _nodes(n: int = 2, **over: object) -> list[dict]:
+    # Clock-relative fixture (fix 2026-10-23): the simple view only renders
+    # nodes active inside the 24h window, so a hardcoded calendar date ages
+    # out and the whole file goes red overnight (release gate 2026-10-23).
+    # Stamp one hour ago — safely inside any window the view offers.
+    fresh = (
+        datetime.now(tz=timezone.utc).replace(microsecond=0) - timedelta(hours=1)
+    ).isoformat()
     base = {
         "id": "t1",
         "status": "in_progress",
         "title": "first",
-        "last_activity": "2026-10-22T10:00:00Z",
+        "last_activity": fresh,
         "comments": [
             {"author": "a", "text": "one"},
             {"author": "b", "text": "two"},

@@ -42,12 +42,23 @@ def _wind_back_to_the_previous_rung(conn, value: int) -> None:
     file failed: two red tests that looked like a missing log line and were
     actually a test that never reached the code.
 
-    Dropping the current rung's caller-idempotency column makes the shape
-    genuinely one rung behind.  The migration is additive and idempotent, so
-    re-adding it is exactly what the ladder is for.
+    Wind back the CURRENT rung's artifacts — since rung 16 (2026-10-22) that
+    is the ``dm_visibility_events`` table + its no-delete trigger, NOT the
+    rung-15 ``client_request_id`` column the helper dropped before the bump
+    (stale arrangement announced "rung 14 to rung 16" on the first full run
+    to reach this file, 2026-10-23). The migration is additive and
+    idempotent, so re-adding it is exactly what the ladder is for.
     """
-    conn.execute("DROP INDEX IF EXISTS idx_dm_messages_client_request")
-    conn.execute("ALTER TABLE dm_messages DROP COLUMN IF EXISTS client_request_id")
+    from scitex_cards._schema_probe import _is_postgres
+
+    conn.execute("DROP TABLE IF EXISTS dm_visibility_events")
+    if _is_postgres(conn):
+        conn.execute(
+            "DROP TRIGGER IF EXISTS dm_visibility_events_no_delete"
+            " ON dm_visibility_events"
+        )
+    else:
+        conn.execute("DROP TRIGGER IF EXISTS dm_visibility_events_no_delete")
     conn.execute(
         "UPDATE schema_meta SET value = ? WHERE key = 'schema_version'",
         (str(value),),
