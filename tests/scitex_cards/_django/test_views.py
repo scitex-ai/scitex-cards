@@ -228,8 +228,16 @@ def test_no_leaf_local_favicon_files_ship():
     from pathlib import Path
 
     static_dir = Path(views.__file__).resolve().parent / "static" / "scitex_cards"
-    # Act
-    shipped = sorted(p.name for p in static_dir.rglob("*favicon*"))
+    # Act — the vite outDir (assets/) is machine-generated per build: vite
+    # copies frontend/public/* verbatim, so the official public/favicon.svg
+    # input lands at assets/favicon.svg on every CI run that builds the
+    # frontend first. That copy is derived, not a second source — the drift
+    # class this pins is a hand-placed leaf copy beside the board statics.
+    # (Release gate 2026-10-23: the unscoped rglob failed every full run
+    # that reached this file; fail-fast had masked it behind earlier red.)
+    shipped = sorted(
+        p.name for p in static_dir.rglob("*favicon*") if "assets" not in p.parts
+    )
     # Assert
     assert shipped == []
 
