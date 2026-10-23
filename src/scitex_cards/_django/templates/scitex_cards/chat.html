@@ -436,7 +436,13 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   #compose {
     display: flex; flex-direction: column; gap: 6px; padding: 6px 12px;
     border-top: 1px solid var(--line); background: var(--panel); flex: 0 0 auto;
-    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+  /* Phone home-indicator clearance: the safe-area inset exists ONLY where
+     the OS reports one (notched phones). Unconditional calc(6px + env(...))
+     leaves a permanent dead strip under the composer on desktop — the
+     operator 2026-10-23 bottom gap. Gate the extra inset behind support. */
+  @supports (padding-bottom: env(safe-area-inset-bottom)) {
+    #compose { padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
   }
   #compose-row {
     display: flex; align-items: flex-end; gap: 6px;
@@ -461,6 +467,14 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   #compose-row > button:disabled {
     background: var(--panel-2); color: var(--dim); border-color: var(--line); cursor: not-allowed;
+  }
+  /* Send is the one primary action: the shared brand CTA token (navy on
+     light, gold on dark — operator 2026-10-23). The generic link-blue it
+     wore read as inactive chrome next to the gray disabled state; the
+     brand fill (with the DWM --on state sharing the same token) reads
+     as the action. Disabled stays a flat muted fill, never faded brand. */
+  #compose-row > #compose-send {
+    background: var(--stx-brand, var(--text-link)); color: var(--bg, var(--text-inverse)); border-color: var(--stx-brand, var(--text-link));
   }
   /* Two ids, so this outranks the `#compose-row > button` rule above it —
      an id-plus-element selector is MORE specific than a bare id, so the
@@ -845,6 +859,23 @@ emoji, not an icon font, so it cannot fail to resolve over the tunnel.
       <button class="stx-app-context-menu__item" id="mm-copy" role="menuitem">Copy</button>
       <button class="stx-app-context-menu__item" id="mm-forward" role="menuitem">Forward&hellip;</button>
       <button class="stx-app-context-menu__item" id="mm-select" role="menuitem">Select</button>
+    </div>
+  </div>
+{% comment %}
+AGENT-ROW menu (operator 2026-10-23: CRUD ops as right-click on the
+agent list). The message menu above owns message actions; this one
+owns ROW actions and lives beside it so the two never share items.
+Hide/Unhide rides the existing dm/visibility endpoint — the only row
+action with a backend. A menu needs a backing endpoint per item or it
+is a dead control: rename/delete/archive/mute have no DM endpoint
+(append-only store, no tombstone), so they are NOT offered — the menu
+is Hide/Unhide only, and grows only when a backend lands.
+Like mm-* above, the item lives here so the page can be asserted to
+actually SERVE it.
+{% endcomment %}
+  <div id="agent-menu-wrap">
+    <div id="agent-menu" class="stx-app-context-menu" role="menu" aria-label="Conversation actions">
+      <button class="stx-app-context-menu__item" id="am-hide" role="menuitem">Hide</button>
     </div>
   </div>
 {% comment %}
