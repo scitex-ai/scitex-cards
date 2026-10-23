@@ -361,7 +361,15 @@
             </div>
             <div class="details-row" data-details-board="live">
               <label>{% translate "Live" %}</label>
-              <span class="details-live" id="details-live"><span class="live-dot"></span>LIVE</span>
+              {% comment %}
+               LIVE badge ships DARK: "CONNECTING" until a read succeeds.
+               renderDetailsBoard() (_board_foot.html) is the single writer —
+               it flips to LIVE only when STATE.graph exists and reverts on
+               any failed read. Static markup claiming LIVE is the 2026-09-17
+               operator defect (badge true of the markup, not of the data), so
+               the shipped text matches the pre-read state exactly.
+             {% endcomment %}
+             <span class="details-live details-live--off" id="details-live" data-stx-live-gate><span class="live-dot"></span>CONNECTING</span>
             </div>
           </div>
         </div>
