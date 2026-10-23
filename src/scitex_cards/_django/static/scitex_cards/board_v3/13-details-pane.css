@@ -164,12 +164,15 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* --- timescale (d / w / m) -------------------------------------------- */
+/* --- timescale (d / w / m) --------------------------------------------
+   Operator 2026-10-23: squared, non-toy. Was a 7px-radius segmented pill
+   with a purple fill -- both violate the no-curly rule. Now square 2px
+   with the brand accent for the active state. */
 .details-scale {
   display: inline-flex;
   margin: 2px 0 10px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 2px;
   overflow: hidden;
 }
 .details-scale-btn {
@@ -191,8 +194,8 @@
   color: var(--text);
 }
 .details-scale-btn--on {
-  background: var(--purple);
-  color: #fff;
+  background: var(--stx-brand, var(--text));
+  color: var(--bg, #000);
 }
 
 /* --- stats bars -------------------------------------------------------
