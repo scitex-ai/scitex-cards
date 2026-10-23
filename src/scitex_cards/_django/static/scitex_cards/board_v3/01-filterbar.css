@@ -53,13 +53,18 @@
 * {
   box-sizing: border-box;
 }
-html,
-body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-}
-body {
+/* The page scaffold (html/body margin + body flex column, font, colours)
+ * used to live here and CANNOT: this sheet loads on the unified page too,
+ * where body{} would re-layout the DM side. The scaffold now lives in the
+ * standalone board template only (board_v3.html <style>, same declarations,
+ * same cascade position relative to the board sheets). What stays global
+ * here is box-sizing — the DM page sets its own identical rule, and the
+ * shell sees the same global on both pages, so nothing changes anywhere. */
+.board-app-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   background: var(--bg);
   color: var(--text);
   font:
@@ -68,10 +73,12 @@ body {
     "Segoe UI",
     Roboto,
     sans-serif;
-  display: flex;
-  flex-direction: column;
 }
-a {
+/* Board links only — was a bare `a` rule. Every board <a> renders inside
+ * this pane (filterbar, columns, states, modals: boardStates mounts on
+ * #columns), so scoping changes nothing on the board while the DM side of
+ * the unified page keeps its own (browser-default) link colours. */
+.board-app-pane a {
   color: var(--green);
 }
 
@@ -192,7 +199,7 @@ a {
   background: rgba(255, 193, 7, 0.16);
   color: var(--gold);
   border: 1px solid var(--gold);
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   font-weight: 700;
   cursor: pointer;
   font-size: 0.82rem;
@@ -205,7 +212,7 @@ a {
 .toggle-block.on {
   background: var(--gold);
   color: #000;
-  box-shadow: 0 0 12px 2px rgba(255, 193, 7, 0.45);
+  box-shadow: none;
 }
 .reload-btn {
   padding: 5px 10px;
@@ -240,7 +247,7 @@ a {
   padding: 4px 8px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   min-height: 22px;
 }
 .flt-dot {
@@ -262,11 +269,11 @@ a {
   /* Calm: static state glow — the infinite pulse cost perpetual
    * compositor work for a dot whose meaning (operator-decision blocker)
    * does not change between frames. */
-  box-shadow: 0 0 6px 1px rgba(255, 193, 7, 0.65);
+  box-shadow: none;
 }
 .flt-dot--working {
   background: var(--green);
-  box-shadow: 0 0 4px 1px rgba(76, 175, 80, 0.55);
+  box-shadow: none;
 }
 .flt-dot--active {
   background: #4a90e2;
@@ -445,7 +452,7 @@ a {
   font-size: 0.72rem;
   font-weight: 700;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   border: 1px solid var(--purple);
 }
 .col-body {
@@ -480,7 +487,7 @@ a {
   align-items: center;
   gap: 4px;
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   font-size: 0.7rem;
   font-weight: 600;
   border: 1px solid var(--purple);
@@ -572,7 +579,7 @@ a {
   margin-left: auto;
   flex: 0 0 auto;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-muted);
   font-size: 0.72rem;

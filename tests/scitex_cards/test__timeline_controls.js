@@ -33,7 +33,7 @@ const MOD = require(
   ),
 );
 
-const { controlsHtml, edgeLegendHtml } = MOD;
+const { controlsHtml, edgeLegendHtml, detailsBoardHtml } = MOD;
 
 // A faithful stand-in for the page's escapeHtml so the assertions exercise
 // the same escaping path the browser uses.
@@ -100,26 +100,33 @@ test("controlsHtml: simple view OMITS the edge legend (no edges there)", () => {
   assert.ok(!simple.includes("tl-edge-legend"));
 });
 
-test("controlsHtml: renders the View select and count", () => {
+test("controlsHtml: renders the View tab group and count", () => {
   const html = controlsHtml(
     { view: "agent", windowKey: "1m" },
     "2 events",
     esc,
   );
-  assert.match(html, /setTimelineView\(this\.value\)/);
+  assert.match(html, /role="tablist"/);
+  assert.match(html, /aria-label="Timeline view"/);
   assert.match(html, /class="tl-count">2 events</);
 });
 
-test("controlsHtml: Window is a D/W/M tab group, not a select", () => {
+test("controlsHtml: View is a tab group, not a select", () => {
   const html = controlsHtml({ view: "agent", windowKey: "1d" }, "x", esc);
-  assert.match(html, /role="tablist"/);
-  assert.match(html, /aria-label="Time window"/);
-  assert.ok(!html.includes("setTimelineWindow(this.value)"));
-  assert.ok(!html.includes('<option value="1d"'));
-  assert.match(html, /<select/); // the View control stays a select
+  assert.ok(!html.includes("setTimelineView(this.value)"));
+  assert.ok(!html.includes('<option value="agent"'));
 });
 
-test("controlsHtml: three window tabs wiring setTimelineWindow per key", () => {
+test("controlsHtml: Span is a D/W/M tab group, not a select", () => {
+  const html = controlsHtml({ view: "agent", windowKey: "1d" }, "x", esc);
+  assert.match(html, /role="tablist"/);
+  assert.match(html, /aria-label="Time span"/);
+  assert.ok(!html.includes("setTimelineWindow(this.value)"));
+  assert.ok(!html.includes('<option value="1d"'));
+  assert.ok(!html.includes("<select"));
+});
+
+test("controlsHtml: three span tabs wiring setTimelineWindow per key", () => {
   const html = controlsHtml({ view: "agent", windowKey: "1d" }, "x", esc);
   assert.match(html, /data-window="1d"/);
   assert.match(html, /data-window="1w"/);
@@ -129,7 +136,7 @@ test("controlsHtml: three window tabs wiring setTimelineWindow per key", () => {
   assert.match(html, /onclick="setTimelineWindow\('1m'\)"/);
 });
 
-test("controlsHtml: active window tab is marked, others are not", () => {
+test("controlsHtml: active span tab is marked, others are not", () => {
   const html = controlsHtml(
     { view: "project", windowKey: "1w" },
     "x",
@@ -140,9 +147,22 @@ test("controlsHtml: active window tab is marked, others are not", () => {
   assert.match(html, /data-window="1d" aria-selected="false"/);
 });
 
-test("controlsHtml: marks the active view option selected", () => {
-  const html = controlsHtml({ view: "project", windowKey: "1w" }, "x", esc);
-  assert.match(html, /<option value="project" selected>/);
+test("controlsHtml: three view tabs wiring setTimelineView per key", () => {
+  const html = controlsHtml({ view: "agent", windowKey: "1d" }, "x", esc);
+  assert.match(html, /data-view="agent"/);
+  assert.match(html, /data-view="project"/);
+  assert.match(html, /data-view="simple"/);
+  assert.match(html, /onclick="setTimelineView\('project'\)"/);
+});
+
+test("controlsHtml: active view tab is marked, others are not", () => {
+  const html = controlsHtml(
+    { view: "simple", windowKey: "1d" },
+    "x",
+    esc,
+  );
+  assert.match(html, /data-view="simple" aria-selected="true"/);
+  assert.match(html, /data-view="agent" aria-selected="false"/);
 });
 
 test("controlsHtml: surfaces TL.error in a .tl-error span", () => {
@@ -167,4 +187,38 @@ test("controlsHtml: error text is escaped (no raw injection)", () => {
 test("controlsHtml: missing TL / esc → no throw, still renders count", () => {
   assert.doesNotThrow(() => controlsHtml());
   assert.match(controlsHtml(undefined, "9 events"), /9 events/);
+});
+
+test("controlsHtml: tabs row labels the group Span, not Window", () => {
+  const html = controlsHtml({ view: "agent", windowKey: "1d" }, "x", esc);
+  assert.match(html, /<span class="tl-ctl">Span /);
+  assert.ok(!html.includes('<span class="tl-ctl">Window '));
+});
+
+test("controlsHtml compact: canvas row keeps count, drops the tabs", () => {
+  const html = controlsHtml({ view: "agent", windowKey: "1d" }, "3 events", esc, { compact: true });
+  assert.match(html, /3 events/);
+  assert.ok(!html.includes("setTimelineView("));
+  assert.ok(!html.includes("setTimelineWindow("));
+  assert.ok(!html.includes("<select"));
+});
+
+test("controlsHtml compact: raster legend still present for agent view", () => {
+  const html = controlsHtml({ view: "agent", windowKey: "1d" }, "x", esc, { compact: true });
+  assert.match(html, /tl-edge-legend/);
+});
+
+test("detailsBoardHtml: renders the full View + Span tabs for Details", () => {
+  const html = detailsBoardHtml({ view: "simple", windowKey: "1w" }, esc);
+  assert.match(html, /<span class="tl-ctl">View /);
+  assert.match(html, /<span class="tl-ctl">Span /);
+  assert.match(html, /data-view="simple" aria-selected="true"/);
+  assert.match(html, /data-window="1w" aria-selected="true"/);
+  assert.match(html, /onclick="setTimelineView\('project'\)"/);
+  assert.match(html, /onclick="setTimelineWindow\('1m'\)"/);
+});
+
+test("detailsBoardHtml: missing TL / esc → no throw", () => {
+  assert.doesNotThrow(() => detailsBoardHtml());
+  assert.match(detailsBoardHtml(undefined, undefined), /tl-ctl/);
 });

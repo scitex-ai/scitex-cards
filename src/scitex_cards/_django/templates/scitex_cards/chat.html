@@ -137,8 +137,8 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     border-bottom: 1px solid var(--line);
   }
   /* Board | DM switcher (shared component — page-switcher.css +
-     _page_switcher.html partial, now reached through _page_header.html's tab
-     row). It REPLACED the old "← board" link: the operator could reach the
+     _page_switcher.html partial, reached through _page_tabs.html's tab
+     row below the shared title row). It REPLACED the old "← board" link: the operator could reach the
      board from here, but not the reverse, which is what made /chat/ a hidden
      URL. The component reads six --sw-* variables; this page has its own
      fixed-dark palette (the :root above shadows the SDK theme tokens), so
@@ -157,6 +157,15 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     display: none;
   }
   #layout { flex: 1 1 auto; display: flex; min-height: 0; }
+  /* Unified-page panes (operator 2026-10-20): #dm-pane and #board-pane are
+     the two switchable views under the shared header. Each is a flex column
+     filling the app height so its content lays out exactly as on the
+     standalone page. The [hidden] guard is load-bearing: display:flex would
+     otherwise override the UA's hidden handling and show both panes. */
+  #dm-pane, #board-pane {
+    flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
+  }
+  #dm-pane[hidden], #board-pane[hidden] { display: none; }
 
   /* ---- agent list (left) ---- */
   /* The nav is now a COLUMN of two things — the filter row, which stays put,
@@ -224,6 +233,45 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   #agents .agent .preview { color: var(--dim); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #agents .empty { color: var(--dim); font-size: 0.8rem; padding: 14px; }
+  /* ---- hide/unhide (card cards-dm-spaces-crud-hide-20261022) ----
+     iOS pattern: the row slides left over a Hide action (touch swipe);
+     on desktop the same action appears on hover/focus instead of a slide.
+     ONE button serves both — a second one would drift. The wrap is the
+     positioned parent; .agent translates, the action sits beneath it. */
+  #agents .agent-wrap { position: relative; overflow: hidden; }
+  #agents .agent { position: relative; z-index: 1; background: var(--panel); transition: transform 0.18s ease-out; touch-action: pan-y; }
+  #agents .agent-wrap.open .agent { transform: translateX(-72px); }
+  #agents .row-act {
+    position: absolute; top: 0; bottom: 0; right: 0; width: 72px; z-index: 0;
+    border: none; border-left: 1px solid var(--line); cursor: pointer;
+    font-size: 0.75rem; font-weight: 600; font-family: inherit;
+    opacity: 0; pointer-events: none;
+  }
+  /* Touch: the slide reveals the action sitting BENEATH the row (iOS).
+     Desktop: no slide — the action overlays the row's end on hover/focus,
+     so the row never shifts under a mouse that is about to click it. */
+  #agents .agent-wrap.open .row-act { opacity: 1; pointer-events: auto; }
+  #agents .agent-wrap:not(.open):hover .row-act, #agents .agent-wrap:not(.open):focus-within .row-act { opacity: 1; pointer-events: auto; z-index: 2; }
+  #agents .row-hide { background: var(--panel-2); color: var(--dim); }
+  #agents .row-hide:hover { color: var(--text); }
+  #agents .row-unhide { background: var(--panel-2); color: var(--text-link); }
+  /* Hidden section: a disclosure row at the end of the list, iOS Hidden-album
+     style. Collapsed by default; expanding shows the hidden rows with an
+     Unhide action each. Unread hidden threads count into the disclosure. */
+  #agents .hidden-toggle {
+    display: flex; width: 100%; align-items: center; gap: 6px;
+    background: transparent; border: none; border-top: 1px solid var(--line);
+    color: var(--dim); font-size: 0.78rem; font-family: inherit;
+    padding: 10px 12px; cursor: pointer; text-align: left;
+  }
+  #agents .hidden-toggle:hover { color: var(--text); }
+  #agents .hidden-toggle .chev { display: inline-block; transition: transform 0.15s ease-out; }
+  #agents .hidden-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+  #agents .hidden-toggle .count {
+    margin-left: auto; background: var(--panel-2); color: var(--dim);
+    border-radius: 9px; font-size: 0.68rem; font-weight: 700; padding: 1px 7px;
+  }
+  #agents .agent-wrap.is-hidden .agent .name { color: var(--dim); font-weight: 400; }
 
   /* ---- thread (right) ---- */
   #thread-pane { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
@@ -388,7 +436,13 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   #compose {
     display: flex; flex-direction: column; gap: 6px; padding: 6px 12px;
     border-top: 1px solid var(--line); background: var(--panel); flex: 0 0 auto;
-    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+  /* Phone home-indicator clearance: the safe-area inset exists ONLY where
+     the OS reports one (notched phones). Unconditional calc(6px + env(...))
+     leaves a permanent dead strip under the composer on desktop — the
+     operator 2026-10-23 bottom gap. Gate the extra inset behind support. */
+  @supports (padding-bottom: env(safe-area-inset-bottom)) {
+    #compose { padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
   }
   #compose-row {
     display: flex; align-items: flex-end; gap: 6px;
@@ -414,6 +468,14 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   #compose-row > button:disabled {
     background: var(--panel-2); color: var(--dim); border-color: var(--line); cursor: not-allowed;
   }
+  /* Send is the one primary action: the shared brand CTA token (navy on
+     light, gold on dark — operator 2026-10-23). The generic link-blue it
+     wore read as inactive chrome next to the gray disabled state; the
+     brand fill (with the DWM --on state sharing the same token) reads
+     as the action. Disabled stays a flat muted fill, never faded brand. */
+  #compose-row > #compose-send {
+    background: var(--stx-brand, var(--text-link)); color: var(--bg, var(--text-inverse)); border-color: var(--stx-brand, var(--text-link));
+  }
   /* Two ids, so this outranks the `#compose-row > button` rule above it —
      an id-plus-element selector is MORE specific than a bare id, so the
      shorter `#compose-attach` would have lost and the paperclip would have
@@ -434,42 +496,13 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     flex: 1 1 auto; width: 100%; resize: none;
     background: var(--panel-2); color: var(--text);
     border: 1px solid var(--line); border-radius: 10px;
-    /* The right inset is the emoji button's seat: the component sizes its
-       toggle at 12px + glyph + 12px + borders (~43px) and it is placed 3px in,
-       so 52px leaves clearance rather than sitting exactly on the estimate.
-       The caret must never run underneath it. */
-    padding: 9px 52px 9px 12px;
+    padding: 9px 12px;
     font: inherit; font-size: 0.9rem; line-height: 1.35;
     min-height: var(--compose-control); overflow-y: hidden;
   }
   #compose-field textarea:focus { outline: 1px solid var(--accent); }
   #compose-field textarea::placeholder { color: var(--dim); opacity: 1; }
   #compose-field textarea:disabled { cursor: not-allowed; }
-  /* The emoji picker is a shared primitive (static/scitex_cards/ui/). The
-     page maps ITS palette onto the component's tokens instead of overriding
-     the component's rules — that is the whole contract, and it is what lets
-     the widget be lifted into the SDK without dragging this page's colors
-     along with it. PLACEMENT is the host's job by the component's own design
-     ("the host page decides WHERE the affordance sits"), so positioning it
-     inside the field is not an override; the bare-toggle look and the
-     right-anchored panel are both ASKED FOR through the component's tokens
-     and its --right modifier rather than by restyling its rules. */
-  #compose-field .stx-emoji-picker {
-    position: absolute; right: 3px; bottom: 3px;
-    --stx-emoji-picker-surface: var(--panel-2);
-    --stx-emoji-picker-border: var(--line);
-    --stx-emoji-picker-text: var(--dim);
-    --stx-emoji-picker-hover: var(--line);
-    --stx-emoji-picker-accent: var(--accent);
-    --stx-emoji-picker-toggle-surface: transparent;
-    --stx-emoji-picker-toggle-border: transparent;
-    /* 38px tall inside a 44px field, and the component's own 12px side padding
-       carries the width to ~43px. Short of this page's 44px floor by design:
-       the toggle sits INSIDE the field, so a full-height square would leave no
-       field edge around it — and 38x43 is still a comfortable thumb target,
-       unlike the ~25px the content-sized default would have given. */
-    --stx-emoji-picker-toggle-min: 38px;
-  }
   /* The long-draft offer (chat_compose.js builds it; see chat_longtext.js for
      the threshold). Same column as the row under it, so the composer reads as
      one block rather than two things that happen to be adjacent. */
@@ -488,8 +521,7 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   /* `hidden` must actually hide. The rule above sets `display: flex` from an
      ID selector, which OUTRANKS the UA's `[hidden] { display: none }` — the
      bar would then sit above the composer permanently, announcing a long
-     message on an empty draft. Exactly the trap emoji_picker.css documents
-     for its own panel. */
+     message on an empty draft. */
   #compose-longtext[hidden] { display: none; }
   /* Attachments render under the bubble, inside the same message column, so
      an image reads as part of the message rather than a separate event. */
@@ -590,12 +622,6 @@ ships alongside this.
 <link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/shell/theme.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/context-menu.css' %}">
 {% comment %}
-Emoji picker — OUR file for now, but written as a harvestable primitive: it
-knows nothing about DMs, messages or `.msg`, and its palette rides
-`--stx-emoji-picker-*` tokens the host page maps (see the #compose block
-above). When the SDK adopts it, this link and the script tag at the bottom
-swap for the base ones and nothing else on this page moves.
-
 Board | DM switcher — the SAME stylesheet board_v3.html links, so the two
 pages cannot drift into two different-looking switchers. This page's palette
 mapping rides its own :root aliases, consumed through the component's
@@ -604,17 +630,21 @@ mapping rides its own :root aliases, consumed through the component's
 page-header.css is the same idea one level up: the SAME stylesheet the board
 links, holding the header bar's height/padding/gap so the two headers line up
 structurally instead of by two hand-synced numbers.
-
-(Both links kept: the emoji picker and the switcher arrived in parallel PRs
-that each added a stylesheet at this spot. They are independent components
-and the page needs both — this was a textual collision, not a real one.)
 {% endcomment %}
-<link rel="stylesheet" href="{% static 'scitex_cards/ui/emoji_picker.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_marquee.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/app-header.css' %}">{# CCT 3878: SDK header grammar for the shared .stx-app-header row. #}
 <link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_panes.css' %}">
+{% comment %}
+Board assets for the unified page: the board pane below is the SAME partial
+the standalone board serves, so it needs the SAME stylesheets + scripts.
+One include, one source — never a copied link list. Shared links
+(page-switcher/header/app-header) duplicate the ones above; browsers dedupe
+identical URLs, and the duplication is what keeps the board's load ORDER
+(the partial preserves it) intact here.
+{% endcomment %}
+{% include "scitex_cards/_board_head.html" %}
 <style>
   /* Positioning only — every visual rule comes from base. */
   #msg-menu-wrap, #react-bar, #forward-menu { position: fixed; display: none; z-index: 40; }
@@ -749,8 +779,16 @@ the tab row below it arrive via the shared partial, identical on both pages.
   messages with the agents", and the browser tab reads "DM — SciTeX Cards v…").
   The band above the switcher names the PRODUCT; the switcher names the page.
   {% endcomment %}
-  {% include "scitex_cards/_page_header.html" with active="chat" page_title="SciTeX Cards" %}
+  {% include "scitex_cards/_page_header.html" with page_title="SciTeX Cards" %}
 </header>
+{% include "scitex_cards/_page_tabs.html" with active="chat" %}
+<div id="dm-pane">
+{% comment %}
+ONE page, TWO panes (operator 2026-10-20): #dm-pane here, #board-pane below.
+The hash names the pane (#dm / #board); app_router.js toggles them with no
+reload, so the header never fluctuates. Both panes' scripts start on page
+load — data preloads in parallel. DM is the default (CCT4610 landing).
+{% endcomment %}
 <div id="error-bar"></div>
 <div id="layout">
 {% comment %}
@@ -765,6 +803,8 @@ template). `#agents` keeps its id because the mobile drawer is mounted on it and
 every `#agents .agent` rule still matches through the new wrapper.
 {% endcomment %}
   <nav id="agents" aria-label="Agents">
+    {# Operator 2026-10-23: the project selector lives ONLY in the top-most #}
+    {# application header (shared SDK element) — the DM copy is dropped. #}
     <div id="agent-filter-row">
       <input id="agent-filter" type="search" autocomplete="off"
              placeholder="Filter agents&hellip;" aria-label="Filter agents"
@@ -819,6 +859,23 @@ emoji, not an icon font, so it cannot fail to resolve over the tunnel.
       <button class="stx-app-context-menu__item" id="mm-copy" role="menuitem">Copy</button>
       <button class="stx-app-context-menu__item" id="mm-forward" role="menuitem">Forward&hellip;</button>
       <button class="stx-app-context-menu__item" id="mm-select" role="menuitem">Select</button>
+    </div>
+  </div>
+{% comment %}
+AGENT-ROW menu (operator 2026-10-23: CRUD ops as right-click on the
+agent list). The message menu above owns message actions; this one
+owns ROW actions and lives beside it so the two never share items.
+Hide/Unhide rides the existing dm/visibility endpoint — the only row
+action with a backend. A menu needs a backing endpoint per item or it
+is a dead control: rename/delete/archive/mute have no DM endpoint
+(append-only store, no tombstone), so they are NOT offered — the menu
+is Hide/Unhide only, and grows only when a backend lands.
+Like mm-* above, the item lives here so the page can be asserted to
+actually SERVE it.
+{% endcomment %}
+  <div id="agent-menu-wrap">
+    <div id="agent-menu" class="stx-app-context-menu" role="menu" aria-label="Conversation actions">
+      <button class="stx-app-context-menu__item" id="am-hide" role="menuitem">Hide</button>
     </div>
   </div>
 {% comment %}
@@ -887,26 +944,21 @@ Forward uses.
       99% of the time is markup nobody maintains.
       {% endcomment %}
       <div id="compose-row">
-        <button id="compose-attach" type="button" title="Attach a file (or paste / drag one in)">&#128206;</button>
+        <button id="compose-attach" type="button" title="Attach a file (or paste / drag one in)">+</button>
         <div id="compose-field">
           <textarea id="compose-body" rows="1" placeholder="Message&hellip;" disabled></textarea>
-          {% comment %}
-          Declarative mount: emoji_picker.js finds this by the attribute and
-          builds its own toggle + panel here, so the composer's behaviour file
-          (chat.js) gains not one line for this feature. The value is the id of
-          the field the emoji land in.
-
-          --right is the component's own modifier for a toggle at the END of
-          its row: the default panel hangs from the toggle's LEFT edge, which
-          from here would open a ~20rem popover rightwards off the side of a
-          phone screen.
-          {% endcomment %}
-          <span class="stx-emoji-picker stx-emoji-picker--right" data-stx-emoji-picker-for="compose-body"></span>
         </div>
         <button id="compose-send" type="submit" disabled>Send</button>
       </div>
     </form>
   </main>
+</div>
+</div>
+<div id="board-pane" hidden>
+  {% comment %}board_header=False: the page header above is already the shared
+  one — a second copy inside the pane would be the fluctuation the operator
+  called out. The standalone board passes nothing and keeps its header.{% endcomment %}
+  {% include "scitex_cards/_board_pane.html" with board_header=False %}
 </div>
 </section>
 {% endblock app_content %}
@@ -924,6 +976,8 @@ off `window` and never the reverse.
   chat_attach.js   attachment uploads AND their rendering (no deps)
   chat_drawer.js   the mobile drawer: state, inert-when-closed, scrim (no deps)
   chat_filter.js   fuzzy filter over the agent list (reads STX.Combobox)
+  chat_visibility.js per-reader hide/unhide decisions, pure (no deps)
+  chat_hide.js     hide/unhide rows + Hidden disclosure (reads ChatVisibility)
   chat_longtext.js the long-body clamp + .txt download (no deps)
   chat_compose.js  the composer: auto-grow + the long-draft offer
                    (reads ChatLongText for the threshold, and is handed
@@ -963,6 +1017,8 @@ if the symbol is missing, so an old SDK costs behaviour, not the page.
 <script defer src="{% static 'scitex_cards/chat/chat_attach.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_drawer.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_filter.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_visibility.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_hide.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_new.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_markdown.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_longtext.js' %}"></script>
@@ -972,7 +1028,15 @@ if the symbol is missing, so an old SDK costs behaviour, not the page.
 <script defer src="{% static 'scitex_cards/chat/chat_send.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_panes.js' %}"></script>
-<script defer src="{% static 'scitex_cards/ui/emoji_picker.js' %}"></script>
+{% comment %}
+Board runtime for the unified page: the SAME inline script the standalone
+board runs (one source, _board_foot.html), then the hash router. Classic
+script runs during parse — same timing as on the board page — while the
+router is defer like the chat modules. Router order vs chat.js is
+immaterial: it only toggles panes and listens, never calls chat internals.
+{% endcomment %}
+{% include "scitex_cards/_board_foot.html" %}
+<script defer src="{% static 'scitex_cards/app_router.js' %}"></script>
 {% comment %}
 SELF-VERIFYING WIRING, and it belongs HERE rather than in chat.js.
 
@@ -996,7 +1060,7 @@ silent failure for a worse loud one.
 {% endcomment %}
 <script>
 window.addEventListener("load", function () {
-  var required = ["ChatDiff", "ChatWindow", "ChatAvatar"];
+  var required = ["ChatDiff", "ChatWindow", "ChatAvatar", "ChatVisibility", "ChatHide"];
   var missing = required.filter(function (name) { return !window[name]; });
   if (missing.length) {
     console.error(

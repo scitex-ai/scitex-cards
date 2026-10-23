@@ -74,6 +74,26 @@ _MATRIX_JS = _STATIC / "14-matrix.js"
 _MATRIX_CSS = _STATIC / "14-matrix.css"
 
 
+def _board_sources() -> str:
+    """Board markup as served: board_v3.html plus its three partials.
+
+    Since the unified page (operator 2026-10-20) the board body, head
+    assets and inline script live in _board_pane/_board_head/_board_foot —
+    one source served standalone AND embedded. Signature pins read the
+    concatenation so they assert what the board serves.
+    """
+    base = _TEMPLATE.parent
+    return "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in (
+            _TEMPLATE,
+            base / "_board_pane.html",
+            base / "_board_head.html",
+            base / "_board_foot.html",
+        )
+    )
+
+
 # `scored` carries both axes + an engine rank; `bare` carries neither, which
 # is what EVERY card looks like until the schema-v5 work lands.
 _STORE_TEXT = (
@@ -241,7 +261,7 @@ def test_unscored_card_has_no_axis_key_in_the_store(store):
 def test_matrix_is_registered_as_a_valid_layout():
     # Arrange
     # Act
-    src = _TEMPLATE.read_text(encoding="utf-8")
+    src = _board_sources()
     # Assert
     assert 'VALID_LAYOUTS = ["timeline", "wall", "graph", "matrix"]' in src
 
@@ -249,7 +269,7 @@ def test_matrix_is_registered_as_a_valid_layout():
 def test_matrix_layout_has_a_toggle_control():
     # Arrange
     # Act
-    src = _TEMPLATE.read_text(encoding="utf-8")
+    src = _board_sources()
     # Assert
     assert 'id="f-layout-matrix"' in src
 
@@ -257,7 +277,7 @@ def test_matrix_layout_has_a_toggle_control():
 def test_matrix_toggle_switches_the_layout():
     # Arrange
     # Act
-    src = _TEMPLATE.read_text(encoding="utf-8")
+    src = _board_sources()
     # Assert
     assert "onLayoutChange('matrix')" in src
 
@@ -265,7 +285,7 @@ def test_matrix_toggle_switches_the_layout():
 def test_the_template_loads_the_matrix_script():
     # Arrange
     # Act
-    src = _TEMPLATE.read_text(encoding="utf-8")
+    src = _board_sources()
     # Assert
     assert "board_v3/14-matrix.js" in src
 
@@ -273,7 +293,7 @@ def test_the_template_loads_the_matrix_script():
 def test_the_template_loads_the_matrix_stylesheet():
     # Arrange
     # Act
-    src = _TEMPLATE.read_text(encoding="utf-8")
+    src = _board_sources()
     # Assert
     assert "board_v3/14-matrix.css" in src
 
@@ -283,7 +303,7 @@ def test_the_matrix_render_falls_back_when_the_module_is_absent():
     # same stance as Wall: a deferred script that hasn't executed
     # must not blank the GUI, so the dispatch guards on window.STX.matrix.
     # Act
-    src = _TEMPLATE.read_text(encoding="utf-8")
+    src = _board_sources()
     # Assert
     assert 'layout === "matrix" && window.STX && window.STX.matrix' in src
 

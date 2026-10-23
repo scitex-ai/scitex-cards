@@ -1,0 +1,634 @@
+{% load i18n %}
+{% comment %}Board pane — extracted VERBATIM from board_v3.html so the standalone board and the unified (#dm/#board) page render ONE source. Wrapped in .board-app-pane: board CSS globals are scoped to this wrapper (see 01-filterbar.css), so the DM side of the unified page is untouched.{% endcomment %}
+<div class="board-app-pane">
+  {% if board_header|default_if_none:True %}
+  {% comment %}
+  Standalone-board chrome: the SAME shared title row the DM page renders,
+  plus the SAME tab row beneath it (operator 2026-10-20: title line holds
+  label + version + project selector ONLY; the switcher lives in the tab
+  row, never in the shared line). Both rows sit ABOVE the filterbar as
+  their own stacked rows — never inside .fb-left, whose flex row would lay
+  them out side by side instead of stacked.
+  {% endcomment %}
+  {% include "scitex_cards/_page_header.html" with page_title="SciTeX Cards" %}
+  {% include "scitex_cards/_page_tabs.html" with active="board" %}
+  {% endif %}
+  {% comment %}
+    Filterbar reorg (operator TG, lead a2a `b48f7c2c438b464698183d2e95d3bb04`,
+    2026-06-12). Three explicit groups end the flex-wrap chaos:
+      .fb-left   — identity   (title + version + LIVE chip)
+      .fb-center — search     (input + autocomplete suggest)
+      .fb-right  — operations (Layout | Sort | Filters | Recent
+                               count | Group | Add Task | blocking
+                               me | overflow controls)
+    Active-filter chips + qualifier hint pills move to a second row
+    `<div class="filterbar-chips">` shown only when populated.
+  {% endcomment %}
+  <div class="filterbar stx-cards-headerbar">
+    <div class="fb-left">
+      {% comment %}
+        Identity band — kept as a spacer so the search input stays centred.
+        The LIVE chip moved to Details > Board (operator 2026-10-22: View,
+        Span, Layout AND Live all belong in the Details column, so the
+        freed header width goes to the search box). renderLiveRow() paints
+        the live state there; see the details-board section.
+      {% endcomment %}
+    </div>
+
+    <div class="fb-center stx-cards-filterbar__group stx-cards-filterbar__group--search">
+      <!-- SEARCH/FILTER group (board UI overhaul part 2, 2026-06-14): the
+           search input + Filters popover share the center band so the
+           operator's two query-narrowing tools live next to each other.
+           Search-as-launcher (P1, lead brief 2026-06-12) — the PRIMARY
+           filterbar entry point. -->
+      <span class="filt-search-wrap" id="f-search-wrap">
+        {% translate 'Search… ( / to focus, Esc to blur) — try project:paper-scitex-clew, status:blocked, kind:compute, …' as search_ph %}
+        <input class="filt filt-search" id="f-search" type="search"
+               placeholder="{{ search_ph }}"
+               title="Fuzzy match + GitHub-style qualifiers (project: / agent: / status: / kind: / parent: / scope: / id: / priority: / host:). Press / to focus, Esc to blur. Tab to autocomplete the qualifier or value under the cursor."
+               oninput="onSearchInput(event)" onkeydown="onSearchKeyDown(event)"
+               onfocus="onSearchFocus(event)" onblur="onSearchBlur(event)"
+               role="combobox" aria-autocomplete="list"
+               aria-controls="search-suggest" aria-expanded="false"
+               autocomplete="off">
+        <!-- Autocomplete dropdown (operator TG 12318) -->
+        <ul class="search-suggest" id="search-suggest" role="listbox"
+            aria-label="{% translate 'Search suggestions' %}" hidden></ul>
+      </span>
+    </div>{# end .fb-center / SEARCH group #}
+
+    <div class="fb-right">
+    {% comment %} board UI overhaul part 2 (2026-06-14, operator complaint via lead
+       a2a `d1af161e`) — explicit subgroups in the right band so the
+       controls stop visually colliding:
+         VIEW    = Layout + Sort + Group
+         STATUS  = recent-count + Reload + hide-project + blocking-me + hidden
+         PRIMARY = + Add Task (separated by a divider, brand-accent)
+       The legacy `.fb-right` keeps its wrap-friendly flex; the new
+       `.stx-cards-filterbar__group--*` wrappers add the breathing room
+       + dividers.
+
+       NB: this MUST be a `comment` block, not `{# #}` — Django's `{# #}`
+       syntax is single-line only; newlines between `{#` and `#}` are NOT
+       stripped, so the comment leaks as literal text onto the operator's
+       screen. The leak shipped briefly in PR #173 (the header-declutter
+       PR); fix-forward in this PR per lead a2a
+       `f7a5d37930b9479ca7e53a7e316c132d`, 2026-06-14, after the operator
+       reported it live. {% endcomment %}
+    {% comment %}
+      VIEW group RETIRED 2026-10-22 (operator: View, Span, Layout, Live all
+      belong in the Details column). The Layout segmented control moved to
+      Details > Board; its buttons (ids, classes, onclick) are unchanged so
+      onLayoutChange() + the contract tests need no JS-side migration — the
+      test now reads the Details section instead of this band. This group
+      wrapper stays as an (empty) mount point so the contract selector still
+      resolves; the CSS keeps its rules for the Details-hosted control.
+    {% endcomment %}
+    <div class="stx-cards-filterbar__group stx-cards-filterbar__group--view"
+         role="group" aria-label="View controls — layout, sort, group">
+    <!-- LAYOUT AXIS — the board renders the SAME data in one of three
+         orthogonal layouts: Timeline (time raster), Wall (sticky notes),
+         Graph (dependency map, mermaid SVG).
+
+         Column (kanban) + Table (flat rows) were REMOVED 2026-07-13
+         (operator TG: "Column, Table view がいらないです、削除してください").
+         Their renderers, chrome (pin / drag-reorder / column ctx-menu /
+         per-card checkboxes) and the controls that only drove them (Sort,
+         Group, Group-by-time, bulk-select toolbar, project-column hide)
+         went with them — every one of those acted on column CARDS, which
+         no longer exist. The Stale layout was removed the same way on
+         2026-07-10.
+
+         Timeline is FIRST *and* the DEFAULT (operator 2026-07-10 —
+         "Timeline view 本丸なので一番左に"; Column used to be the default,
+         so the boot path + onLayoutChange() coerce any stored
+         column/table/stale value to timeline — otherwise an operator whose
+         localStorage still said "column" would land on a BLANK board). -->
+    <span class="filt-layout" hidden
+          title="Moved to Details > Board — kept for contract">
+      <label class="filt-layout-label">{% translate "Layout" %}</label>
+      <div class="filt-layout-seg" role="radiogroup" aria-label="{% translate 'Layout' %}">
+        <button type="button" class="filt-layout-btn filt-layout-btn--on"
+                id="f-layout-timeline"
+                data-layout="timeline" onclick="onLayoutChange('timeline')"
+                role="radio" aria-checked="true"
+                title="Timeline — time raster by agent/project, or a per-task simple list (day/week/month windows) — default">{% translate "Timeline" %}</button>
+        <button type="button" class="filt-layout-btn" id="f-layout-wall"
+                data-layout="wall" onclick="onLayoutChange('wall')"
+                role="radio" aria-checked="false"
+                title="Wall — sticky notes clustered by assignee; the selected agent's next-up stack rises to the top">{% translate "Wall" %}</button>
+        <button type="button" class="filt-layout-btn" id="f-layout-graph"
+                data-layout="graph" onclick="onLayoutChange('graph')"
+                role="radio" aria-checked="false"
+                title="Dependency / blocker graph (mermaid)">{% translate "Graph" %}</button>
+        {% comment %}
+          Matrix — urgency×importance quadrants (ADR-0011 §8). The layout
+          itself lives in 14-matrix.js; this is only the toggle.
+          (hook-bypass: line-limit — this template is 3425 lines, already
+          over the 1024 cap before this change; splitting it is tracked
+          separately rather than smuggled into the matrix PR.)
+        {% endcomment %}
+        <button type="button" class="filt-layout-btn" id="f-layout-matrix"
+                data-layout="matrix" onclick="onLayoutChange('matrix')"
+                role="radio" aria-checked="false"
+                title="Matrix — urgency × importance quadrants (I urgent+important / II important / III urgent / IV neither)">{% translate "Matrix" %}</button>
+      </div>
+    </span>
+    </div>{# end VIEW group #}
+
+    <span class="stx-cards-filterbar__divider" aria-hidden="true"></span>
+
+    <div class="stx-cards-filterbar__primary" role="group"
+         aria-label="{% translate 'Primary action — add a new task' %}">
+    <!-- Add Task — operator-CRUD wiring (TG 344): one-click new-task
+         entry from the filterbar. Opens the #add-task-backdrop modal
+         below; POST /create on submit; loadGraph() refresh.
+         Promoted to the right-most "PRIMARY ACTION" zone (board UI
+         overhaul part 2, 2026-06-14) so the operator's most-used
+         button pops with the brand accent. -->
+    <button id="add-task-btn" class="add-task-btn" onclick="openAddTaskModal()"
+            title="Add a new task (Cmd/Ctrl-N)">{% translate "+ Add Task" %}</button>
+    </div>{# end PRIMARY action zone #}
+    </div>{# end .fb-right #}
+  </div>{# end .filterbar #}
+
+  {% comment %}
+    Filterbar second row — active filter chips + qualifier-hint pills.
+    Hidden via CSS when both children are empty so the main filterbar
+    stays at ~50 px on the default state. Populated by
+    renderActiveFilterChips() / renderQualifierHints() in extra_js.
+  {% endcomment %}
+  <div class="filterbar-chips" id="filterbar-chips">
+    <div class="filt-qhints" id="filt-qhints"
+         aria-live="polite"
+         aria-label="{% translate 'Recognized search qualifiers' %}"></div>
+    <div id="filt-chips" class="filt-chips"
+         aria-live="polite" aria-label="{% translate 'Active filters' %}"></div>
+  </div>
+
+  {% comment %}
+    STATUS COLOR LEGEND (operator: "add color legends") — decodes the
+    per-status colors used by cards / timeline / mermaid. SINGLE-SOURCED:
+    iterates the SAME `status_colors` template context (views.board_v3_page
+    → handlers.graph._status_colors → _diagram.STATUS_STYLE) in
+    STATUS_STYLE order, so adding/removing a status updates the legend
+    automatically — no hardcoded status list or hex colors here. Each chip
+    references the first-paint `--status-fill-<s>` / `--status-stroke-<s>`
+    / `--status-border-<s>` CSS vars (rendered by #status-color-vars) so
+    the swatch matches the cards exactly, including `deferred`'s dashed
+    border. `data-legend-status` per chip keeps the test robust.
+
+    Mobile declutter (card cards-mobile-declutter-20261007): the legend
+    lives inside a <details> disclosure, closed by default, so the phone
+    board opens on cards instead of a two-line chip wrap. Same chips,
+    same single-sourcing — only the disclosure wrapper is new.
+  {% endcomment %}
+  <details class="status-legend-wrap" id="status-legend-wrap">
+    <summary class="status-legend-summary">{% translate "Legend" %}</summary>
+  <div class="status-legend" id="status-legend"
+       role="group" aria-label="{% translate 'Status color legend' %}">
+    {% for s, c in status_colors.items %}
+    <span class="status-legend-chip" data-legend-status="{{ s }}"
+          title="{{ s }}" aria-label="status color: {{ s }}">
+      <span class="status-legend-swatch" aria-hidden="true"
+            style="background: var(--status-fill-{{ s }});
+                   border: 1px var(--status-border-{{ s }}, solid) var(--status-stroke-{{ s }});"></span>
+      <span class="status-legend-label">{{ s }}</span>
+    </span>
+    {% endfor %}
+  </div>
+  </details>
+
+  {% comment %}
+    BLOCKING-YOU 360 px aside REMOVED (P12, lead a2a 2026-06-12). The
+    operator-decision queue was folded into the Column layout's synthetic
+    `user` lane — which itself went away with the Column layout on
+    2026-07-13. The "🚧 blocking me" filterbar toggle (#t-block) is the
+    surviving entry point: it's a FILTER, so it narrows whichever layout
+    is active (Timeline / Wall / Graph).
+  {% endcomment %}
+
+  <div class="main">
+    {% comment %}
+      DM/chat LEFT pane REMOVED (operator CCT4612 separation, 2026-10-19):
+      the Board shows boards only, DM lives on its own route/view (/dm,
+      /chat, and root). The aside went with its pane assets and node pins —
+      the tab switcher above is the crossing now.
+      Deliberately a removal note rather than silent deletion, so a future
+      reader knows the pane was withdrawn on instruction, not lost.
+    {% endcomment %}
+    <div class="board-area">
+
+    <!-- Empty-state banner (operator TG12911, lead a2a `ffa6c606`) — when
+         the active filters narrow the visible set to 0 cards, surface an
+         explicit "0 matches" line + a one-click "Clear filters" so a
+         silent empty board doesn't read as "the filter is broken".
+         Hidden by default; render() flips it on/off. -->
+    <div id="filter-empty-banner"
+         style="display:none; padding:14px 18px; margin:6px 12px;
+                background:var(--accent-soft, #fff7e6);
+                border:1px solid var(--accent, #d99700);
+                border-radius:6px; font-size:13px; line-height:1.5;"
+         role="status">
+      <strong style="color:var(--accent-strong, #b97400)">{% translate "0 matches." %}</strong>
+      <span id="filter-empty-banner-detail"></span>
+      <button type="button" id="filter-empty-banner-clear"
+              style="margin-left:10px; cursor:pointer;">{% translate "Clear all filters" %}</button>
+    </div>
+    <div class="columns" id="columns" aria-busy="true"
+         data-cards-internal-chrome="{{ cards_internal_chrome_enabled|yesno:'true,false,false' }}">
+      {% comment %}
+        Open-first skeleton: the server paints placeholder cards + a spinner
+        BEFORE /graph resolves, so first paint carries feedback even when the
+        store rebuild takes seconds. loadGraph()'s render() and the
+        boardStates painters replace this wholesale and flip aria-busy to
+        false the moment data — or a named empty/error state — lands. Pure
+        markup + 18-skeleton.css: no JS needed to show it.
+      {% endcomment %}
+      <div class="board-skeleton" role="status" aria-label="{% translate 'Loading board' %}">
+        <div class="board-skeleton__spinner" aria-hidden="true"></div>
+        <p class="board-skeleton__msg">{% translate "Loading board…" %}</p>
+        <div class="board-skeleton__grid" aria-hidden="true">
+          <div class="sk-card"><div class="sk-line sk-line--title"></div><div class="sk-line"></div><div class="sk-line sk-line--short"></div><div class="sk-chips"><span></span><span></span></div></div>
+          <div class="sk-card"><div class="sk-line sk-line--title"></div><div class="sk-line"></div><div class="sk-line sk-line--short"></div><div class="sk-chips"><span></span><span></span></div></div>
+          <div class="sk-card"><div class="sk-line sk-line--title"></div><div class="sk-line"></div><div class="sk-line sk-line--short"></div><div class="sk-chips"><span></span><span></span></div></div>
+          <div class="sk-card"><div class="sk-line sk-line--title"></div><div class="sk-line"></div><div class="sk-line sk-line--short"></div><div class="sk-chips"><span></span><span></span></div></div>
+          <div class="sk-card"><div class="sk-line sk-line--title"></div><div class="sk-line"></div><div class="sk-line sk-line--short"></div><div class="sk-chips"><span></span><span></span></div></div>
+          <div class="sk-card"><div class="sk-line sk-line--title"></div><div class="sk-line"></div><div class="sk-line sk-line--short"></div><div class="sk-chips"><span></span><span></span></div></div>
+        </div>
+      </div>
+    </div>
+    </div>{# end .board-area #}
+
+    {% comment %}
+      RIGHT-HAND DETAILS COLUMN (operator TG 2026-07-13: "右の方に details
+      カラムを作ってそこにもっと使いやすい形でのフィルタを用意すればよい" +
+      "Legend と対応させて Details の方に Stats を用意して、可視化してください。
+      タイムスケールも分けられるようにして … (d/w/m)").
+
+      Convention borrowed from scitex-writer's Details pane (aside +
+      accordion sections + localStorage open-set) so the two products look
+      like one system rather than two bespoke boards.
+
+      The three sections are exactly the things that used to shout from the
+      header: STATS (incl. the "N new/24h" counter), FILTERS (the six
+      dropdowns from the old popover, plus show-done + blocking-me as
+      ordinary filter rows) and HIDDEN cards.
+    {% endcomment %}
+    <aside class="details-pane stx-shell-sidebar" id="details-panel"
+           aria-label="{% translate 'Details' %}"
+           {% comment %}
+             Collapsed rail expands on ANY rail click (operator 2026-10-23:
+             the toggle alone is a 13px target that clips out of reach on
+             short viewports). Guarded to the collapsed state so clicks in
+             an open pane never collapse it; the toggle button's own handler
+             runs first on bubble and clears the class, so this is a no-op
+             there rather than a double toggle.
+           {% endcomment %}
+           onclick="if(this.classList.contains('collapsed'))toggleDetailsPane()">
+      {% comment %}
+        The pane itself is the SDK's `.stx-shell-sidebar` — the SAME
+        workspace-pane primitive Writer / Scholar / Console use (shell CSS
+        css/shell/stx-shell-sidebar.css, already linked by the standalone
+        shell this template extends). We get its 50 px `__header`, its
+        scrolling `__content`, and its "smart" `.collapsed` state (pane
+        shrinks to --ui-collapsed-pane-width and the header rotates into a
+        vertical icon+label strip) for free. `.details-pane` in
+        13-details-pane.css carries ONLY the overrides the component's own
+        docs ask for: dock it to the RIGHT (border-left) and give it a
+        board-appropriate width.
+      {% endcomment %}
+      <div class="stx-shell-sidebar__header">
+        <h5>{% translate "Details" %}</h5>
+        {# shown only when collapsed — the shell's vertical icon+label strip #}
+        <span class="stx-shell-sidebar__title">
+          <span>{% translate "Details" %}</span>
+        </span>
+        <button type="button" class="stx-shell-sidebar__toggle"
+                id="details-toggle" onclick="toggleDetailsPane()"
+                aria-expanded="true" aria-controls="details-panel"
+                title="Collapse / expand the Details column">›</button>
+      </div>
+      <div class="stx-shell-sidebar__content details-body">
+
+        <div class="details-section open" data-id="board">
+          <button type="button" class="details-section-toggle"
+                  onclick="toggleDetailsSection('board')">
+            <span class="details-section-title">{% translate "Board" %}</span>
+            <span class="details-chevron" aria-hidden="true">▸</span>
+          </button>
+          <div class="details-section-body">
+            {% comment %}
+              BOARD VIEW CONTROLS (operator 2026-10-22: View, Span, Layout
+              and Live move out of the header into the Details column, so
+              the freed header width goes to the search box). ONE state, one
+              set of setters — this section only re-homes the chrome:
+                View / Span — the timeline's own tabs (detailsBoardHtml),
+                  same setTimelineView/setTimelineWindow setters the canvas
+                  row used to call. "Span" is the operator-approved rename
+                  of "Window" (Day/Week/Month name a time SPAN, not a window
+                  manager).
+                Layout — the same filt-layout segmented buttons the header
+                  carried (ids/classes/onclick UNCHANGED), so
+                  onLayoutChange() and its boot sync need no migration.
+                Live — the live-update chip, repainted by renderLiveRow()
+                  from the same rev/auto-refresh tick that drives the board.
+            {% endcomment %}
+            <div class="details-row" data-details-board="timeline">
+              <div id="details-board-timeline"></div>
+            </div>
+            <div class="details-row" data-details-board="layout">
+              <label for="f-layout-timeline">{% translate "Layout" %}</label>
+              <div class="filt-layout-seg details-layout-seg" role="radiogroup" aria-label="{% translate 'Layout' %}">
+                <button type="button" class="filt-layout-btn filt-layout-btn--on"
+                        id="details-layout-timeline"
+                        data-layout="timeline" onclick="onLayoutChange('timeline')"
+                        role="radio" aria-checked="true"
+                        title="Timeline — time raster by agent/project, or a per-task simple list (day/week/month spans) — default">{% translate "Timeline" %}</button>
+                <button type="button" class="filt-layout-btn" id="details-layout-wall"
+                        data-layout="wall" onclick="onLayoutChange('wall')"
+                        role="radio" aria-checked="false"
+                        title="Wall — sticky notes clustered by assignee">{% translate "Wall" %}</button>
+                <button type="button" class="filt-layout-btn" id="details-layout-graph"
+                        data-layout="graph" onclick="onLayoutChange('graph')"
+                        role="radio" aria-checked="false"
+                        title="Dependency / blocker graph (mermaid)">{% translate "Graph" %}</button>
+                <button type="button" class="filt-layout-btn" id="details-layout-matrix"
+                        data-layout="matrix" onclick="onLayoutChange('matrix')"
+                        role="radio" aria-checked="false"
+                        title="Matrix — urgency × importance quadrants">{% translate "Matrix" %}</button>
+              </div>
+            </div>
+            <div class="details-row" data-details-board="live">
+              <label>{% translate "Live" %}</label>
+              {% comment %}
+               LIVE badge ships DARK: "CONNECTING" until a read succeeds.
+               renderDetailsBoard() (_board_foot.html) is the single writer —
+               it flips to LIVE only when STATE.graph exists and reverts on
+               any failed read. Static markup claiming LIVE is the 2026-09-17
+               operator defect (badge true of the markup, not of the data), so
+               the shipped text matches the pre-read state exactly.
+             {% endcomment %}
+             <span class="details-live details-live--off" id="details-live" data-stx-live-gate><span class="live-dot"></span>CONNECTING</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="details-section open" data-id="stats">
+          <button type="button" class="details-section-toggle"
+                  onclick="toggleDetailsSection('stats')">
+            <span class="details-section-title">{% translate "Stats" %}</span>
+            <span class="details-chevron" aria-hidden="true">▸</span>
+          </button>
+          <div class="details-section-body" id="details-stats-body">
+            {% comment %}
+              TIMESCALE — the SAME d/w/m window the Timeline raster uses
+              (timeline.js `WINDOWS = {1d:24, 1w:168, 1m:720}` hours, stored
+              under localStorage["scitex-cards:tl-window"]). Clicking here
+              calls the timeline's own setTimelineWindow(), so there is ONE
+              definition of "week" on the board, not two that can drift.
+            {% endcomment %}
+            <div class="details-scale" role="group" aria-label="Stats timescale">
+              <button type="button" class="details-scale-btn" data-win="1d"
+                      onclick="setBoardWindow('1d')" title="Last 24 hours">D</button>
+              <button type="button" class="details-scale-btn" data-win="1w"
+                      onclick="setBoardWindow('1w')" title="Last 7 days">W</button>
+              <button type="button" class="details-scale-btn" data-win="1m"
+                      onclick="setBoardWindow('1m')" title="Last 30 days">M</button>
+            </div>
+            <div id="details-stats"></div>
+          </div>
+        </div>
+
+        <div class="details-section open" data-id="filters">
+          <button type="button" class="details-section-toggle"
+                  onclick="toggleDetailsSection('filters')">
+            <span class="details-section-title">{% translate "Filters" %}</span>
+            <span class="details-filter-count" id="filt-active-count">(0)</span>
+            <span class="details-chevron" aria-hidden="true">▸</span>
+          </button>
+          <div class="details-section-body">
+            <div class="details-row details-row--filter">
+              <label for="f-text">{% translate "Text" %}</label>
+              <input class="filt filt-text" id="f-text" type="search"
+                     placeholder="buzzword…"
+                     title="Free-text: substring, case-insensitive, across title / text / project / assignee / note"
+                     oninput="onDetailsTextInput(event)">
+            </div>
+            <div class="details-row details-row--filter">
+              <label for="f-agent">{% translate "Assignee" %}</label>
+              <select class="filt" id="f-agent"><option value="">{% translate "All assignees" %}</option></select>
+            </div>
+            <div class="details-row details-row--filter">
+              <label for="f-status">{% translate "Status" %}</label>
+              <select class="filt" id="f-status"><option value="">{% translate "All statuses" %}</option></select>
+            </div>
+            <div class="details-row details-row--filter">
+              <label for="f-blocker">{% translate "Blocked by" %}</label>
+              <select class="filt" id="f-blocker" title="Show what each card is waiting for"><option value="">{% translate "All blockers" %}</option></select>
+            </div>
+            <div class="details-row details-row--filter">
+              <label for="f-host">{% translate "Host" %}</label>
+              <select class="filt" id="f-host"><option value="">{% translate "All hosts" %}</option></select>
+            </div>
+            <div class="details-row details-row--filter">
+              <label for="f-date">{% translate "Date" %}</label>
+              <select class="filt" id="f-date"
+                      title="Show cards by due date">
+                <option value="">{% translate "All dates" %}</option>
+                <option value="overdue">{% translate "overdue" %}</option>
+                <option value="today">{% translate "today" %}</option>
+                <option value="7d">{% translate "within 7 days" %}</option>
+                <option value="30d">{% translate "within 30 days" %}</option>
+                <option value="undated">{% translate "no date in title" %}</option>
+              </select>
+            </div>
+            <label class="details-check" for="f-blockingme"
+                   title="Show blocked cards that need your decision">
+              <input type="checkbox" id="f-blockingme"
+                     onchange="onBlockingMeChange(event)">
+              <span>{% translate "awaiting your decision" %}</span>
+            </label>
+            <label class="details-check" for="f-showdone">
+              <input type="checkbox" id="f-showdone" onchange="onShowDoneChange(event)">
+              <span>show <code>done</code>
+                <span id="f-showdone-count" class="details-muted">(0 hidden)</span></span>
+            </label>
+            <button type="button" class="details-clear" onclick="clearAllFilters()"
+                    title="Reset every filter">{% translate "Clear all filters" %}</button>
+          </div>
+        </div>
+
+        <div class="details-section" data-id="hidden">
+          <button type="button" class="details-section-toggle"
+                  onclick="toggleDetailsSection('hidden')">
+            <span class="details-section-title">{% translate "Hidden cards" %}</span>
+            <span class="details-filter-count">(<span id="hidden-count">0</span>)</span>
+            <span class="details-chevron" aria-hidden="true">▸</span>
+          </button>
+          <div class="details-section-body">
+            <div id="hidden-list-panel" class="hidden-list-panel">
+              <div class="hidden-list-empty">{% translate "No hidden cards." %}</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+  </div>
+
+  {% if cards_internal_chrome_enabled %}
+  <div class="foot">
+    {# Dev strings hide behind info (operator mandate CCT 3877): the ADR refs #}
+    {# and store path stay in the DOM (pinned) but render only on expand. #}
+    <details class="foot-info">
+      <summary title="Internal build info" aria-label="Internal build info">ⓘ</summary>
+      <span>v3 LIVE · real data · operator schema (ADR-0007) · GUI→code (ADR-0006)</span>
+      <span><code id="store-path">…</code></span>
+    </details>
+  </div>
+  {% endif %}
+
+  <div class="detail-backdrop" id="detail-backdrop" onclick="closeDetail(event)">
+    <div class="detail" onclick="event.stopPropagation()">
+      <h2 id="d-title"></h2>
+      <div class="detail-meta" id="d-meta"></div>
+      <div id="d-rows"></div>
+      <!-- Word-style threaded comments (operator's TG 9763 mental model
+           per lead a2a a7e53184). All comments[] entries render here;
+           Post appends via /comment + refreshes. -->
+      <div class="d-comments-section">
+        <h3>Route <span class="route-hint">— how this card was handled (newest last)</span></h3>
+        <div class="comment-list" id="d-comment-list">
+          <div class="comment-empty">…</div>
+        </div>
+        <div class="comment-add">
+          <textarea id="d-comment-text" placeholder="Add a comment… (Cmd/Ctrl-Enter to post)" rows="3"></textarea>
+          <div class="comment-add-actions">
+            <span class="comment-add-hint">Posts to comments[]; visible to the owning agent.</span>
+            <button class="comment-post-btn" id="d-comment-post" onclick="postCommentFromDrawer()">Post</button>
+          </div>
+        </div>
+      </div>
+      <!-- Inline edit form (toggled by the Edit button below). The form
+           mirrors the Add-Task modal fields so the operator can change
+           title / status / blocker / note / project / agent / task. POST
+           goes to /update; success reloads via loadGraph(). -->
+      <div class="detail-edit-form" id="d-edit-form">
+        <div class="at-row">
+          <label for="d-edit-title">Title</label>
+          <input class="d-edit-input" id="d-edit-title" type="text">
+        </div>
+        <div class="at-row" style="flex-direction: row; gap: 10px;">
+          <div style="flex: 1;">
+            <label for="d-edit-status">Status</label>
+            <select class="d-edit-select" id="d-edit-status">
+              {# `pending` abolished 2026-07-10; writing it now fails validation. #}
+              <option value="in_progress">in_progress</option>
+              <option value="blocked">blocked</option>
+              <option value="done">done</option>
+              <option value="deferred">deferred</option>
+              <option value="failed">failed</option>
+              <option value="goal">goal</option>
+            </select>
+          </div>
+          <div style="flex: 1;">
+            <label for="d-edit-blocker">Blocker</label>
+            <select class="d-edit-select" id="d-edit-blocker">
+              <option value="">(none)</option>
+              <option value="compute">Compute</option>
+              <option value="quota">Resource quota</option>
+              <option value="user-pending">Awaiting your response</option>
+              <option value="task-dependency">Task dependency</option>
+              <option value="operator-decision">Awaiting your decision</option>
+            </select>
+          </div>
+        </div>
+        <div class="at-row" style="flex-direction: row; gap: 10px;">
+          <div style="flex: 1;">
+            <label for="d-edit-project">Project</label>
+            <input class="d-edit-input" id="d-edit-project" type="text">
+          </div>
+          <div style="flex: 1;">
+            <label for="d-edit-agent">Assignee</label>
+            <input class="d-edit-input" id="d-edit-agent" type="text">
+          </div>
+        </div>
+        <div class="at-row">
+          <label for="d-edit-task">Task (one-line current focus)</label>
+          <input class="d-edit-input" id="d-edit-task" type="text">
+        </div>
+        <div class="at-row">
+          <label for="d-edit-note">Note (markdown body)</label>
+          <textarea class="d-edit-textarea" id="d-edit-note"></textarea>
+        </div>
+        <div class="d-edit-actions">
+          <button class="d-edit-cancel" onclick="cancelDetailEdit()">Cancel</button>
+          <button class="d-edit-save" onclick="saveDetailEdit()">Save</button>
+        </div>
+      </div>
+      <div class="detail-actions">
+        <button class="detail-close" onclick="closeDetail()">Close</button>
+        <button class="detail-edit" id="d-edit" onclick="enterDetailEdit()">Edit</button>
+        <button class="detail-delete" id="d-delete" onclick="deleteCurrentTask()">Delete</button>
+        <button class="detail-cancel-resolve" id="d-cancel-resolve" onclick="disarmResolve()"
+                style="display: none;">Cancel</button>
+        <button class="detail-resolve" id="d-resolve" onclick="resolveTask()">Resolve → notify agent</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Task modal (operator TG 344 — create from browser). POST /create,
+       reload board, close modal. project picker pre-fills from existing
+       projects via the auto-discovered list. -->
+  <div class="at-backdrop" id="add-task-backdrop" onclick="closeAddTaskModal(event)">
+    <div class="at-modal" onclick="event.stopPropagation()">
+      <h2>{% translate "+ Add Task" %}</h2>
+      <div class="at-row">
+        <label for="at-title">Title <span style="color: var(--red);">*</span></label>
+        <input class="at-input" id="at-title" type="text" autocomplete="off"
+               placeholder="What needs to get done?">
+      </div>
+      <!-- Assignee is REQUIRED (operator constitution, no silent fallbacks): a
+           card must have an owner. The server (handle_create -> add_task) also
+           rejects an owner-less create, but require it client-side so the user
+           gets an inline message before the round-trip. hook-bypass: line-limit -->
+      <div class="at-row">
+        <label for="at-assignee">Assignee <span style="color: var(--red);">*</span></label>
+        <input class="at-input" id="at-assignee" name="task-assignee" type="text"
+               autocomplete="off" required list="at-assignee-list"
+               placeholder="Who owns this card? (e.g. operator)">
+        <datalist id="at-assignee-list"></datalist>
+      </div>
+      <div class="at-row" style="flex-direction: row; gap: 10px;">
+        <div style="flex: 1;">
+          <label for="at-project">Project</label>
+          <input class="at-input" id="at-project" list="at-project-list" type="text"
+                 placeholder="e.g. scitex-cards">
+          <datalist id="at-project-list"></datalist>
+        </div>
+        <div style="flex: 1;">
+          <label for="at-status">Status</label>
+          <select class="at-select" id="at-status">
+            {# `pending` abolished 2026-07-10 — the honest default is `deferred`. #}
+            <option value="deferred">deferred</option>
+            <option value="in_progress">in_progress</option>
+            <option value="blocked">blocked</option>
+            <option value="goal">goal</option>
+          </select>
+        </div>
+      </div>
+      <div class="at-row">
+        <label for="at-task">Task (one-line current focus) — optional</label>
+        <input class="at-input" id="at-task" type="text"
+               placeholder="What's the current step? (shows on the card)">
+      </div>
+      <div class="at-actions">
+        <button class="at-btn at-btn-cancel" onclick="closeAddTaskModal()">Cancel</button>
+        <button class="at-btn at-btn-create" id="at-create" onclick="submitAddTask()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>

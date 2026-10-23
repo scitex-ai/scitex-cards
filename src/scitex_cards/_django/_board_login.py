@@ -128,7 +128,7 @@ def issue_cookie(response: HttpResponse, *, secure: bool) -> HttpResponse:
 _PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SciTeX Cards — sign in</title>
+<title>Cards — sign in</title>
 <style>
   :root {{ color-scheme: dark; }}
   body {{ margin:0; min-height:100vh; display:flex; align-items:center;
@@ -160,7 +160,7 @@ _PAGE = """<!doctype html>
          font-size:.85rem; }}
 </style>
 <main>
-  <h1>SciTeX Cards</h1>
+  <h1>Cards</h1>
   <p class="sub">This board asks for a password. Here is where to find it.</p>
   {error}
   <form method="post">

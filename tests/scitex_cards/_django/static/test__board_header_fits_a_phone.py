@@ -89,7 +89,15 @@ def test_the_phone_sheet_removes_the_search_groups_width_floor():
 def test_the_phone_sheets_search_selectors_exist_in_the_markup():
     """Dead CSS is a claim, not a rule — catch it where it is written."""
     # Arrange
-    template = _TEMPLATE.read_text(encoding="utf-8")
+    template = "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in (
+            _TEMPLATE,
+            _TEMPLATE.parent / "_board_pane.html",
+            _TEMPLATE.parent / "_board_head.html",
+            _TEMPLATE.parent / "_board_foot.html",
+        )
+    )
     phone = _phone_block()
     # Act
     missing = [

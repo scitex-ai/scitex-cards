@@ -199,6 +199,48 @@ def unread_for(
         conn.close()
 
 
+def hidden_for_conn(conn: StoreConnection, reader: str) -> set[str]:
+    """Thread ids ``reader`` currently hides. A fold, not a flag.
+
+    The latest event per ``(thread_id, reader)`` wins, ordered by
+    ``(ts, seq, id)`` — the same total-order discipline ``current_members``
+    applies to membership, because a hide and an unhide in the same second
+    are otherwise a coin flip (see ``record_visibility_event``). A missing
+    table (a store that predates v16) answers the empty set rather than
+    raising: hiding did not exist there, so nothing can be hidden.
+    """
+    from .._schema_probe import has_table
+
+    if not has_table(conn, "dm_visibility_events"):
+        return set()
+    rows = conn.execute(
+        "SELECT thread_id, reader, action, ts, seq, id FROM dm_visibility_events"
+        " WHERE reader = ?"
+        " ORDER BY ts, seq, id",
+        (reader,),
+    ).fetchall()
+    latest: dict[str, str] = {}
+    for row in rows:
+        thread_id = row["thread_id"] if isinstance(row, dict) else row[0]
+        action = row["action"] if isinstance(row, dict) else row[2]
+        latest[thread_id] = action
+    return {tid for tid, action in latest.items() if action == "hide"}
+
+
+def hidden_for(
+    reader: str,
+    *,
+    db: str | Path | None = None,
+    store: str | Path | None = None,
+) -> set[str]:
+    """Public read: the thread ids ``reader`` currently hides."""
+    conn = _open(db, store)
+    try:
+        return hidden_for_conn(conn, reader)
+    finally:
+        conn.close()
+
+
 def list_members(
     thread_id: str,
     *,
@@ -354,6 +396,8 @@ __all__ = [
     "CURRENT_MEMBERS_SQL",
     "MESSAGE_ORDER_SQL",
     "current_members",
+    "hidden_for",
+    "hidden_for_conn",
     "list_members",
     "message_count",
     "messages_in",

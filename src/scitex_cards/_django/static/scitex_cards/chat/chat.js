@@ -56,6 +56,10 @@
    * chips). Assigned at boot; messageNode asks it where chips go. */
   var menu = null;
 
+  /* Row hide/unhide actions (card cards-dm-spaces-crud-hide-20261022).
+   * Assigned at boot; row construction asks it to decorate each row. */
+  var hide = null;
+
   /* The authenticated user scope is rendered server-side; standalone falls
    * back to the local operator identity. */
   var VIEWER = (appRoot && appRoot.getAttribute("data-user-scope")) || "operator";
@@ -171,28 +175,59 @@
       );
       return;
     }
-    agents.forEach(function (a) {
-      var item = el("div", "agent" + (a.name === state.peer ? " active" : ""));
-      item.appendChild(avatarFor(a.name));
-      var cols = el("div", "cols");
-      var row1 = el("div", "row1");
-      row1.appendChild(el("span", "name", a.name));
-      if (a.unread > 0) row1.appendChild(el("span", "badge", String(a.unread)));
-      cols.appendChild(row1);
-      var preview = a.last_body
-        ? shortTs(a.last_ts) + "  " + a.last_body
-        : a.kind
-          ? a.kind
-          : "no messages yet";
-      cols.appendChild(el("div", "preview", preview));
-      item.appendChild(cols);
-      item.addEventListener("click", function () {
-        openThread(a.name);
-        closeDrawer();
-      });
-      $agents.appendChild(item);
+    // Hidden conversations render in their own disclosure at the list's end
+    // (iOS Hidden-album style), never interleaved with the visible rows.
+    var parts = window.ChatVisibility
+      ? window.ChatVisibility.partition(agents)
+      : { visible: agents, hidden: [] };
+    parts.visible.forEach(function (a) {
+      $agents.appendChild(agentItem(a, false));
     });
+    if (hide && parts.hidden.length) {
+      hide.renderHiddenSection(
+        $agents,
+        parts.hidden,
+        function (a) {
+          return agentItem(a, true);
+        },
+        function () {
+          renderAgents(state.agents);
+        },
+      );
+    }
     $agents.scrollTop = scrollTop;
+  }
+
+  /* One conversation row: the content chat.js has always built, wrapped for
+   * the swipe action ChatHide owns. Without ChatHide the row degrades to a
+   * plain tap-to-open row — no dead controls. */
+  function agentItem(a, isHidden) {
+    var wrap = el("div", "agent-wrap" + (isHidden ? " is-hidden" : ""));
+    var item = el("div", "agent" + (a.name === state.peer ? " active" : ""));
+    item.appendChild(avatarFor(a.name));
+    var cols = el("div", "cols");
+    var row1 = el("div", "row1");
+    row1.appendChild(el("span", "name", a.name));
+    if (a.unread > 0) row1.appendChild(el("span", "badge", String(a.unread)));
+    cols.appendChild(row1);
+    var preview = a.last_body
+      ? shortTs(a.last_ts) + "  " + a.last_body
+      : a.kind
+        ? a.kind
+        : "no messages yet";
+    cols.appendChild(el("div", "preview", preview));
+    item.appendChild(cols);
+    wrap.appendChild(item);
+    function openRow() {
+      openThread(a.name);
+      closeDrawer();
+    }
+    if (hide) {
+      hide.decorateRow(wrap, item, a, { hidden: isHidden, onTap: openRow });
+    } else {
+      item.addEventListener("click", openRow);
+    }
+    return wrap;
   }
 
   // The unread count in the BROWSER TAB (chat_title.js). Fed the SAME array,
@@ -203,7 +238,7 @@
   var pageTitle = window.ChatTitle ? window.ChatTitle.mount({}) : null;
 
   function refreshAgents() {
-    getJSON(API_BASE + "/dm/threads")
+    getJSON(API_BASE + "/dm/threads?show=all")
       .then(function (data) {
         clearError();
         state.agents = data.agents || [];
@@ -421,6 +456,21 @@
   var drawer = window.ChatDrawer ? window.ChatDrawer.mount(drawerHost) : null;
   if (window.ChatFilter)
     window.ChatFilter.mount({ input: $agentFilter, list: $agents });
+  // Row hide/unhide actions (card cards-dm-spaces-crud-hide-20261022).
+  // Mounted with the seams it needs and nothing else — the list markup
+  // stays chat.js's, the swipe/buttons/network are the module's.
+  if (window.ChatHide)
+    hide = window.ChatHide.mount({
+      apiBase: API_BASE,
+      showError: showError,
+      refreshAgents: refreshAgents,
+      applyLocal: function (peer, hidden) {
+        state.agents.forEach(function (a) {
+          if (a.name === peer) a.hidden = hidden;
+        });
+        renderAgents(state.agents);
+      },
+    });
   // New-agent dialog (CCT 3853): buzz-search + jump to the room. Mounted
   // with the opener seam so chat_new.js owns no page internals.
   if (window.ChatNew)
@@ -507,6 +557,8 @@
           count > 1 ? count + " messages forwarded to " : "Forwarded to ";
         showNotice(many + toPeer + ".");
       },
+      agentsEl: $agents,
+      refreshAgents: refreshAgents,
     });
   }
 

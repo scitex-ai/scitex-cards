@@ -19,7 +19,6 @@ from django.test import RequestFactory, override_settings  # noqa: E402
 from scitex_cards._django.handlers import project_board as pb  # noqa: E402
 
 PICKER = "data-stx-project-picker"
-SLOT = "data-stx-project-slot"
 MISSING = object()
 
 
@@ -43,7 +42,7 @@ def _context(scope=MISSING, **extra):
     context = {
         "api_base": "/",
         "active": "board",
-        "page_title": "SciTeX Cards",
+        "page_title": "Cards",
         "scitex_cards_version": "test",
         "cards_user": "alice",
         "cards_project_picker_available": True,
@@ -87,8 +86,14 @@ def _canonical(context, request):
     # a fresh Context, taking the render_to_string branch — the same branch a
     # header render without an enclosing template takes), which a plain dict
     # cannot provide.
+    # Mirror the header's actual call (see _project_picker.html): the shared
+    # header opts user-scoped leaves in (e6e5ee06, measured 2026-10-22 — the
+    # slot was empty on every page without it), so a probe without the flag
+    # disagrees with the page on every non-project scope.
     return sdk.scitex_project_picker(
-        Context({**context, "request": request}), current="A"
+        Context({**context, "request": request}),
+        current="A",
+        allow_user_scope=True,
     )
 
 
@@ -99,16 +104,17 @@ def test_shared_header_follows_real_canonical_scope(real_picker, active, scope):
     request = _request()
     context = _context(scope, active=active)
     canonical = _canonical(context, request)
-    # Act
+    # Act — no cards-owned wrapper anymore (operator 2026-10-20: the SDK
+    # owns the picker end to end); the SDK tag's own presence is the pin.
     html = render_to_string("scitex_cards/_page_header.html", context, request=request)
     # Assert
-    assert (html.count(PICKER), html.count(SLOT), canonical in html) == (
-        int(bool(canonical)), int(bool(canonical)), True
+    assert (html.count(PICKER), canonical in html) == (
+        int(bool(canonical)), True
     )
 
 
 @pytest.mark.parametrize("scope", [MISSING, "user", "project"])
-def test_signed_out_header_has_no_empty_added_slot(real_picker, scope):
+def test_signed_out_header_has_no_picker(real_picker, scope):
     # Arrange
     context = _context(scope)
     request = _request(False)
@@ -116,20 +122,20 @@ def test_signed_out_header_has_no_empty_added_slot(real_picker, scope):
     html = render_to_string(
         "scitex_cards/_page_header.html", context, request=request
     )
-    # Assert
-    assert (PICKER in html, SLOT in html) == (False, False)
+    # Assert — no cards-owned slot anymore; absence of the SDK tag is the pin.
+    assert PICKER not in html
 
 
 def test_project_context_survives_omitted_caller_scope(real_picker):
     # Arrange
-    context = _context("project", picker_slot=True)
+    context = _context("project")
     request = _request()
     # Act
     html = render_to_string(
         "scitex_cards/_project_picker.html", context, request=request
     )
-    # Assert
-    assert (html.count(PICKER), html.count(SLOT)) == (1, 1)
+    # Assert — the SDK tag renders once, with no cards wrapper around it.
+    assert html.count(PICKER) == 1
 
 
 def test_shared_header_does_not_inherit_project_override(real_picker):
@@ -140,9 +146,7 @@ def test_shared_header_does_not_inherit_project_override(real_picker):
     # Act
     html = render_to_string("scitex_cards/_page_header.html", context, request=request)
     # Assert
-    assert (html.count(PICKER), html.count(SLOT)) == (
-        int(bool(canonical)), int(bool(canonical))
-    )
+    assert html.count(PICKER) == int(bool(canonical))
 
 
 def test_distinct_project_board_requests_project_scope(real_picker):
@@ -155,19 +159,19 @@ def test_distinct_project_board_requests_project_scope(real_picker):
         projects=("A",),
     )
     # Render the actual caller under user scope. Only its explicit project
-    # picker is expected; the user-scoped shared header stays canonical.
+    # picker is expected: this page carries its own band header, not the
+    # shared one, so there is no second (header) picker to add — the page
+    # docstring says it best ("this page adds no second one"). The old
+    # formula banked on a stale empty probe to reach the same 1.
     request = _request()
     context = _context("user", board=state, host_picker_available=True)
-    canonical = _canonical(context, request)
     # Act
     html = render_to_string("scitex_cards/project_board.html", context, request=request)
     # Assert
-    assert (html.count(PICKER), html.count(SLOT), 'data-current="A"' in html) == (
-        1 + int(bool(canonical)), int(bool(canonical)), True
-    )
+    assert (html.count(PICKER), 'data-current="A"' in html) == (1, True)
 
 
-def test_provider_absence_does_not_leave_slot(real_picker):
+def test_provider_absence_renders_no_picker(real_picker):
     # Arrange
     context = _context("project")
     request = _request()
@@ -177,7 +181,7 @@ def test_provider_absence_does_not_leave_slot(real_picker):
             "scitex_cards/_page_header.html", context, request=request
         )
     # Assert
-    assert (PICKER in html, SLOT in html) == (False, False)
+    assert PICKER not in html
 
 
 def test_missing_library_flag_avoids_compiling_real_partial(real_picker):
@@ -194,4 +198,4 @@ def test_missing_library_flag_avoids_compiling_real_partial(real_picker):
         "scitex_cards/_page_header.html", context, request=request
     )
     # Assert
-    assert (PICKER in html, SLOT in html) == (False, False)
+    assert PICKER not in html

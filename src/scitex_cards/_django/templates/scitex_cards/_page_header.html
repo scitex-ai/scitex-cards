@@ -1,83 +1,61 @@
-{% comment %}
-Shared page HEADER — the identity band rendered by BOTH top-level pages
+{% load static %}{% comment %}
+Shared page HEADER — the SDK title row, rendered by BOTH top-level pages
 (board_v3.html and chat.html), from this one file.
 
-Row 1 is the shared SDK header (`.stx-app-header`: title + version +
-project-selector slot + actions, SDK grammar/classes/css). Row 2 is the
-cards tab row (Board | DM switcher). App-specific content starts below.
-The switcher FOLLOWS the title row — it is not inside it. The SDK owns the
-title row's chrome; cards chrome inside that row forks the shared component.
-Tabs below the title is also the fleet idiom, so users meet one shape
-everywhere. That standing instruction is positional, not row-bound.
+This partial owns the FIRST line and nothing else: label + version +
+project selector, in the SDK's own chrome. App-specific chrome (the
+Board|DM switcher, cards bands) lives in each page's own tab row BELOW —
+never in the shared line (operator 2026-10-20). That split is what keeps
+the header identical on both pages: one shared row, zero forks.
 
-WHY IT IS A PARTIAL. Operator, 2026-07-29 (TG): the two pages' headers not
-lining up is uncomfortable. They did not line up because each page rolled its
-own header — the board's `.filterbar` was `padding: 8px 14px; min-height: 48px`
-while the DM page's `header` was `padding: 10px 14px` with no min-height, so
-the two bars were different heights and their contents sat on different
-baselines. Two numbers kept in sync by hand is HOW they drifted; the fix is
-structural, not a third number. This partial owns the band's markup and
-page-header.css owns its geometry, so there is nothing left to keep in sync.
+HOW IT RENDERS (learn-from-stats, scitex-stats pattern): the leaf does NOT
+hand-roll the row. This partial emits a mount stub — a
+``[data-stx-app-header]`` div carrying the leaf's identity as data
+attributes — and the SDK's prebuilt ``app-header.js`` module renders the
+canonical row into it (title span — never an h1, which would add a second
+H1 on a mounted leaf and inherit the h1 UA margin — version badge with the
+SDK's own "v" prefix from ``data-app-version``, project slot, actions).
+``app_header.js`` (companion static) then moves the server-rendered picker
+into the canonical slot; if the SDK module failed to load, the picker
+stays where the server put it rather than vanishing.
 
-THE SWITCHER FOLLOWS THE TITLE ROW — that is the operator's standing
-instruction (「スイッチャーは左にそろえてください」, restated 2026-07-29 after the board and
-the DM page had drifted to opposite sides), now stated row-wise: first in the
-tab row, never inside the SDK row. Its position is a property of THIS
-file now, so the two pages cannot disagree about it: there is only one file to
-read. Never give `.stx-cards-switcher` a `margin-left: auto` on a host page —
-that pushes it right while leaving this markup looking correct, which is the
-one way the instruction can silently come undone. `test__page_header_is_shared`
-fails on both the ordering and the auto margin.
+WHY A PARTIAL. Operator, 2026-07-29 (TG): the two pages' headers not
+lining up is uncomfortable. They did not line up because each page rolled
+its own header. One file owns the mount stub now, so the two pages cannot
+disagree about it. Never hand-roll `.stx-app-header` markup here again —
+that forks the shared component, which is the defect this file exists to
+treat. `test__page_header_is_shared` fails on a hand-rolled row.
 
-Callers pass the page they are on and the heading it wants:
+Callers pass the heading the band names (the PRODUCT, identical on both
+pages — a heading that changes between Board and DM reads as the page
+breaking, operator 2026-07-30):
 
-    {% templatetag openblock %} include "scitex_cards/_page_header.html" with active="board" page_title="SciTeX Cards" {% templatetag closeblock %}
+    {% templatetag openblock %} include "scitex_cards/_page_header.html" with page_title="SciTeX Cards" {% templatetag closeblock %}
 
-`api_base` and `scitex_cards_version` are inherited from the page context —
-both views already provide them, and `api_base` is what `_page_switcher.html`
-builds its mount-aware hrefs from (read its header before touching a link).
+A page that renders the canonical picker in its OWN ui instead (the DM
+sidebar — card cards-dm-spaces-crud-hide-20261022) passes
+`header_picker=False`: the SDK tag is a singleton per page, so a page that
+places it must also unplace it here. Pages that do not pass it are
+unaffected.
 
-The `<h1>` carries NO class on purpose, and each host page already styles `h1`
-inside its own header. NOTE both pages now pass the SAME `page_title` ("SciTeX
-Cards"): the band names the PRODUCT and the switcher names the page. That is the
-operator's 2026-07-30 instruction — a heading that changes between Board and DM
-reads as the page breaking. `test__dm_naming_is_consistent.py` pins the stable
-heading AND pins that the switcher still says DM, so the two pages cannot become
-indistinguishable. page-header.css styles it
-through `.stx-cards-header h1` so the typography is shared without the markup
-having to say so.
-
-THE PROJECT SLOT IS LAST AND IS THE SDK'S. It holds the canonical
-`scitex_project_picker`, pulled in through `_project_picker.html` — NEVER by
-`{% templatetag openblock %} load {% templatetag closeblock %}`ing the tag library
-here. This partial is rendered by BOTH top-level pages, so a top-level load would
-make an absent SDK library a hard TemplateSyntaxError on the operator's own
-fleet board and on DM, not just on the project-scoped page. Read
-`_project_picker.html` before moving the load.
-
-The `{% templatetag openblock %} if {% templatetag closeblock %}` is
-`cards_project_picker_available`, which the view sets to "the library resolves
-AND a host registered a provider". When it is false the band renders exactly as
-it did before the slot existed, so a standalone install and a Hub mount that
-registers no provider are byte-identical to the pre-slot header. The SDK's tag
-independently follows `app_scope` (default user), and renders nothing for an
-unsupported user-scoped app or a viewer who is not signed in. The slot is inside
-the guarded partial and appears only when that canonical tag emits markup.
-
-NO SCOPE BAND. There used to be a second row reading "Signed in as
-<user>". Operator, 2026-10-20: it says nothing — dropped as meaningless.
-The viewer already knows who they are; identity belongs to the shell.
+`scitex_cards_version` is the BARE number — the SDK prefixes "v" itself —
+and `api_base` is inherited from the page context.
+`cards_project_picker_available` is the view-computed flag ("the library
+resolves AND a host registered a provider"); the picker include is guarded
+by it, and the SDK's own tag independently follows `app_scope`. See
+`_project_picker.html` — never
+`{% templatetag openblock %} load {% templatetag closeblock %}` the tag library
+here: this partial renders on BOTH pages, so a top-level load would make an
+absent SDK library a hard TemplateSyntaxError on the operator's own board
+and DM.
 {% endcomment %}
-<header class="stx-app-header cards-app-header">
-  <h1 class="stx-app-header__title">{{ page_title }}</h1>
-  <span class="stx-app-header__version" title="scitex-cards package serving this page">v{{ scitex_cards_version|default:"?" }}</span>
-  <div class="stx-app-header__slot--project-selector">
-    {% if cards_project_picker_available %}
-      {% include "scitex_cards/_project_picker.html" with current=cards_current_project_id picker_scope=app_scope picker_slot=True %}
-    {% endif %}
-  </div>
-  <div class="stx-app-header__actions"></div>
-</header>
-<div class="stx-cards-header{% if api_base != '/' %} stx-cards-header--mounted{% endif %}">
-  {% include "scitex_cards/_page_switcher.html" with active=active %}
+<div data-stx-app-header
+     data-app-title="{{ page_title }}"
+     data-app-version="{{ scitex_cards_version|default:"?" }}"
+     data-stx-cards-header>
+  {% if cards_project_picker_available and header_picker != False %}
+    {% include "scitex_cards/_project_picker.html" with current=cards_current_project_id picker_scope=app_scope %}
+  {% endif %}
 </div>
+<script type="module" src="{% static 'scitex_sdk/ui/js/app/app-header.js' %}"></script>
+<script defer src="{% static 'scitex_cards/app_header.js' %}"></script>

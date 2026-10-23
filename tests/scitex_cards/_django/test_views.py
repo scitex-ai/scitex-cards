@@ -199,15 +199,47 @@ def test_favicon_view_sets_svg_content_type():
     assert response["Content-Type"] == "image/svg+xml"
 
 
-def test_favicon_view_body_is_scitex_s_svg():
-    # Arrange
+def test_favicon_view_body_is_the_sdk_official_mark():
+    # Arrange — operator 2026-10-23: the SAME official mark in every mode.
+    # The view serves the installed SDK's file, never a leaf-local copy,
+    # so this pins the source, not the pixels (the mark itself is versioned
+    # with the SDK).
+    from importlib.resources import files as _files
+
     request = RequestFactory().get("/favicon.ico")
     # Act
     response = views.favicon_view(request)
     # Drain FileResponse iterator into bytes.
     body = b"".join(response.streaming_content)
-    # Assert — the bundled scitex-dev brand SVG declares id="scitex-logo".
-    assert b'id="scitex-logo"' in body
+    expected = (
+        _files("scitex_sdk.ui")
+        / "static"
+        / "scitex_sdk"
+        / "ui"
+        / "img"
+        / "scitex-favicon.svg"
+    ).read_bytes()
+    # Assert
+    assert body == expected
+
+
+def test_no_leaf_local_favicon_files_ship():
+    # Arrange — the validator flags these as drift; this pins their absence.
+    from pathlib import Path
+
+    static_dir = Path(views.__file__).resolve().parent / "static" / "scitex_cards"
+    # Act — the vite outDir (assets/) is machine-generated per build: vite
+    # copies frontend/public/* verbatim, so the official public/favicon.svg
+    # input lands at assets/favicon.svg on every CI run that builds the
+    # frontend first. That copy is derived, not a second source — the drift
+    # class this pins is a hand-placed leaf copy beside the board statics.
+    # (Release gate 2026-10-23: the unscoped rglob failed every full run
+    # that reached this file; fail-fast had masked it behind earlier red.)
+    shipped = sorted(
+        p.name for p in static_dir.rglob("*favicon*") if "assets" not in p.parts
+    )
+    # Assert
+    assert shipped == []
 
 
 def test_standalone_template_declares_no_favicon_of_its_own(store):

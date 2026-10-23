@@ -38,8 +38,11 @@ import pytest
 import scitex_cards
 from scitex_cards import _messaging
 
-_FIVE = [
+#: Every messaging-rail verb with a sync Python API at the package root.
+#: Parametrized below: each must be callable, advertised, and sync.
+_RAIL = [
     "ack_notifications",
+    "dm_hide",
     "dm_list",
     "dm_send",
     "dm_send_document",
@@ -100,7 +103,7 @@ def refusal_from_tool(no_identity, store):
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", _FIVE)
+@pytest.mark.parametrize("name", _RAIL)
 def test_each_tool_has_a_callable_python_api_at_the_package_root(name):
     # Arrange
     package = scitex_cards
@@ -110,7 +113,7 @@ def test_each_tool_has_a_callable_python_api_at_the_package_root(name):
     assert callable(fn), f"{name} has no callable Python API"
 
 
-@pytest.mark.parametrize("name", _FIVE)
+@pytest.mark.parametrize("name", _RAIL)
 def test_each_one_is_advertised_in_dunder_all(name):
     # Arrange
     advertised = scitex_cards.__all__
@@ -120,7 +123,7 @@ def test_each_one_is_advertised_in_dunder_all(name):
     assert present
 
 
-@pytest.mark.parametrize("name", _FIVE)
+@pytest.mark.parametrize("name", _RAIL)
 def test_the_python_api_is_not_the_coroutine_the_mcp_tool_wraps(name):
     """A caller must not have to run an event loop to send a DM.
 
@@ -175,6 +178,45 @@ def test_dm_list_returns_the_messages_in_chronological_order(two_sent):
     bodies = [m["body"] for m in result["messages"]]
     # Assert
     assert bodies == ["first", "second"]
+
+
+def test_dm_hide_answers_the_resulting_state(sent, agent_id, store):
+    # Arrange
+    sent  # one operator↔scitex-cards thread exists
+    # Act
+    result = _messaging.dm_hide("operator", store=store, sender=agent_id)
+    # Assert
+    assert result == {
+        "thread": "dm:operator::scitex-cards",
+        "peer": "operator",
+        "hidden": True,
+        "changed": True,
+    }
+
+
+def test_dm_hide_repeating_reports_no_change(sent, agent_id, store):
+    # Arrange
+    _messaging.dm_hide("operator", store=store, sender=agent_id)
+    # Act
+    result = _messaging.dm_hide("operator", store=store, sender=agent_id)
+    # Assert
+    assert result["changed"] is False
+
+
+def test_dm_hide_raises_for_a_peer_with_no_thread(agent_id, store):
+    # Arrange — agent-ghost never messaged anyone.
+    # Act: the call itself is the act; the raise is the behaviour under test
+    # Assert
+    with pytest.raises(KeyError):
+        _messaging.dm_hide("agent-ghost", store=store, sender=agent_id)
+
+
+def test_dm_hide_raises_when_no_identity_is_configured(no_identity, store):
+    # Arrange — same refusal shape as dm_send (PA-306: parameter, not env).
+    # Act: the call itself is the act; the raise is the behaviour under test
+    # Assert
+    with pytest.raises(_messaging.AgentIdentityUnresolved):
+        _messaging.dm_hide("operator", store=store)
 
 
 def test_poll_notifications_names_the_store_it_read(store):
@@ -293,6 +335,16 @@ def test_the_mcp_dm_list_tool_also_refuses_rather_than_raising(no_identity, stor
 
     # Act
     payload = _run_tool(dm_list_tool, peer="operator", tasks_path=store)
+    # Assert
+    assert set(payload) == {"error"}
+
+
+def test_the_mcp_dm_hide_tool_also_refuses_rather_than_raising(no_identity, store):
+    # Arrange
+    from scitex_cards._mcp_skills import dm_hide as dm_hide_tool
+
+    # Act
+    payload = _run_tool(dm_hide_tool, peer="operator", tasks_path=store)
     # Assert
     assert set(payload) == {"error"}
 

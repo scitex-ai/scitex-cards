@@ -43,7 +43,22 @@ _BOARD_V3_HTML = (
 
 @pytest.fixture(scope="module")
 def template_source() -> str:
-    return _BOARD_V3_HTML.read_text(encoding="utf-8")
+    """Board markup as served: board_v3.html plus its three partials.
+
+    Since the unified page (operator 2026-10-20) the ctx-menu fallback
+    literal lives in _board_foot.html — one source served standalone AND
+    embedded.
+    """
+    base = _BOARD_V3_HTML.parent
+    return "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in (
+            _BOARD_V3_HTML,
+            base / "_board_pane.html",
+            base / "_board_head.html",
+            base / "_board_foot.html",
+        )
+    )
 
 
 def _ctx_fallback_members(source: str) -> set[str]:

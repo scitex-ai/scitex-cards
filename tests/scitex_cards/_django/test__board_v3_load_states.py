@@ -46,6 +46,17 @@ _DJANGO_DIR = Path(views.__file__).resolve().parent
 
 _TEMPLATE = _DJANGO_DIR / "templates" / "scitex_cards" / "board_v3.html"
 
+#: The board render set. #1116 split board_v3.html into a shell composing
+#: these partials — the loadGraph/error JS these pins scan now lives in
+#: _board_foot.html. Read the family, in include order, wherever a test
+#: means "the board template".
+_BOARD_FAMILY = (
+    _TEMPLATE,
+    _TEMPLATE.parent / "_board_head.html",
+    _TEMPLATE.parent / "_board_pane.html",
+    _TEMPLATE.parent / "_board_foot.html",
+)
+
 _BOARD_STATES_JS = (
     _DJANGO_DIR / "static" / "scitex_cards" / "board_v3" / "boardStates.js"
 )
@@ -53,9 +64,10 @@ _BOARD_STATES_JS = (
 
 @pytest.fixture
 def board_source():
-    """The board's client source: the template plus the extracted states module."""
+    """The board's client source: the template family plus the extracted
+    states module."""
     return "\n".join(
-        p.read_text(encoding="utf-8") for p in (_TEMPLATE, _BOARD_STATES_JS)
+        p.read_text(encoding="utf-8") for p in (*_BOARD_FAMILY, _BOARD_STATES_JS)
     )
 
 

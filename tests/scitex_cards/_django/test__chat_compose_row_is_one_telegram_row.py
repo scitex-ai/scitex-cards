@@ -14,11 +14,12 @@ Send far off to the right — three controls arranged around a hole, inside a
 96px band that stayed 96px tall whether or not anything was typed.
 
 TELEGRAM'S SHAPE, which is what these tests pin: attach at the far left, the
-field taking every remaining pixel, emoji at the RIGHT EDGE OF THE FIELD, send
-at the far right; nothing centred WITHIN the row; the row one control tall at
-rest. None of that is checkable by eye in CI — this repo has no browser — so it
-is pinned as structure and as declarations on the SERVED page, which is what
-the operator's phone actually receives. A test that silently could not observe
+field taking every remaining pixel, send at the far right; nothing centred
+WITHIN the row; the row one control tall at rest. (The emoji toggle that
+used to sit at the field's right edge is gone since 2026-10-20 — operator:
+drop the emojis, be professional.) None of that is checkable by eye in CI —
+this repo has no browser — so it is pinned as structure and as declarations
+on the SERVED page, which is what the operator's phone actually receives. A test that silently could not observe
 the property would be worse than none.
 """
 
@@ -145,9 +146,9 @@ def test_send_is_the_last_control_in_the_row(page: str):
     assert send > field
 
 
-def test_the_emoji_toggle_sits_inside_the_field(page: str):
-    """Not a fourth control beside the field — that is the orphan button the
-    operator objected to. Inside the field is where Telegram puts it."""
+def test_the_composer_has_no_emoji_toggle(page: str):
+    """Operator 2026-10-20: drop the emojis, be professional. The composer
+    is attach + field + send — no emoji mount in the field."""
     # Arrange
     opened = page.index('<div id="compose-field">')
 
@@ -155,21 +156,19 @@ def test_the_emoji_toggle_sits_inside_the_field(page: str):
     field_markup = page[opened : page.index("</div>", opened)]
 
     # Assert
-    assert 'data-stx-emoji-picker-for="compose-body"' in field_markup
+    assert "data-stx-emoji-picker-for" not in field_markup
 
 
-def test_the_emoji_panel_opens_back_towards_the_screen(page: str):
-    """A toggle at the right edge with a LEFT-anchored panel opens a ~20rem
-    popover rightwards from a point already near the screen edge, so most of it
-    lands outside a phone viewport. The component's own modifier flips it."""
+def test_the_composer_has_no_emoji_panel_modifier(page: str):
+    """The panel modifier went with the toggle — no orphaned marker."""
     # Arrange
-    marker = "stx-emoji-picker--right"
+    html = page
 
     # Act
-    present = marker in page
+    present = "stx-emoji-picker--right" in html
 
     # Assert
-    assert present
+    assert present is False
 
 
 def test_the_composer_and_the_message_list_share_one_column(css: str):
@@ -325,6 +324,37 @@ def test_chat_js_hands_the_composer_that_seam():
 
     # Assert
     assert wired
+
+
+def test_send_uses_the_cta_color_token(css: str):
+    """Send is the CTA: the shared brand token, navy/gold per theme —
+    not the theme's link blue. Operator 2026-10-23: gray/generic blue
+    reads as inactive; the primary action must wear the brand."""
+    # Arrange
+    block = _rule(css, "#compose-send")
+
+    # Act
+    branded = "--stx-brand" in block
+
+    # Assert
+    assert branded, "compose-send lost the CTA token (navy/gold per theme)"
+
+
+def test_composer_carries_no_bottom_dead_space(css: str):
+    """The composer ends the thread pane: no margin/padding below the row
+    pushing dead space under it. Operator 2026-10-23: the bottom gap."""
+    # Arrange
+    row = _rule(css, "#compose-row")
+    form = _rule(css, "#compose")
+    pane = _rule(css, "#cards-dm-app")
+
+    # Act
+    dead = re.findall(r"margin-bottom:\s*[^0]", row + form)
+    bottom_pad = re.findall(r"padding-bottom:\s*([^;]+);", form)
+    anchored = "flex-end" in pane or "justify-content" in pane
+
+    # Assert
+    assert dead == [] and (bottom_pad == [] or anchored)
 
 
 # EOF

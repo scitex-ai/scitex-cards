@@ -66,6 +66,17 @@ def chat_html():
     return views.chat_page(request).content.decode("utf-8")
 
 
+@pytest.fixture
+def board_html():
+    """The standalone board page as the server serves it (root mount).
+
+    PG-free like the inline-script pin: the shell renders before any store
+    read (cards load client-side via /graph).
+    """
+    request = RequestFactory().get("/")
+    return views.board_v3_page(request).content.decode("utf-8")
+
+
 def _title_of(html: str) -> str:
     match = _TITLE_RE.search(html)
     return match.group(1).strip() if match else ""
@@ -106,7 +117,36 @@ def test_the_tab_title_still_carries_the_version(chat_html):
     # Act
     title = _title_of(html)
     # Assert
-    assert "SciTeX Cards v" in title
+    assert "Cards v" in title
+
+
+def test_the_tab_title_names_the_product(chat_html, board_html):
+    """Both browser tabs name the product — header and tab must agree.
+
+    Operator 2026-10-23: the in-app header must read "SciTeX Cards". The tab
+    is the same product name surfaced by the OS window manager — a tab that
+    says "DM — Cards v…" next to a header that says "SciTeX Cards" reads as
+    two products. The full product name is pinned, not a substring: "Cards v"
+    passes for both the old and the new form, so it cannot catch the drift.
+
+    A tuple, so a failure says WHICH page regressed the product name.
+    """
+    # Arrange
+    pages = (chat_html, board_html)
+    # Act
+    titles = tuple(_title_of(html) for html in pages)
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert titles == (
+        f"DM — SciTeX Cards v{_version_of(chat_html)}",
+        f"Board — SciTeX Cards v{_version_of(board_html)}",
+    )
+
+
+def _version_of(html: str) -> str:
+    """The version the page itself prints (data-app-version mount attr)."""
+    match = re.search(r'data-app-version="([^"]+)"', html)
+    assert match, "served page carries no data-app-version mount attr"
+    return match.group(1)
 
 
 # --- the switcher ----------------------------------------------------------
@@ -167,9 +207,26 @@ def test_the_switcher_landmark_is_announced_as_dm(chat_html):
     # Arrange
     html = chat_html
     # Act
-    announced = 'aria-label="Cards sections"' in html
+    announced = 'aria-label="SciTeX Cards sections"' in html
     # Assert
     assert announced
+
+
+def test_the_switcher_landmark_names_the_product(chat_html):
+    """The landmark announces the same product name the eye sees.
+
+    Operator 2026-10-23: the in-app header must read "SciTeX Cards". The
+    switcher nav's aria-label is read aloud by assistive tech — announcing
+    bare "Cards sections" next to a visible "SciTeX Cards" header names two
+    products. The landmark carries the full product name, same rule as the
+    visible band (pinned verbatim, like the landmark itself).
+    """
+    # Arrange
+    html = chat_html
+    # Act
+    announced = 'aria-label="Cards sections"' in html
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert announced is False
 
 
 def test_the_switcher_landmark_never_announces_chat(chat_html):
@@ -224,7 +281,7 @@ def test_the_page_heading_does_not_change_between_board_and_dm(chat_html):
     THE DM WORDING WAS NOT DROPPED, and the three tests around this one are why
     this change is safe: the switcher item still reads "DM" and is the element
     that highlights, its tooltip still reads "Direct messages with the agents",
-    and the browser tab still reads "DM — SciTeX Cards v…". Their 2026-07-29
+    and the browser tab still reads view-first ("DM — SciTeX Cards v…"). Their 2026-07-29
     request was "not chat, use DM wording"; this one is about the heading
     CHANGING. Both hold once the band names the product and the switcher names
     the page.
@@ -232,12 +289,17 @@ def test_the_page_heading_does_not_change_between_board_and_dm(chat_html):
     CCT 3878: the heading moved into the shared SDK header row and carries
     its selector class — the TEXT contract (product name, identical on both
     pages) is what this pins, not the bare tag.
+
+    2026-10-20: the leaf no longer hand-rolls the row at all — the SDK's
+    AppHeader module renders it from the mount stub (learn-from-stats).
+    The server-side contract is the mount identity, not markup the SDK
+    owns.
     """
     # Arrange
     html = chat_html
 
     # Act
-    heading = '<h1 class="stx-app-header__title">SciTeX Cards</h1>' in html
+    heading = 'data-app-title="SciTeX Cards"' in html
 
     # Assert
     assert heading

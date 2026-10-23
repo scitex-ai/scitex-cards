@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -52,6 +53,23 @@ _STORE_TEXT = (
 
 _DJANGO_DIR = Path(views.__file__).resolve().parent
 _TEMPLATE = _DJANGO_DIR / "templates" / "scitex_cards" / "board_v3.html"
+
+#: The board render set. #1116 split board_v3.html into a shell composing
+#: these partials — the boot/loadGraph JS these pins execute now lives in
+#: _board_foot.html. Read the family, in include order, wherever a test
+#: means "the board template".
+_BOARD_FAMILY = (
+    _TEMPLATE,
+    _TEMPLATE.parent / "_board_head.html",
+    _TEMPLATE.parent / "_board_pane.html",
+    _TEMPLATE.parent / "_board_foot.html",
+)
+
+
+def _read_board_family() -> str:
+    return "\n".join(
+        path.read_text(encoding="utf-8") for path in _BOARD_FAMILY
+    )
 _SKELETON_CSS = _DJANGO_DIR / "static" / "scitex_cards" / "board_v3" / "18-skeleton.css"
 _BOARD_STATES_JS = (
     _DJANGO_DIR / "static" / "scitex_cards" / "board_v3" / "boardStates.js"
@@ -195,7 +213,7 @@ def test_board_shell_spins_while_graph_is_in_flight(board_html):
 def test_board_retires_skeleton_busy_when_cards_paint():
     """loadGraph()'s happy path flips aria-busy off after render()."""
     # Arrange
-    source = _TEMPLATE.read_text(encoding="utf-8")
+    source = _read_board_family()
     # Act
     retires = (
         'document.getElementById("columns")?.setAttribute("aria-busy", "false")'
@@ -245,7 +263,7 @@ def test_board_warms_dm_json_on_switcher_hover():
     single API_BASE const — a second door onto the same JSON the page's own
     poll would otherwise wait on."""
     # Arrange
-    source = _TEMPLATE.read_text(encoding="utf-8")
+    source = _read_board_family()
     # Act
     warms = 'API_BASE + "/dm/threads"' in source
     # Assert
@@ -277,6 +295,23 @@ def test_skeleton_stylesheet_honours_reduced_motion():
     assert honours
 
 
+def test_skeleton_spinner_visibly_spins():
+    """The ring must ROTATE while /graph is in flight (operator 2026-10-23:
+    a static ring reads as a stuck page). Rotation only — the
+    reduced-motion block above still stands it down."""
+    # Arrange
+    css = _SKELETON_CSS.read_text(encoding="utf-8")
+    # Act
+    keyframes = re.search(
+        r"@keyframes\s+board-skeleton-spin\s*\{[^}]*rotate\(360deg\)", css
+    )
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert "board-skeleton-spin" in css and keyframes, (
+        "spinner must wire the board-skeleton-spin animation "
+        "and its keyframes must rotate a full turn"
+    )
+
+
 # --- graph arrival must not outrun the deferred painters -------------------
 
 
@@ -291,7 +326,7 @@ def _run_graph_arrival(case):
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is required to execute the shipped board load path")
-    source = _TEMPLATE.read_text(encoding="utf-8")
+    source = _read_board_family()
     readiness = source.partition(
         "// === Board module readiness / first-load phases"
     )[2].partition("\n")[2].partition("// === LAYOUT whitelist")[0]
@@ -329,6 +364,11 @@ def _run_graph_arrival(case):
     globalThis.LAST_GRAPH_JSON = null;
     globalThis.normalizeLayout = x => x;
     globalThis.populateFilters = () => {};
+    // Details re-home (c39a060c): loadGraph syncs the Layout segment
+    // buttons to STATE on first paint. The definition lives ~1800 lines
+    // outside this harness's loadGraph extract (same script in the
+    // browser, out of scope here), so stub the port like the rest.
+    globalThis.syncLayoutButtons = () => {};
     globalThis.captureScroll = () => [];
     globalThis.restoreScroll = () => {};
     globalThis._prewarmGraph = () => {};

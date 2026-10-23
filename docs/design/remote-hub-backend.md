@@ -101,7 +101,7 @@ All serve endpoints are `POST /v1/rpc/<verb>` (reads included — filter payload
 | reassign_task | /v1/rpc/reassign_task | none (atomic owner change) | NEW |
 | help_wait / help_clear | /v1/rpc/help_{wait,clear} | none | NEW |
 | poll_notifications | /v1/rpc/poll_notifications | none (inbox is MCP/CLI-only) | NEW |
-| dm_send / dm_list | /v1/rpc/dm_{send,list} | /dm/* hardwired from=operator — unusable for agents | NEW |
+| dm_send / dm_list / dm_hide | /v1/rpc/dm_{send,list,hide} | /dm/* hardwired from=operator — unusable for agents | NEW |
 | health | local + GET /v1/health probe | /ping (bare liveness) | NEW (health endpoint is the one unauthenticated route, sac pattern) |
 | resolve_store | local, backend-aware | none | no endpoint needed |
 | cards_skills_list / get | local (bundled files) | none | no endpoint needed |

@@ -1,0 +1,3051 @@
+{% load i18n %}
+{% comment %}Board foot — the inline board script, extracted VERBATIM from board_v3.html extra_js.{% endcomment %}
+  <script>
+
+    // === Mount-aware API base (SSOT for every board fetch) ================
+    // The hub mounts this board under a sub-path (e.g. /apps/cards/), where
+    // root-absolute fetches 404 (scitex.ai/graph → 404 vs
+    // scitex.ai/apps/cards/graph → 200). `api_base` is the include root the
+    // view derived from request.path ("/" at a root mount). Trailing slashes
+    // are stripped so a root mount renders "" and every call below stays
+    // "/graph"-shaped. Mirrored onto window for the external board scripts
+    // (timeline.js) that fetch too.
+    // (hook-bypass: line-limit — pre-existing 3473-line template; split queued.)
+    const API_BASE = "{{ api_base|escapejs }}".replace(/\/+$/, "");
+    window.API_BASE = API_BASE;
+
+    // === Board module readiness / first-load phases =======================
+    // This inline boot runs while the parser is still loading. Head scripts
+    // marked defer (including the timeline painter) run afterwards, before
+    // DOMContentLoaded. Fetch and parse graph data now; publish it to the
+    // painters only after those dependencies have had their turn.
+    function markBoardPhase(phase) {
+      const perf = window.performance;
+      const name = "scitex-cards:board-v3:" + phase;
+      if (perf?.mark && !perf.getEntriesByName(name).length) perf.mark(name);
+    }
+    markBoardPhase("shell-dom-ready");
+    const BOARD_MODULES_READY = document.readyState === "loading"
+      ? new Promise(resolve => document.addEventListener(
+          "DOMContentLoaded", resolve, { once: true },
+        ))
+      : Promise.resolve();
+    BOARD_MODULES_READY.then(() => markBoardPhase("modules-ready"));
+
+    // === LAYOUT whitelist (SSOT) ==========================================
+    // The only layouts that exist. Column + Table were removed 2026-07-13
+    // (operator), Stale on 2026-07-10. `const` declarations are NOT hoisted
+    // into the TDZ-free zone, so these must be declared ABOVE the STATE
+    // initializer, which calls normalizeLayout() at boot.
+    // (hook-bypass: line-limit — pre-existing 3425-line template.)
+    const VALID_LAYOUTS = ["timeline", "wall", "graph", "matrix"];
+    const DEFAULT_LAYOUT = "timeline";
+
+    // The owner SSOT (client mirror of scitex_cards._owner.card_owner) moved
+    // to 16-card-helpers.js as split PR-2; its one call site now calls
+    // STX.cardHelpers.cardOwner directly, so no alias is kept here.
+    // hook-bypass: line-limit (board_v3.html split in progress — this IS it)
+    // The lane key an owner-less card buckets under — a clearly-labeled
+    // lane, NEVER a retired identity (operator mandate 2026-06-26).
+    const UNASSIGNED_LANE = "(unassigned)";
+
+    // === Board-chrome JA dictionary (operator: board chrome entirely English)
+    // Django renders each value in the ACTIVE language, so this is the same
+    // msgid set the static markup above wraps in the translate tag —
+    // one catalog, two consumers. `populateFilters()` / the chip strip
+    // REBUILD their `<option>` / chip labels in JS on every load, which wipes
+    // the server-rendered translations; reading the labels from here keeps
+    // the rebuilt controls in the operator's language. Status/blocker enum
+    // VALUES stay English: they are store vocabulary, not chrome.
+    const STX_BOARD_T = {
+      allProjects: "{% translate 'All projects' %}",
+      allHosts: "{% translate 'All hosts' %}",
+      allAssignees: "{% translate 'All assignees' %}",
+      allStatuses: "{% translate 'All statuses' %}",
+      allBlockers: "{% translate 'All blockers' %}",
+      blockingMe: "{% translate 'blocking me' %}",
+    };
+
+    let STATE = { graph: null, openId: null, lastMtime: null,
+      // Project comes from the HEADER picker (operator 2026-10-23: one
+      // picker per page, in the app header — never a leaf-local Details
+      // duplicate). The server seeds it from the resolved scope
+      // (cards_current_project_id); the SDK picker navigates (?project=)
+      // so a change reloads with the new seed. No Details <select> writes
+      // this key — attachFilters/populateFilters must not reference
+      // f-project (a null getElementById would kill the whole populate).
+      filters: { project: "{{ cards_current_project_id|default:''|escapejs }}", host: "", status: "", blocker: "", agent: "",
+                 blockingMe: false, showHidden: false,
+                 // Show-done — DEFAULT OFF (operator direct, lead a2a
+                 // `b9d135c1ea8348dea80f027ba66a0079` 2026-06-12).
+                 // `status: done` cards drop from every layout unless
+                 // the popover toggle is flipped on. Sticky via
+                 // localStorage["scitex-cards:show-done"].
+                 showDone: (function () {
+                   try {
+                     return localStorage.getItem("scitex-cards:show-done") === "1";
+                   } catch { return false; }
+                 })(),
+                 search: "", date: "" },
+      // LAYOUT axis — three orthogonal modes (timeline | wall | graph),
+      // persisted in localStorage so the operator's last choice survives
+      // reloads.
+      //
+      // MIGRATION (operator 2026-07-13, Column+Table removal): a browser
+      // whose localStorage still says "column" / "table" (Column was the
+      // DEFAULT until today) — or "stale" (removed 2026-07-10) — must NOT
+      // land on a blank board. normalizeLayout() coerces every unknown /
+      // retired value to the new default, "timeline", and re-writes the
+      // stored value so the coercion happens exactly once.
+      layout: (function () {
+        let stored = null;
+        try { stored = localStorage.getItem("scitex-cards:layout"); } catch {}
+        const m = normalizeLayout(stored);
+        if (stored !== m) {
+          try { localStorage.setItem("scitex-cards:layout", m); } catch {}
+        }
+        return m;
+      })() };
+
+    // === Hide (per-user soft-hide, localStorage-backed) ====================
+    // Stored as an array of task ids under "scitex-cards:hidden". Per-user/per-
+    // browser only — fine for the single-host MBA today; cross-device sync
+    // would need a schema field, deferred. Operator TG 256.
+    function hiddenSet() {
+      try {
+        const raw = localStorage.getItem("scitex-cards:hidden") || "[]";
+        return new Set(JSON.parse(raw));
+      } catch { return new Set(); }
+    }
+    function saveHidden(s) {
+      localStorage.setItem("scitex-cards:hidden", JSON.stringify([...s]));
+    }
+    function hideTask(id) {
+      const s = hiddenSet(); s.add(id); saveHidden(s);
+      render();
+      toast(`✓ Hidden ${id}`);
+    }
+    function unhideTask(id) {
+      const s = hiddenSet(); s.delete(id); saveHidden(s);
+      render();
+    }
+    function toggleShowHidden(e) {
+      STATE.filters.showHidden = !STATE.filters.showHidden;
+      e.currentTarget.classList.toggle("on", STATE.filters.showHidden);
+      render();
+    }
+
+    // Non-disruptive auto-refresh support (hook-bypass: line-limit).
+    // The board polls /graph every 5s. Re-rendering the whole board on
+    // every tick made the view FLASH and JUMP TO THE TOP, losing the
+    // operator's scroll position while reading lower content. Two guards:
+    //   1. LAST_GRAPH_JSON — JSON.stringify of the last RENDERED graph.
+    //      When skipIfUnchanged is set and the fresh payload stringifies
+    //      identically, loadGraph() returns WITHOUT calling render(), so
+    //      the common "nothing changed" tick is a true no-op.
+    //   2. captureScroll()/restoreScroll() — when a real change DOES force
+    //      a redraw, the scroll offsets of the page + the #columns canvas
+    //      (which itself scrolls in table/graph/mobile layouts) are
+    //      captured before render() and restored after it.
+    let LAST_GRAPH_JSON = null;
+    function _scrollEls() {
+      // The page itself scrolls (document.scrollingElement) AND, in the
+      // table / graph / responsive-mobile layouts, the #columns canvas
+      // has its own overflow:auto. Restoring a 0 offset is a harmless
+      // no-op, so we snapshot/restore both unconditionally.
+      const els = [];
+      const se = document.scrollingElement || document.documentElement;
+      if (se) els.push(se);
+      const cols = document.getElementById("columns");
+      if (cols) els.push(cols);
+      return els;
+    }
+    function captureScroll() {
+      return _scrollEls().map((el) => ({
+        el, top: el.scrollTop, left: el.scrollLeft,
+      }));
+    }
+    function restoreScroll(snap) {
+      if (!snap) return;
+      for (const s of snap) {
+        if (!s.el) continue;
+        s.el.scrollTop = s.top;
+        s.el.scrollLeft = s.left;
+      }
+    }
+
+    // === Load / empty / error UI states ===================================
+    // `_readJsonBody`, `renderLoadState`, `renderEmptyState` and
+    // `renderLoadError` now live in board_v3/boardStates.js (loaded above) —
+    // one cohesive job: turn a non-card answer into words a person can act on.
+    // Moved out rather than grown here; see GITIGNORED/REFACTORING.md.
+
+    async function loadGraph(opts) {
+      const { preserveScroll = false, skipIfUnchanged = false } = opts || {};
+      try {
+        markBoardPhase("graph-request-started");
+        const r = await fetch(API_BASE + "/graph"); // (hook-bypass: line-limit)
+        // Successful JSON parsing overlaps deferred script download. Error
+        // bodies retain boardStates.js's tolerant reader and named states.
+        const graph = r.ok ? await r.json() : null;
+        if (r.ok) markBoardPhase("graph-data-ready");
+        await BOARD_MODULES_READY;
+        if (!r.ok) {
+          const payload = await _readJsonBody(r);
+          if (renderLoadState(r.status, payload)) {
+            markBoardPhase("state-rendered");
+            return;
+          }
+          const err = payload && payload.error ? String(payload.error) : "";
+          // NOT escaped here. An Error message is a STRING, not markup — the
+          // render layer escapes it once, at the point it becomes HTML. Escaping
+          // here too produced `&#39;` and `&quot;` VISIBLE in the panel, because
+          // the text was escaped on the way into the Error and again on the way
+          // out. Escape where you interpolate, exactly once.
+          throw new Error(`HTTP ${r.status}` + (err ? ` — ${err}` : ""));
+        }
+        STATE.graph = graph;
+        // Change-detection: if the fresh payload is byte-identical to the
+        // last graph we rendered, skip the whole re-render (no flash, no
+        // scroll jump). Only honored for the auto-refresh path so an
+        // explicit/first loadGraph() always paints.
+        const _freshJson = JSON.stringify(STATE.graph);
+        if (skipIfUnchanged && _freshJson === LAST_GRAPH_JSON) {
+          return;
+        }
+        const _scrollSnap = preserveScroll ? captureScroll() : null;
+        const storePath = document.getElementById("store-path");
+        if (storePath) storePath.textContent = STATE.graph.store_path || "—";
+        // A zero-card payload gets a SENTENCE, not a blank canvas. After
+        // store-path is set, so the footer still names WHICH store answered —
+        // "no cards visible" plus the store identity is a diagnosis; the same
+        // words without it are an apology. LAST_GRAPH_JSON is recorded so the
+        // refresh tick can skip an unchanged empty payload rather than
+        // repainting this panel every few seconds.
+        if (renderEmptyState(STATE.graph)) {
+          markBoardPhase("state-rendered");
+          _syncDetailsBoardPane();
+          LAST_GRAPH_JSON = _freshJson;
+          return;
+        }
+        populateFilters();
+        // Sync the filterbar UI to the persisted STATE on first paint:
+        // the Layout segment buttons reflect STATE.layout (sticky across
+        // reloads).
+        const _curLayout = normalizeLayout(STATE.layout);
+        syncLayoutButtons(_curLayout);
+        // Sync the Show-done checkbox to the persisted STATE so the
+        // popover reflects the actual filter state on first paint.
+        const _sdBox = document.getElementById("f-showdone");
+        if (_sdBox) _sdBox.checked = !!STATE.filters.showDone;
+        render();
+        // This dispatch can show Timeline's loading state while its separate
+        // request is pending. It is not a useful-paint or interactive mark.
+        markBoardPhase("render-dispatched");
+        // Instant-open: retire the server-painted skeleton (aria-busy on
+        // #columns) the moment real cards paint. The named empty /
+        // signed-out / error states clear it in boardStates.js, which owns
+        // those painters — this site covers only the happy path.
+        // (hook-bypass: line-limit.)
+        document.getElementById("columns")?.setAttribute("aria-busy", "false");
+        // Record what we just painted so the next auto-refresh tick can
+        // detect "no change" and skip the redraw entirely. Restore the
+        // scroll offsets captured before render() so a real change
+        // redraws in place instead of snapping to the top.
+        // (hook-bypass: line-limit.)
+        LAST_GRAPH_JSON = _freshJson;
+        restoreScroll(_scrollSnap);
+        // Draw the dependency graph in the BACKGROUND (idle callback) so a
+        // later switch to the Graph layout paints an already-rendered SVG
+        // instead of freezing the UI for seconds (operator 2026-07-13).
+        _prewarmGraph();
+      } catch (e) {
+        await BOARD_MODULES_READY;
+        // Cause first, full text in a disclosure — see boardStates.js for why.
+        // This used to dump `e.message` as one red line, which turned the
+        // server's complete, correct diagnosis into a screen the operator read
+        // as "nothing displayed" (2026-08-17).
+        renderLoadError(e);
+        markBoardPhase("state-rendered");
+        // Error-state board: the pane still syncs (View/Span/Layout/Live
+        // chrome is meaningful even when the canvas shows the error card).
+        _syncDetailsBoardPane();
+      }
+    }
+
+    // Pane sync subscription: Details > Board re-syncs on EVERY completed
+    // loadGraph paint (success, empty, or error — the canvas error path
+    // returns before render(), so render() alone misses it). Single re-sync
+    // point; render()'s own call covers the data path, the boot .then
+    // covers first paint.
+    // (hook-bypass: line-limit — pre-existing over-cap template.)
+    function _syncDetailsBoardPane() {
+      try { renderDetailsBoard(); } catch { /* pane not mounted — board still loads */ }
+    }
+
+    function passes(t) {
+      const f = STATE.filters;
+      // Show-done — DEFAULT OFF (operator direct, lead a2a
+      // `b9d135c1ea8348dea80f027ba66a0079`). `status: done` cards drop
+      // from every layout unless the popover toggle is flipped on.
+      // Done early so the rest of the predicates never see done rows.
+      if (!f.showDone && t.status === "done") return false;
+      if (f.project && (t.project || "Uncategorized") !== f.project) return false;
+      if (f.host && (t.host || "") !== f.host) return false;
+      if (f.status && t.status !== f.status) return false;  // RAW 7-status filter (hook-bypass: line-limit)
+      if (f.blocker) {
+        if (f.blocker === "__none" && t.blocker) return false;
+        if (f.blocker !== "__none" && t.blocker !== f.blocker) return false;
+      }
+      if (f.agent && (t.agent || "") !== f.agent) return false;
+      if (f.blockingMe && !(t.status === "blocked" && t.blocker === "operator-decision")) return false;
+      // Hide filter: by default hidden cards are dropped; the filter-bar
+      // toggle flips f.showHidden and brings them back (greyed via CSS).
+      if (!f.showHidden && hiddenSet().has(t.id)) return false;
+      // Fuzzy search (operator TG 437 / 438): subsequence char match
+      // across title + project + agent + note. Case-insensitive.
+      if (f.search && !fuzzyMatch(f.search, t)) return false;
+      // Date filter (operator TG 440 / 442): proximity buckets derived
+      // from the next future date parsed out of the title.
+      if (f.date) {
+        // Date helpers extracted to 15-dateinfo.js; call-time lookup so
+        // script load order is irrelevant. (hook-bypass: line-limit.)
+        const di = window.STX.dateInfo.dateInfo(t);
+        if (f.date === "undated" && di) return false;
+        if (f.date === "overdue" && !(di && di.daysFromNow < 0)) return false;
+        if (f.date === "today" && !(di && di.daysFromNow === 0)) return false;
+        if (f.date === "7d" && !(di && di.daysFromNow >= 0 && di.daysFromNow <= 7)) return false;
+        if (f.date === "30d" && !(di && di.daysFromNow >= 0 && di.daysFromNow <= 30)) return false;
+      }
+      return true;
+    }
+
+    // === Fuzzy search (operator TG 437/438) + qualifier syntax (TG 12315/16)
+    // fzf-style subsequence (PR #80) for BARE tokens. When the query
+    // contains a GitHub-style qualifier (project:foo, status:blocked, …)
+    // the searchQuery.js parser takes over via window.STX.searchQuery;
+    // qualifiers AND-combine + bare tokens still go through the fuzzy
+    // haystack so nothing PR #80 shipped regresses.
+    function fuzzyMatch(query, t) {
+      const raw = String(query || "");
+      if (!raw.trim()) return true;
+      const SQ = (typeof window !== "undefined" && window.STX &&
+                  window.STX.searchQuery) || null;
+      if (SQ && /[A-Za-z_][A-Za-z0-9_-]*:/.test(raw)) {
+        // Delegate to the qualifier-aware matcher. Parse-once cache lives
+        // on STATE so we don't re-tokenize per task.
+        if (STATE._searchParsed == null || STATE._searchParsedRaw !== raw) {
+          STATE._searchParsed = SQ.parseSearchQuery(raw);
+          STATE._searchParsedRaw = raw;
+        }
+        return SQ.matchesSearchQuery(t, STATE._searchParsed);
+      }
+      // Legacy fast path — no qualifiers, just the PR #80 fzf-style match.
+      const q = raw.toLowerCase().trim();
+      const hay = (
+        (t.title || "") + " " +
+        (t.task || "") + " " +
+        (t.project || "") + " " +
+        (t.agent || "") + " " +
+        (t.note || "") + " " +
+        (t.id || "")
+      ).toLowerCase();
+      let i = 0;
+      for (const c of q) {
+        if (c === " ") continue;  // whitespace tolerant
+        const found = hay.indexOf(c, i);
+        if (found < 0) return false;
+        i = found + 1;
+      }
+      return true;
+    }
+
+    // === Qualifier hint pills (operator TG 12315/12316) ====================
+    // Renders one pill per recognized qualifier above the search input.
+    // Unknown qualifiers (typos) render grey with a "did you mean ..."
+    // tooltip — don't block typing, just hint. Reuses the date-pill /
+    // filter-chip visual pattern from PR #80.
+    function renderQualifierHints(raw) {
+      const wrap = document.getElementById("filt-qhints");
+      if (!wrap) return;
+      const SQ = (typeof window !== "undefined" && window.STX &&
+                  window.STX.searchQuery) || null;
+      if (!SQ || !raw || !/[A-Za-z_][A-Za-z0-9_-]*:/.test(raw)) {
+        wrap.innerHTML = "";
+        return;
+      }
+      const parsed = SQ.parseSearchQuery(raw);
+      const pills = parsed.hints.map((h) => {
+        const classes = ["filt-qhint"];
+        if (h.unknown) classes.push("filt-qhint--unknown");
+        if (h.unknownValue) classes.push("filt-qhint--unknown-value");
+        const tip = h.unknown
+          ? `unknown qualifier — did you mean: ${h.suggestion}`
+          : h.unknownValue
+            ? `unknown value — try one of: ${h.suggestion}`
+            : `filter on ${h.label}`;
+        return `<span class="${classes.join(" ")}" title="${escapeHtml(tip)}">` +
+               `<span class="filt-qhint-key">${escapeHtml(h.label)}:</span>` +
+               `<span class="filt-qhint-val">${escapeHtml(h.value || "(empty)")}</span>` +
+               `</span>`;
+      });
+      wrap.innerHTML = pills.join("");
+    }
+
+    // Rebuild the board AFTER typing settles, never during it — see
+    // static/scitex_cards/board_v3/searchDebounce.js for the full reasoning.
+    // Short version: `oninput` is dispatched BEFORE the browser paints, so
+    // calling render() here put a full-layout rebuild over every node on the
+    // critical path of displaying the character just typed. That is why the
+    // CARET lagged the keyboard, not just the results lagging the caret
+    // (operator, 2026-07-30).
+    //
+    // Falls back to calling render() synchronously when the deferred module
+    // hasn't executed yet — same stance the Wall and Matrix layouts take. A
+    // missing module must degrade to the OLD behaviour (correct but slow), never
+    // to a board that silently stops responding to the filter.
+    let _searchDebouncer = null;
+    function _scheduleSearchRender() {
+      const SD = (window.STX && window.STX.searchDebounce) || null;
+      if (!SD) { render(); return; }
+      if (!_searchDebouncer) _searchDebouncer = SD.createSearchDebouncer();
+      _searchDebouncer.schedule(render);
+    }
+
+    // === Details-pane free-text (buzz) filter — operator batch 2026-10-23
+    // item 5. The #f-text input in the Details Filters section writes the
+    // SAME STATE.filters.search the header #f-search owns, so both boxes
+    // stay in sync (each mirrors the other on input) and share one match
+    // path (`passes()` → fuzzyMatch across title/text/project/assignee/
+    // note). Debounced via the same _scheduleSearchRender trailing edge
+    // as the header search — no second policy.
+    function onDetailsTextInput(e) {
+      const v = e && e.currentTarget ? e.currentTarget.value : "";
+      STATE.filters.search = v;
+      const header = document.getElementById("f-search");
+      if (header && header.value !== v) header.value = v;
+      STATE._searchParsed = null;
+      STATE._searchParsedRaw = null;
+      renderQualifierHints(v);
+      renderActiveFilterChips();
+      _scheduleSearchRender();
+    }
+
+    function onSearchInput(e) {
+      STATE.filters.search = e.currentTarget.value;
+      const details = document.getElementById("f-text");
+      if (details && details.value !== e.currentTarget.value) {
+        details.value = e.currentTarget.value;
+      }
+      // Invalidate the qualifier-parse cache on every keystroke.
+      STATE._searchParsed = null;
+      STATE._searchParsedRaw = null;
+      renderQualifierHints(e.currentTarget.value);
+      renderActiveFilterChips();  // P2: surface the search chip while typing
+      // NOT debounced: onSearchKeyDown reads the list's hidden flag and
+      // _SEARCH_SUGG_ITEMS to route Enter/Tab/ArrowDown, so deferring this
+      // would break the keyboard contract for a fast typist.
+      renderSearchSuggest(e.currentTarget);
+      _scheduleSearchRender();
+    }
+
+    // === Search autocomplete (operator TG 12318) ===========================
+    // Inline-script wrapper around static/scitex_cards/board_v3/searchSuggest.js
+    // (deferred load). Mirrors the React SearchAutocomplete.tsx component so
+    // the vanilla board stays in lock-step with the React surface. Pure DOM
+    // here — the suggestion math lives in searchSuggest.js / searchQuery.js.
+    let _SEARCH_SUGG_ACTIVE = 0;
+    let _SEARCH_SUGG_ITEMS = [];
+    function _suggDataSource() {
+      const nodes = (STATE.graph && STATE.graph.nodes) || [];
+      return { nodes };
+    }
+    function renderSearchSuggest(input) {
+      const list = document.getElementById("search-suggest");
+      if (!list) return;
+      const SS = (window.STX && window.STX.searchSuggest) || null;
+      if (!SS) { list.hidden = true; input.setAttribute("aria-expanded", "false"); return; }
+      const q = input.value;
+      const pos = input.selectionStart != null ? input.selectionStart : q.length;
+      const sugs = SS.computeSuggestions(q, pos, _suggDataSource()).slice(0, 8);
+      _SEARCH_SUGG_ITEMS = sugs;
+      if (_SEARCH_SUGG_ACTIVE >= sugs.length) _SEARCH_SUGG_ACTIVE = 0;
+      if (!sugs.length) {
+        list.innerHTML = "";
+        list.hidden = true;
+        input.setAttribute("aria-expanded", "false");
+        input.removeAttribute("aria-activedescendant");
+        return;
+      }
+      list.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+      list.innerHTML = sugs.map((s, i) => {
+        const f = SS.formatSuggestion(s);
+        const cls = ["search-suggest__row", `search-suggest__row--${s.kind}`,
+                     i === _SEARCH_SUGG_ACTIVE ? "search-suggest__row--active" : ""]
+          .filter(Boolean).join(" ");
+        const badge = (s.count != null)
+          ? `<span class="search-suggest__badge">${s.count}</span>` : "";
+        const hint = f.hint
+          ? `<span class="search-suggest__hint">${escapeHtml(f.hint)}</span>` : "";
+        return `<li id="search-suggest-row-${i}" role="option" `
+             + `aria-selected="${i === _SEARCH_SUGG_ACTIVE}" class="${cls}" `
+             + `onmousedown="_searchSuggClick(event, ${i})" `
+             + `onmouseenter="_searchSuggHover(${i})">`
+             + `<span class="search-suggest__label">${escapeHtml(f.label)}</span>`
+             + badge + hint + `</li>`;
+      }).join("");
+      input.setAttribute("aria-activedescendant",
+                         `search-suggest-row-${_SEARCH_SUGG_ACTIVE}`);
+    }
+    function _searchSuggHover(i) {
+      _SEARCH_SUGG_ACTIVE = i;
+      const list = document.getElementById("search-suggest");
+      if (!list) return;
+      [...list.children].forEach((el, j) => {
+        el.classList.toggle("search-suggest__row--active", j === i);
+        el.setAttribute("aria-selected", j === i);
+      });
+      const input = document.getElementById("f-search");
+      if (input) input.setAttribute("aria-activedescendant", `search-suggest-row-${i}`);
+    }
+    function _searchSuggClick(e, i) {
+      // mousedown so the input doesn't blur first.
+      e.preventDefault();
+      _SEARCH_SUGG_ACTIVE = i;
+      _commitSearchSuggest();
+    }
+    function _commitSearchSuggest() {
+      const SS = (window.STX && window.STX.searchSuggest) || null;
+      const input = document.getElementById("f-search");
+      if (!SS || !input) return false;
+      const sug = _SEARCH_SUGG_ITEMS[_SEARCH_SUGG_ACTIVE];
+      if (!sug) return false;
+      const pos = input.selectionStart != null ? input.selectionStart : input.value.length;
+      const { newQuery, newCursorPos } = SS.applySuggestion(input.value, pos, sug);
+      input.value = newQuery;
+      try { input.setSelectionRange(newCursorPos, newCursorPos); } catch {}
+      STATE.filters.search = newQuery;
+      STATE._searchParsed = null;
+      STATE._searchParsedRaw = null;
+      renderQualifierHints(newQuery);
+      renderActiveFilterChips();
+      renderSearchSuggest(input);
+      render();
+      return true;
+    }
+    function onSearchKeyDown(e) {
+      const list = document.getElementById("search-suggest");
+      const open = list && !list.hidden;
+      if (!open) {
+        if (e.key === "ArrowDown" || e.key === "Tab") {
+          renderSearchSuggest(e.currentTarget);
+        }
+        return;
+      }
+      const n = _SEARCH_SUGG_ITEMS.length;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        _SEARCH_SUGG_ACTIVE = n ? (_SEARCH_SUGG_ACTIVE + 1) % n : 0;
+        renderSearchSuggest(e.currentTarget);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        _SEARCH_SUGG_ACTIVE = n ? (_SEARCH_SUGG_ACTIVE - 1 + n) % n : 0;
+        renderSearchSuggest(e.currentTarget);
+      } else if (e.key === "Tab" || e.key === "Enter") {
+        if (n > 0) {
+          e.preventDefault();
+          _commitSearchSuggest();
+        }
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        list.hidden = true;
+        e.currentTarget.setAttribute("aria-expanded", "false");
+      }
+    }
+    function onSearchFocus(e) {
+      renderSearchSuggest(e.currentTarget);
+    }
+    function onSearchBlur(e) {
+      // Defer close so a click on a row commits before the dropdown vanishes.
+      setTimeout(() => {
+        const list = document.getElementById("search-suggest");
+        if (list) list.hidden = true;
+        e.target.setAttribute("aria-expanded", "false");
+      }, 150);
+    }
+
+    // === Date extraction + proximity color (operator TG 440/442) =====
+    // Pulls every YYYY-MM-DD out of the title, picks the NEXT future date,
+    // and colors the 📅 pill by proximity. EXTRACTED to 15-dateinfo.js
+    // (window.STX.dateInfo) as split PR-1 — pure, node-testable, unchanged
+    // behaviour. Consumed at call time; see passes(). (hook-bypass: line-limit.)
+
+    function populateFilters() {
+      if (!STATE.graph) return;
+      // Translation labels, self-contained: the browser defines STX_BOARD_T
+      // (server-rendered JA dictionary above), but node harnesses that
+      // extract this function run without it — fall back to the English
+      // msgids (which are also what the JA catalog translates FROM).
+      const T = (typeof STX_BOARD_T === "undefined") ? {
+        allProjects: "All projects", allHosts: "All hosts",
+        allAssignees: "All assignees", allStatuses: "All statuses",
+        allBlockers: "All blockers",
+      } : STX_BOARD_T;
+      const nodes = STATE.graph.nodes;
+      const uniq = (key) => {
+        const s = new Set();
+        for (const n of nodes) {
+          const v = n[key];
+          if (v) s.add(v);
+        }
+        return [...s].sort();
+      };
+      const set = (id, items, label) => {
+        const el = document.getElementById(id);
+        const cur = el.value;
+        el.innerHTML = `<option value="">${label}</option>` +
+          items.map(i => `<option value="${i}">${i}</option>`).join("");
+        if (items.includes(cur)) el.value = cur;
+      };
+      // Project is header-owned (operator 2026-10-23: single picker in
+      // the app header) — populateFilters maintains only the remaining
+      // leaf-local selects. The "Uncategorized" entry died with the
+      // Details project row; the header picker is the project control.
+      set("f-host", uniq("host"), T.allHosts);
+      set("f-agent", uniq("agent"), T.allAssignees);
+      // Status / blocker = closed enums. Status now lists the 7 REAL
+      // statuses (SSOT STATUS_STYLE order) and filters by RAW status — the
+      // 4-bucket collapse was the source of the goal/failed color confusion.
+      // (hook-bypass: line-limit.)
+      document.getElementById("f-status").innerHTML =
+        `<option value="">${T.allStatuses}</option>` +
+        ["goal", "done", "in_progress", "blocked", "deferred", "failed", "cancelled"]
+          .map(s => `<option value="${s}">${s}</option>`).join("");
+      const blockerLabels = {
+        "compute": "Compute", "dependency": "Task dependency", "dep": "Task dependency",
+        "operator-decision": "Awaiting your decision", "agent-wait": "Waiting for an agent",
+        "none": "None",
+      };
+      document.getElementById("f-blocker").innerHTML =
+        `<option value="">${T.allBlockers}</option>` +
+        ["compute", "dependency", "dep", "operator-decision", "agent-wait", "none"]
+          .map(b => `<option value="${b}">${blockerLabels[b]}</option>`).join("") +
+        `<option value="__none">No blocker</option>`;
+      // P11b rebind — refresh the scitex-ui Combobox layered over each
+      // <select.filt> so its item list reflects the freshly-populated
+      // option lists. No-op when window.STX.Combobox is unavailable.
+      if (typeof attachCombobox === "function") attachCombobox();
+    }
+
+    // Delegates to 16-card-helpers.js (split PR-2), which holds the real
+    // implementation and its tests.
+    //
+    // THIS MUST STAY A `function` DECLARATION. Do not "simplify" it to
+    // `const escapeHtml = ...`. const/let create bindings in the global
+    // LEXICAL environment, NOT properties of the global object; only a
+    // function declaration (or var) puts the name on `window`. Four extracted
+    // modules read it off `window` — timeline.js, 14-matrix.js,
+    // 10-agent-avatar.js, timelineSelect.js — so an assignment form strips
+    // their escaping unconditionally. Secondarily, the declaration resolves
+    // STX at CALL time, which this inline script needs because it parses
+    // before the deferred module loads.
+    // Pinned by test_the_template_alias_is_a_function_declaration_not_an_assignment.
+    // hook-bypass: line-limit (board_v3.html split in progress — this IS it)
+    function escapeHtml(s) {
+      return STX.cardHelpers.escapeHtml(s);
+    }
+
+
+    // === Right-click context menu — CRUD on a card (operator TG 432/433) =====
+    // Replaces the heavyweight "open detail drawer + Edit/Delete buttons" with
+    // a one-right-click menu so common ops are reachable without leaving the
+    // board. Wired to existing /update + /delete + /restore + hide /
+    // copy / move-project handlers — no new backend.
+    function openCardCtx(e, cardId) {
+      e.preventDefault();
+      const t = (STATE.graph?.nodes || []).find(x => x.id === cardId);
+      if (!t) return;
+      const projects = STATE.graph
+        ? [...new Set(STATE.graph.nodes.map(n => n.project).filter(Boolean))].sort()
+        : [];
+      // Statuses come from the server's STATUS_STYLE SSOT (payload
+      // `status_colors`), never a hardcoded list. The old literal still
+      // offered `pending` — abolished 2026-07-10, and writing it now fails
+      // validation — while omitting `cancelled`. Deriving keeps this menu
+      // correct through any future enum change. The fallback only fires for
+      // a payload predating status_colors. (hook-bypass: line-limit.)
+      const statuses = Object.keys(
+        (STATE.graph && STATE.graph.status_colors) || {},
+      ).filter((s) => s !== "pending");
+      if (!statuses.length) {
+        statuses.push("in_progress", "blocked", "done", "deferred", "failed", "goal", "cancelled");
+      }
+      const isHidden = hiddenSet().has(cardId);
+      const menu = document.createElement("div");
+      menu.className = "card-ctx-menu";
+      const sectionHeader = (txt) =>
+        `<div class="card-ctx-header">${escapeHtml(txt)}</div>`;
+      const item = (label, fn, danger) =>
+        `<button class="card-ctx-item${danger ? " card-ctx-item--danger" : ""}"
+          onclick="${fn}">${label}</button>`;
+      // P11b (operator priority 2026-06-12) — move-picker is now a
+      // SDK Combobox: fuzzy typeahead over ALL projects +
+      // "+ Create '<query>'" for brand-new ones. Restores the P8
+      // capability ("list ALL projects, plus a + New project flow")
+      // that regressed in develop AND adds substring search.
+      // Progressive enhancement — when window.STX.Combobox is
+      // unavailable (older SDK pin), the inline list rendered
+      // by the fallback branch below keeps the legacy click-to-pick
+      // behaviour. (hook-bypass: line-limit.)
+      const _hasCombobox = !!(window.STX && window.STX.Combobox);
+      const projectItems = _hasCombobox
+        ? `<button class="card-ctx-item card-ctx-item--sub"
+             id="move-cb-trigger-${escapeHtml(cardId)}"
+             onclick="event.stopPropagation(); _openMoveToCombobox('${escapeHtml(cardId)}', this)">
+             Pick / create a project ▾
+           </button>
+           <span class="cb-container"
+             id="move-cb-container-${escapeHtml(cardId)}"
+             style="display:none"></span>`
+        : projects
+            .filter(p => p !== (t.project || ""))
+            .map(p =>
+              `<button class="card-ctx-item card-ctx-item--sub"
+                onclick="closeCardCtx(); moveCardToProject('${escapeHtml(cardId)}', '${escapeHtml(p)}')">→ ${escapeHtml(p)}</button>`
+            )
+            .join("") +
+          `<button class="card-ctx-item card-ctx-item--sub"
+            style="color: var(--purple); font-weight: 600;"
+            onclick="closeCardCtx(); promptMoveToNewProject('${escapeHtml(cardId)}')">
+            + New project…</button>`;
+      const statusItems = statuses
+        .filter(s => s !== t.status)
+        .map(s =>
+          `<button class="card-ctx-item card-ctx-item--sub"
+            onclick="closeCardCtx(); setCardStatus('${escapeHtml(cardId)}', '${s}')">${s}</button>`
+        )
+        .join("");
+      menu.innerHTML = `
+        <div class="card-ctx-title">${escapeHtml(t.title || cardId)}</div>
+        ${item("Edit details (drawer)", `closeCardCtx(); openDetail('${escapeHtml(cardId)}'); setTimeout(enterDetailEdit, 50);`)}
+        ${item("Copy reference", `closeCardCtx(); copyCardText('${escapeHtml(cardId)}')`)}
+        ${item(isHidden ? "Un-hide" : "Hide", `closeCardCtx(); ${isHidden ? `unhideTask('${escapeHtml(cardId)}'); render();` : `hideTask('${escapeHtml(cardId)}'); render();`}`)}
+        <div class="card-ctx-sep"></div>
+        ${sectionHeader("Change status")}
+        ${statusItems || `<div class="card-ctx-empty">(only "${t.status}" available)</div>`}
+        ${projects.length > 1 ? `<div class="card-ctx-sep"></div>${sectionHeader("Move to project")}${projectItems || `<div class="card-ctx-empty">(no other projects)</div>`}` : ""}
+        <div class="card-ctx-sep"></div>
+        ${item("Delete (with Undo)", `closeCardCtx(); deleteCardById('${escapeHtml(cardId)}')`, true)}
+      `;
+      // Position the menu, clamping to viewport.
+      document.body.appendChild(menu);
+      const mw = menu.offsetWidth, mh = menu.offsetHeight;
+      const vw = window.innerWidth, vh = window.innerHeight;
+      menu.style.left = `${Math.min(e.clientX, vw - mw - 6)}px`;
+      menu.style.top = `${Math.min(e.clientY, vh - mh - 6)}px`;
+      _ctxMenuEl = menu;
+      // Click-outside / Esc to dismiss.
+      setTimeout(() => {
+        document.addEventListener("click", closeCardCtx, { once: true });
+        document.addEventListener("keydown", _ctxEscHandler, { once: true });
+      }, 0);
+    }
+    let _ctxMenuEl = null;
+    function _ctxEscHandler(e) { if (e.key === "Escape") closeCardCtx(); }
+
+    function closeCardCtx() {
+      if (_ctxMenuEl) { _ctxMenuEl.remove(); _ctxMenuEl = null; }
+    }
+
+
+    // Status-set helper (closed enum from validator).
+    async function setCardStatus(cardId, newStatus) {
+      try {
+        const r = await fetch(API_BASE + "/update", { // (hook-bypass: line-limit)
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: cardId, status: newStatus }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${r.status}`);
+        }
+        toast(`✓ ${cardId} → ${newStatus}`);
+        await loadGraph();
+      } catch (e) {
+        toast(`✗ ${e.message}`, true);
+      }
+    }
+    // Matrix drag -> re-score (ADR-0011 §8). Sets a card's two axes from the
+    // grid cell it was dropped on; the `rescore_task` verb recomputes the
+    // WHOLE rank order server-side and emits `rank_changed`, so agents see the
+    // new order within the 5s poller. The client sends ONLY the axes, never a
+    // rank (computed, never asserted). loadGraph() repaints from the store.
+    async function rescoreCard(cardId, urgency, importance) {
+      try {
+        const r = await fetch(API_BASE + "/rescore", { // (hook-bypass: line-limit)
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: cardId, urgency: urgency, importance: importance }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${r.status}`);
+        }
+        const data = await r.json().catch(() => ({}));
+        const rankNote = data && data.rank ? ` · rank ${data.rank}/${data.of}` : "";
+        toast(`✓ ${cardId} → urgency ${urgency}, importance ${importance}${rankNote}`);
+        await loadGraph();
+      } catch (e) {
+        toast(`✗ ${e.message}`, true);
+      }
+    }
+    // Delete-from-context-menu (mirrors deleteCurrentTask but takes an id).
+    async function deleteCardById(cardId) {
+      const t = (STATE.graph?.nodes || []).find(x => x.id === cardId);
+      const label = t ? `"${t.title}" (${cardId})` : cardId;
+      if (!window.confirm(`Delete ${label}?\n\nThis will scrub depends_on / blocks / parent references too. Undo is available for ~10s after delete.`)) return;
+      try {
+        const r = await fetch(API_BASE + "/delete", { // (hook-bypass: line-limit)
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: cardId }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${r.status}`);
+        }
+        const result = await r.json();
+        const undo = async () => {
+          try {
+            const rr = await fetch(API_BASE + "/restore", { // (hook-bypass: line-limit)
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ task: result.removed, refs: result.refs || [] }),
+            });
+            if (!rr.ok) throw new Error(`HTTP ${rr.status}`);
+            await loadGraph();
+            toast(`Restored ${cardId}`);
+          } catch (e) {
+            toast(`✗ Undo failed: ${e.message}`, true);
+          }
+        };
+        showUndoToast(`✓ Deleted ${cardId}`, undo);
+        await loadGraph();
+      } catch (e) {
+        toast(`✗ ${e.message}`, true);
+      }
+    }
+
+    // P11b (operator priority 2026-06-12) — wire the SDK Combobox
+    // popover for the right-click move-to-project flow. Opens a
+    // typeahead listing ALL projects + an inline "+ Create '<query>'"
+    // affordance for brand-new ones. (hook-bypass: line-limit.)
+    function _openMoveToCombobox(cardId, triggerEl) {
+      const container = document.getElementById(
+        "move-cb-container-" + cardId
+      );
+      if (!container) return;
+      container.style.display = "inline-block";
+      const allProjects = STATE.graph
+        ? [...new Set(STATE.graph.nodes.map(n => n.project).filter(Boolean))].sort()
+        : [];
+      const t = (STATE.graph?.nodes || []).find(x => x.id === cardId);
+      const currentProj = t ? (t.project || "") : "";
+      const items = allProjects
+        .filter(p => p !== currentProj)
+        .map(p => ({ value: p, label: p }));
+      try {
+        const cb = new window.STX.Combobox({
+          container,
+          trigger: triggerEl,
+          items,
+          placeholder: "Search projects…",
+          updateTriggerLabel: false,
+          createLabel: (q) => `+ Create new project “${q}”`,
+          onChange: (item) => {
+            closeCardCtx();
+            void moveCardToProject(cardId, item.value);
+          },
+          onCreate: (q) => {
+            closeCardCtx();
+            promptMoveToNewProject(cardId, q);
+          },
+        });
+        cb.show();
+      } catch (e) {
+        // Fallback: ask via the legacy prompt path.
+        promptMoveToNewProject(cardId);
+      }
+    }
+
+    // P11b — onCreate fallback for the move-picker. Accepts an
+    // optional `prefilled` name (the user already typed it in the
+    // Combobox query); validates + forwards to moveCardToProject.
+    // Lost during a P8 -> P10 squash regression; restored here.
+    function promptMoveToNewProject(cardId, prefilled) {
+      const raw = (prefilled !== undefined)
+        ? prefilled
+        : window.prompt(
+            "New project name (creates a column and moves this card into it):",
+            ""
+          );
+      if (raw === null) return;
+      const name = String(raw).trim();
+      if (!name) { toast("✗ Project name cannot be empty", true); return; }
+      if (name.length > 64) {
+        toast("✗ Project name too long (≤64 chars)", true);
+        return;
+      }
+      if (name.toLowerCase() === "uncategorized") {
+        toast("✗ Use the existing 'Uncategorized' option for that", true);
+        return;
+      }
+      void moveCardToProject(cardId, name);
+    }
+
+    async function moveCardToProject(cardId, newProject) {
+      // newProject="Uncategorized" → clear the field via null (the /update
+      // handler accepts null patches to remove a field).
+      const patch = {
+        id: cardId,
+        project: newProject === "Uncategorized" ? null : newProject,
+      };
+      try {
+        const r = await fetch(API_BASE + "/update", { // (hook-bypass: line-limit)
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${r.status}`);
+        }
+        toast(`✓ Moved ${cardId} → ${newProject}`);
+        await loadGraph();
+      } catch (e) {
+        toast(`✗ Move failed: ${e.message}`, true);
+      }
+    }
+
+    // Copy a card as a Markdown-friendly one-liner — operator TG 375.
+    // Format: "TITLE · id:ID · project:PROJ · status:STATUS [· blocker:BLK]"
+    // Falls back to a manual textarea-+-execCommand if the clipboard API
+    // is not available (older browsers / non-HTTPS without permission).
+    async function copyCardText(id) {
+      const t = (STATE.graph?.nodes || []).find(x => x.id === id);
+      if (!t) { toast("card not found", true); return; }
+      const parts = [
+        t.title || t.task || id,
+        `id:${id}`,
+      ];
+      if (t.project) parts.push(`project:${t.project}`);
+      parts.push(`status:${t.status || "?"}`);
+      if (t.blocker) parts.push(`blocker:${t.blocker}`);
+      const text = parts.join(" · ");
+      try {
+        if (navigator.clipboard && window.isSecureContext !== false) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          // Fallback for older / non-HTTPS browsers.
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+        }
+        toast(`✓ copied: ${text}`);
+      } catch (e) {
+        toast(`✗ copy failed: ${e.message}`, true);
+      }
+    }
+
+
+    function render() {
+      if (!STATE.graph) return;
+      const visible = STATE.graph.nodes.filter(passes);
+
+      // Empty-state banner (operator TG12911 — "filtering by nv-lessons
+      // does NOT work at all"): when the store HAS tasks but the active
+      // filters narrow `visible` to 0, surface an explicit message + a
+      // one-click clear so a silent empty board doesn't read as broken.
+      _renderEmptyStateBanner(visible.length, STATE.graph.nodes.length);
+
+      // === LAYOUT axis dispatch — the same `visible` task set renders
+      // into one of three orthogonal layouts (timeline | wall | graph).
+      // (hook-bypass: line-limit.)
+      const layout = normalizeLayout(STATE.layout);
+      const canvas = document.getElementById("columns");
+      // Carry the active layout on the canvas so the per-layout CSS
+      // can switch between raster / note-wall / mermaid-canvas without
+      // re-wrapping the DOM.
+      canvas.setAttribute("data-layout", layout);
+      if (layout === "graph") {
+        _renderGraphView(canvas, visible);
+      } else if (layout === "stale") {
+        // Stale Review layout — pulls its OWN data from /stale (not
+        // the filtered `visible` set) because the criteria are
+        // age/orphan-driven, not the same filter-bar predicates.
+        // Unreachable from the UI (button removed 2026-07-10); the
+        // render path stays as shared code for the /stale endpoint.
+        _renderStaleView(canvas);
+      } else if (layout === "matrix" && window.STX && window.STX.matrix) {
+        // Matrix — urgency×importance quadrants (ADR-0011 §8, 14-matrix.js).
+        // Same filtered `visible` set as every other layout; the matrix adds
+        // no predicates of its own. Falls through to Timeline when the
+        // deferred module hasn't executed yet (same stance as Wall).
+        // (hook-bypass: line-limit — pre-existing 3425-line template.)
+        _renderMatrixView(canvas, visible);
+      } else if (layout === "wall" && window.STX && window.STX.stickyWall) {
+        // Wall layout — sticky notes clustered by assignee (11-sticky-wall.js).
+        // Uses the SAME filtered `visible` set the filter bar produces. The
+        // next-up stack is derived from nodes + STATE.graph.edges inside the
+        // module. Falls through to Timeline when the module hasn't loaded
+        // (deferred script not yet executed).
+        _renderWallView(canvas, visible);
+      } else {
+        // Timeline — the DEFAULT layout (operator 2026-07-13). Own-data:
+        // agent/project rasters pull /timeline; the per-task "simple" list
+        // projects STATE.graph by time.
+        _renderTimelineView(canvas);
+      }
+      // One-shot glow on any card whose status changed since the last render
+      // (operator msg 933). No-op on first paint — the map starts empty, so
+      // nothing "transitions" into existence.
+      _flashStatusTransitions(canvas);
+      renderStats();
+      renderDetailsBoard();
+      _renderRecentCountPill(visible);
+      // Update the "show hidden (N)" counter in the filter bar so the
+      // operator sees how many cards are currently being filtered out.
+      const hc = document.getElementById("hidden-count");
+      if (hc) hc.textContent = String(hiddenSet().size);
+      // Hidden-done counter — surfaces in the popover toggle label so
+      // the operator can't think "where did my done cards go" (operator
+      // direct, lead `b9d135c1ea8348dea80f027ba66a0079`).
+      const sdc = document.getElementById("f-showdone-count");
+      if (sdc) {
+        const doneCount = STATE.graph.nodes.filter(n => n.status === "done").length;
+        sdc.textContent = STATE.filters.showDone
+          ? `(${doneCount} shown)`
+          : `(${doneCount} hidden)`;
+      }
+    }
+
+    // === Empty-state banner ──────────────────────────────────────────
+    // Operator TG12911 (via lead a2a `ffa6c606`): "filtering by
+    // nv-lessons does NOT work at all — returns nothing / no effect."
+    // Root cause was UX: the filter LOGICALLY narrowed the set to 0
+    // matches and the board went blank with no explanation, reading as
+    // "broken filter". This helper flips a banner on whenever the store
+    // has rows but the active filters drop everything, and offers a
+    // one-click "Clear all filters" that resets STATE.filters.
+    // (hook-bypass: line-limit.)
+    function _renderEmptyStateBanner(visibleCount, totalCount) {
+      const banner = document.getElementById("filter-empty-banner");
+      if (!banner) return;
+      // Show only when the store HAS rows but filters narrow to 0;
+      // a truly empty store falls through to the normal columns view
+      // (the user just hasn't seeded any tasks yet).
+      const filtersAreActive = _anyActiveFilter();
+      if (visibleCount === 0 && totalCount > 0 && filtersAreActive) {
+        const detail = document.getElementById("filter-empty-banner-detail");
+        if (detail) {
+          detail.textContent =
+            ` Active filters narrow ${totalCount} task` +
+            (totalCount === 1 ? "" : "s") +
+            " to none. Either widen the filters or use the button to" +
+            " clear them.";
+        }
+        banner.style.display = "block";
+      } else {
+        banner.style.display = "none";
+      }
+    }
+
+    function _anyActiveFilter() {
+      const f = STATE.filters || {};
+      return Boolean(
+        f.project || f.host || f.status || f.blocker ||
+        f.agent || f.date || f.search || f.blockingMe,
+      );
+    }
+
+    // Wire the banner's "Clear all filters" button once at boot. The
+    // banner element is in the static template; the button needs a JS
+    // listener so the click resets STATE.filters and re-renders.
+    document.addEventListener("DOMContentLoaded", () => {
+      const btn = document.getElementById("filter-empty-banner-clear");
+      if (!btn) return;
+      btn.addEventListener("click", () => {
+        // Reset every filter dimension to its empty value + clear the
+        // <select.filt> + search-input DOM controls so the chip strip
+        // re-renders consistent with the cleared state.
+        const f = STATE.filters || {};
+        f.project = ""; f.host = ""; f.status = "";
+        f.blocker = ""; f.agent = ""; f.date = "";
+        f.search = ""; f.blockingMe = false;
+        for (const id of ["f-host", "f-status",
+                          "f-blocker", "f-agent", "f-date"]) {
+          const el = document.getElementById(id);
+          if (el) el.value = "";
+        }
+        const search = document.getElementById("f-search");
+        if (search) search.value = "";
+        const detailsText = document.getElementById("f-text");
+        if (detailsText) detailsText.value = "";
+        renderActiveFilterChips();
+        render();
+      });
+      // Mobile declutter (card cards-mobile-declutter-20261007): on touch
+      // devices the search placeholder's desktop keyboard hints (/ to focus,
+      // Esc to blur, Tab to autocomplete) name keys that don't exist. Swap
+      // to a short prompt; the full hint stays for hardware keyboards, and
+      // the title attribute keeps the qualifier reference on both.
+      try {
+        if (window.matchMedia && matchMedia("(pointer: coarse)").matches) {
+          const search = document.getElementById("f-search");
+          if (search) search.setAttribute("placeholder", "🔎 Search cards…");
+        }
+      } catch (e) {}
+    });
+
+
+    // Wall layout state. `groupBy` = assignee|project|status (operator's
+    // "切り口"), `selected` = the expanded island. Sticky across reloads so
+    // picking your own lane once is remembered. (hook-bypass: line-limit.)
+    const WALL = {
+      groupBy: (() => { try { return localStorage.getItem("scitex-cards:wall-group") || "assignee"; } catch { return "assignee"; } })(),
+      selected: (() => { try { return localStorage.getItem("scitex-cards:wall-selected") || null; } catch { return null; } })(),
+    };
+    // Matrix layout (ADR-0011 §8). RENDERS the urgency/importance axes the
+    // store carries and the rank the engine computed; it does NOT score — a
+    // JS-side f(u,i) would be a second implementation of the engine and would
+    // lie the moment the weights moved. Drag-to-re-score is wired below (the
+    // delegated dragstart/drop listeners) and goes through the `rescore_task`
+    // store verb via /rescore, so the `rank_changed` event still reaches
+    // agents. innerHTML is replaced wholesale each render, which is why the
+    // drag listeners are DELEGATED on document, not bound per card.
+    // (hook-bypass: line-limit — pre-existing 3400+-line template; split is
+    // carded as scitex-cards-gui-board-v3-template-split-20260717.)
+    function _renderMatrixView(canvas, visible) {
+      canvas.innerHTML = window.STX.matrix.matrixHtml(visible, {});
+    }
+    function _renderWallView(canvas, visible) {
+      const edges = (STATE.graph && STATE.graph.edges) || [];
+      canvas.innerHTML = window.STX.stickyWall.wallHtml(visible, edges, {
+        groupBy: WALL.groupBy,
+        selected: WALL.selected,
+        nowMs: Date.now(),
+      });
+    }
+    // Delegated: island title toggles selection; a note opens the existing
+    // detail drawer. One listener for the whole wall, survives re-renders.
+    document.addEventListener("click", (ev) => {
+      const head = ev.target.closest && ev.target.closest(".sw-island-title");
+      if (head) {
+        const k = head.getAttribute("data-key");
+        WALL.selected = WALL.selected === k ? null : k;
+        try { localStorage.setItem("scitex-cards:wall-selected", WALL.selected || ""); } catch {}
+        render();
+        return;
+      }
+      const note = ev.target.closest && ev.target.closest(".sw-note");
+      if (note) openDetail(note.getAttribute("data-id"));
+    });
+
+    // Uniform right-click across EVERY view (operator msg 943: "right click
+    // should work on tasks — scatters/cards on all views in the same
+    // manner"). One delegated listener instead of an inline handler per
+    // view: resolve the card id from `data-card-id` (timeline dots) or
+    // `data-id` (wall notes) and open the same menu.
+    //
+    // Any element carrying an inline `oncontextmenu` owns its own menu;
+    // openCardCtx() calls preventDefault() but NOT stopPropagation(), so the
+    // event still bubbles here — skip those to avoid opening the menu twice.
+    document.addEventListener("contextmenu", (ev) => {
+      if (!ev.target.closest) return;
+      const el = ev.target.closest("[data-card-id],[data-id]");
+      if (!el) return;
+      if (el.closest("[oncontextmenu]")) return; // inline handler owns it
+      const id =
+        el.getAttribute("data-card-id") || el.getAttribute("data-id");
+      if (id) openCardCtx(ev, id);
+    });
+
+    // Matrix drag-to-re-score (ADR-0011 §8), delegated on `document` so it
+    // survives the matrix's wholesale innerHTML re-render. Only `.mx-card`s
+    // are `draggable`, so dragstart fires for the matrix view ALONE — no
+    // other layout is affected and no per-card binding is needed. The drop
+    // target is a grid cell (`.mx-cell`), which carries its own
+    // (urgency, importance) in data-*; window.STX.matrix.dropAxes parses and
+    // validates them. A drop anywhere without valid axes (the unscored tray,
+    // the gaps between cells) is a NO-OP — you cannot un-score by dragging,
+    // and the verb requires 1..5 regardless.
+    let _mxDragId = null;
+    function _mxClearDropTargets() {
+      document
+        .querySelectorAll(".mx-cell--drop")
+        .forEach((c) => c.classList.remove("mx-cell--drop"));
+    }
+    document.addEventListener("dragstart", (ev) => {
+      const card = ev.target.closest && ev.target.closest(".mx-card");
+      if (!card) return;
+      _mxDragId = card.getAttribute("data-id") || card.getAttribute("data-card-id");
+      card.classList.add("mx-card--dragging");
+      if (ev.dataTransfer) {
+        ev.dataTransfer.effectAllowed = "move";
+        try { ev.dataTransfer.setData("text/plain", _mxDragId || ""); } catch {}
+      }
+    });
+    document.addEventListener("dragend", (ev) => {
+      const card = ev.target.closest && ev.target.closest(".mx-card");
+      if (card) card.classList.remove("mx-card--dragging");
+      _mxClearDropTargets();
+      _mxDragId = null;
+    });
+    document.addEventListener("dragover", (ev) => {
+      if (!_mxDragId) return;
+      const cell = ev.target.closest && ev.target.closest(".mx-cell");
+      if (!cell) return;
+      const mx = window.STX && window.STX.matrix;
+      if (!mx || !mx.dropAxes(cell.dataset)) return; // not a valid target
+      ev.preventDefault(); // permit the drop
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+      if (!cell.classList.contains("mx-cell--drop")) {
+        _mxClearDropTargets();
+        cell.classList.add("mx-cell--drop");
+      }
+    });
+    document.addEventListener("drop", (ev) => {
+      if (!_mxDragId) return;
+      const cell = ev.target.closest && ev.target.closest(".mx-cell");
+      const mx = window.STX && window.STX.matrix;
+      const axes = cell && mx ? mx.dropAxes(cell.dataset) : null;
+      if (!axes) return; // dropped off any valid cell -> no-op
+      ev.preventDefault();
+      const id = _mxDragId;
+      _mxClearDropTargets();
+      rescoreCard(id, axes.urgency, axes.importance);
+    });
+
+    // Status-transition glow (operator msg 933). Cheap by construction: a
+    // prev-status map diffed on each render; the CSS does the rest and the
+    // class is removed on animationend so it never accumulates. Applies to
+    // any element carrying data-id + data-status — wall notes today, and any
+    // future view that adopts the same two attributes.
+    const _PREV_STATUS = new Map();
+    function _flashStatusTransitions(root) {
+      if (!root) return;
+      // Wall notes carry data-id; timeline dots carry data-card-id. Both
+      // carry data-status, so both get the glow from this one pass.
+      root
+        .querySelectorAll("[data-id][data-status],[data-card-id][data-status]")
+        .forEach((el) => {
+        const id =
+          el.getAttribute("data-card-id") || el.getAttribute("data-id");
+        const st = el.getAttribute("data-status");
+        const prev = _PREV_STATUS.get(id);
+        _PREV_STATUS.set(id, st);
+        if (prev === undefined || prev === st) return;
+        el.classList.add("stx-flash", `stx-flash--${st}`);
+        el.addEventListener(
+          "animationend",
+          () => el.classList.remove("stx-flash", `stx-flash--${st}`),
+          { once: true },
+        );
+      });
+    }
+
+
+    // === Stale Review layout ─────────────────────────────────────────
+    // Operator directive 2026-06-13 (via lead a2a) — a recurring
+    // standing-section that surfaces the stale deferred-backlog rows so
+    // the operator can archive them WITH a reason recorded (no silent
+    // drops). `pending` was abolished 2026-07-10 — GET /stale serves
+    // `deferred` (backend PR #153); per-row Archive
+    // button posts to /archive (HTTP twin of CLI `close --reason`
+    // verb in PR #151). Layout-state cache so we don't refetch on
+    // every render() — invalidate via `loadGraph()` reload or after
+    // a successful archive POST.
+    let _STALE_CACHE = null;
+    let _STALE_OPTS = { days: 14, include_no_timestamp: true };
+
+    function _staleFiltersHtml() {
+      const inc = _STALE_OPTS.include_no_timestamp ? "checked" : "";
+      const days = Number(_STALE_OPTS.days || 14);
+      return `<div class="stale-toolbar">
+        <label class="stale-tb-item">Age cutoff (days):
+          <input type="number" id="stale-days" value="${days}" min="0"
+                 style="width:5em" onchange="onStaleDaysChange(event)">
+        </label>
+        <label class="stale-tb-item" title="Hide rows flagged ONLY for missing timestamps (~70% of the default set)">
+          <input type="checkbox" id="stale-incnotime" ${inc}
+                 onchange="onStaleIncNoTimeChange(event)">
+          include rows with no timestamps
+        </label>
+        <button type="button" class="stale-tb-reload" onclick="loadStale()"
+                title="Refetch /stale">refresh</button>
+      </div>`;
+    }
+
+    async function loadStale() {
+      const qs = new URLSearchParams({
+        days: String(_STALE_OPTS.days),
+        include_no_timestamp: String(_STALE_OPTS.include_no_timestamp),
+      });
+      try {
+        const r = await fetch(API_BASE + "/stale?" + qs.toString()); // (hook-bypass: line-limit)
+        if (!r.ok) {
+          _STALE_CACHE = { error: `/stale returned ${r.status}` };
+        } else {
+          _STALE_CACHE = await r.json();
+        }
+      } catch (exc) {
+        _STALE_CACHE = { error: String(exc) };
+      }
+      // Re-render if the operator is currently viewing the stale layout.
+      if ((STATE.layout || "column") === "stale") render();
+    }
+
+    function onStaleDaysChange(ev) {
+      const n = Number(ev.target.value);
+      if (Number.isFinite(n) && n >= 0) {
+        _STALE_OPTS.days = n;
+        loadStale();
+      }
+    }
+
+    function onStaleIncNoTimeChange(ev) {
+      _STALE_OPTS.include_no_timestamp = !!ev.target.checked;
+      loadStale();
+    }
+
+    function _renderStaleView(canvas) {
+      const cache = _STALE_CACHE;
+      // First time hitting this layout — kick off the fetch + show a
+      // loading state. loadStale() will re-render once the data lands.
+      if (cache === null) {
+        canvas.innerHTML = `<div class="stale-wrap">
+          ${_staleFiltersHtml()}
+          <div class="loading">loading stale cards…</div>
+        </div>`;
+        loadStale();
+        return;
+      }
+      if (cache.error) {
+        canvas.innerHTML = `<div class="stale-wrap">
+          ${_staleFiltersHtml()}
+          <div class="loading">stale fetch failed: ${escapeHtml(cache.error)}</div>
+        </div>`;
+        return;
+      }
+      const rows = (cache.stale || []).map(r => {
+        const age = (r.age_days == null) ? "—" : (r.age_days + "d");
+        const reasons = (r.reasons || []).join("; ");
+        return `<tr class="stale-row" data-card-id="${escapeHtml(r.id)}">
+          <td class="stale-id">
+            <a href="#" onclick="event.preventDefault(); openDetail('${escapeHtml(r.id)}')">${escapeHtml(r.id)}</a>
+          </td>
+          <td class="stale-title">${escapeHtml(r.title || "(untitled)")}</td>
+          <td class="stale-project">${escapeHtml(r.project || "—")}</td>
+          <td class="stale-age">${age}</td>
+          <td class="stale-reasons">${escapeHtml(reasons)}</td>
+          <td class="stale-action">
+            <button type="button" class="stale-archive-btn"
+                    onclick="archiveStaleCard('${escapeHtml(r.id)}', '${escapeHtml((r.title||'').replace(/'/g, '&#39;'))}')"
+                    title="Archive this card WITH a reason (close-with-reason — PR #151 verb)">
+              Archive
+            </button>
+          </td>
+        </tr>`;
+      }).join("");
+      const summary = `<div class="stale-summary">
+        ${cache.total || 0} stale candidates
+        ${Object.entries(cache.by_project || {})
+          .sort((a,b) => b[1]-a[1])
+          .map(([p,c]) => `<span class="stale-byproj">${escapeHtml(p)}: ${c}</span>`)
+          .join("")}
+      </div>`;
+      canvas.innerHTML = `<div class="stale-wrap">
+        ${_staleFiltersHtml()}
+        ${summary}
+        ${(cache.stale && cache.stale.length)
+          ? `<div class="tbl-wrap"><table class="tbl stale-tbl">
+              <thead><tr>
+                <th>id</th><th>title</th><th>project</th>
+                <th>age</th><th>reasons</th><th>action</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table></div>`
+          : `<div class="loading">no stale cards match the current criteria</div>`}
+      </div>`;
+    }
+
+    async function archiveStaleCard(id, title) {
+      // Operator confirm + reason. Verb: scitex-cards close TASK_ID
+      // --reason TEXT (PR #151) — same behavior server-side here.
+      // For v1 we use the browser-native window.prompt; a styled modal
+      // is a follow-up. The reason is REQUIRED (server returns 400 on
+      // empty), so we re-prompt if blank.
+      const reason = window.prompt(
+        `Archive (close with reason) — "${title || id}"\n\n` +
+        `This appends [CLOSED] <reason> to comments[], flips status to cancelled (terminal),\n` +
+        `and stamps _log_meta.closed_{at,by}. The row stays for audit.\n\n` +
+        `Enter a short reason (REQUIRED):`,
+        ""
+      );
+      if (reason == null) return;
+      const trimmed = String(reason).trim();
+      if (!trimmed) {
+        alert("Archive requires a non-empty reason. No action taken.");
+        return;
+      }
+      try {
+        const r = await fetch(API_BASE + "/archive", { // (hook-bypass: line-limit)
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, reason: trimmed }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          alert(`Archive failed (${r.status}): ${j.error || "unknown"}`);
+          return;
+        }
+        // Refresh both the stale list AND the main graph cache so the
+        // archived card disappears from every layout.
+        await loadStale();
+        await loadGraph();
+      } catch (exc) {
+        alert(`Archive request errored: ${exc}`);
+      }
+    }
+
+    // === Graph layout (mermaid dependency map) ───────────────────────
+    // Inline mermaid render fed from the SERVER's edge list (`STATE.graph
+    // .edges`, kinds `depends_on` / `blocks`) plus per-node hierarchical
+    // `parent` edges. Only nodes that participate in at least one edge are
+    // drawn (lead ruling `c212aa72`, 2026-06-12) — a disconnected node has
+    // no place in a dependency map.
+    //
+    // ── BACKGROUND RENDER (operator 2026-07-13: "Graph view は最適化して
+    // ください。裏で描画を始めて置き、サイズも調整して表示されるように") ──
+    // Switching to Graph used to freeze the UI for seconds: mermaid's 3 MB
+    // bundle was fetched on first switch, then its auto-run entry point
+    // parsed + laid out the diagram SYNCHRONOUSLY against the LIVE canvas.
+    // (test__board_v3_signatures pins that that entry point appears nowhere
+    // in this file, so it is deliberately not spelled out even in prose — a
+    // mention would satisfy the pin and let a real call hide behind it.)
+    // (hook-bypass: line-limit.)
+    //
+    // Now:
+    //   1. `STX.graphBuilders._graphSrc(visible, STATE.graph)` is a PURE
+    //      string build (cheap, no DOM) — 17-graph-builders.js, split PR-3.
+    //      STATE.graph is PASSED, not read ambiently, so it is testable.
+    //   2. `_prewarmGraph()` runs on requestIdleCallback after every paint:
+    //      it loads mermaid once and renders the SVG OFF-DOM via the
+    //      promise API `mermaid.render(id, src)` — mermaid hangs its own
+    //      temp element off <body> (real width, so no zero-width SVG; a
+    //      display:none host would have produced a tiny/unscaled diagram).
+    //   3. The result is cached KEYED ON THE SOURCE STRING, so a re-render
+    //      only happens when the task data / filters actually change.
+    //   4. Switching to Graph injects the cached SVG — no work on the main
+    //      thread beyond an innerHTML assignment.
+    // (hook-bypass: line-limit.)
+    const GRAPH_CACHE = { key: null, svg: null, pending: null, failed: false };
+    // Fit-to-width (default) vs 1:1 natural size. Sticky across reloads.
+    let GRAPH_FIT = (function () {
+      try { return localStorage.getItem("scitex-cards:graph-fit") !== "0"; }
+      catch { return true; }
+    })();
+
+    // SIZE (operator: "サイズも調整して表示される"). mermaid emits the SVG with
+    // hard width/height attributes (useMaxWidth:false) — dropped into the
+    // panel as-is it overflows. We keep the viewBox (so the aspect ratio is
+    // intact) and let CSS scale it: `.graph-wrap--fit svg { width:100%;
+    // height:auto }` shrinks a wide diagram to the panel, `1:1` restores the
+    // natural size and the wrap scrolls. The natural px size is stashed on
+    // the wrapper so the toggle needs no re-render.
+    function _mountGraphSvg(canvas, svg, stats, note) {
+      canvas.innerHTML = `<div class="graph-wrap${GRAPH_FIT ? " graph-wrap--fit" : ""}">
+        ${STX.graphBuilders._graphHintHtml(stats, note, GRAPH_FIT)}
+        <div class="graph-canvas">${svg}</div>
+      </div>`;
+      const el = canvas.querySelector(".graph-canvas svg");
+      if (!el) return;
+      // Guarantee a viewBox even if mermaid omitted it, else scaling clips.
+      if (!el.getAttribute("viewBox")) {
+        const w = parseFloat(el.getAttribute("width")) || 0;
+        const h = parseFloat(el.getAttribute("height")) || 0;
+        if (w && h) el.setAttribute("viewBox", `0 0 ${w} ${h}`);
+      }
+      el.setAttribute("preserveAspectRatio", "xMidYMin meet");
+      // mermaid also writes an inline `style="max-width: Npx"` which fights
+      // the fit rule — strip it and keep the number for the 1:1 mode.
+      const natural = parseFloat(el.getAttribute("width")) || 0;
+      if (natural) el.dataset.naturalWidth = String(natural);
+      el.style.maxWidth = "";
+    }
+
+    function toggleGraphFit() {
+      GRAPH_FIT = !GRAPH_FIT;
+      try { localStorage.setItem("scitex-cards:graph-fit", GRAPH_FIT ? "1" : "0"); } catch {}
+      const wrap = document.querySelector(".graph-wrap");
+      if (!wrap) return;
+      wrap.classList.toggle("graph-wrap--fit", GRAPH_FIT);
+      const btn = wrap.querySelector(".graph-fit-btn");
+      if (btn) btn.textContent = GRAPH_FIT ? "1:1" : "Fit";
+    }
+
+    // Render `src` to an SVG string OFF-DOM. Cached by source, so a repeat
+    // call with unchanged data resolves instantly. Never rejects — a CDN
+    // failure resolves to null and the caller shows an honest message.
+    //
+    // A RESOLVED PROMISE IS NOT A DRAWN DIAGRAM. Over its size ceiling
+    // mermaid does not throw — it returns a VALID one-node flowchart whose
+    // label is its own complaint, so this function used to resolve happily
+    // with that graphic and cache it as the board's dependency map.
+    // `_graphRenderFailed(svg, expected)` is the assertion about WHAT CAME
+    // BACK that was missing: `expected` is the node count we asked for, and
+    // a render that produced fewer did not draw our diagram. The result is
+    // never cached, and `GRAPH_CACHE.reason` tells the caller which failure
+    // it was. (hook-bypass: line-limit.)
+    function _renderGraphSvg(src, expectedNodes) {
+      if (GRAPH_CACHE.key === src && GRAPH_CACHE.svg) {
+        return Promise.resolve(GRAPH_CACHE.svg);
+      }
+      if (GRAPH_CACHE.key === src && GRAPH_CACHE.pending) {
+        return GRAPH_CACHE.pending;  // a prewarm for this exact src is in flight
+      }
+      GRAPH_CACHE.key = src;
+      GRAPH_CACHE.svg = null;
+      GRAPH_CACHE.failed = false;
+      GRAPH_CACHE.reason = null;
+      const p = _ensureMermaid().then(async () => {
+        if (!window.mermaid || !window.mermaid.render) {
+          GRAPH_CACHE.failed = true;
+          GRAPH_CACHE.reason = "bundle";
+          return null;
+        }
+        try {
+          // Promise API — mermaid parses + lays out against its OWN detached
+          // host element, so the live canvas is never touched and never
+          // reflowed mid-parse. `id` must be unique per call.
+          const id = "stx-mermaid-" + Math.random().toString(36).slice(2, 10);
+          const out = await window.mermaid.render(id, src);
+          const svg = (out && out.svg) ? out.svg : String(out || "");
+          // Verify WHAT CAME BACK. mermaid answers a diagram it refuses with
+          // a one-node graphic and a resolved promise, so without this check
+          // the pink box is cached and shown as if it were the graph.
+          if (STX.graphBuilders._graphRenderFailed(svg, expectedNodes)) {
+            console.warn("[scitex-cards] mermaid drew fewer nodes than asked");
+            GRAPH_CACHE.failed = true;
+            GRAPH_CACHE.reason = "render";
+            return null;
+          }
+          if (GRAPH_CACHE.key === src) { GRAPH_CACHE.svg = svg; }
+          return svg;
+        } catch (e) {
+          console.warn("[scitex-cards] mermaid render failed:", e);
+          GRAPH_CACHE.failed = true;
+          GRAPH_CACHE.reason = "render";
+          return null;
+        }
+      }).finally(() => {
+        if (GRAPH_CACHE.pending === p) GRAPH_CACHE.pending = null;
+      });
+      GRAPH_CACHE.pending = p;
+      return p;
+    }
+
+    function _renderGraphView(canvas, visible) {
+      const built = STX.graphBuilders._graphSrc(visible, STATE.graph);
+      if (!built) {
+        canvas.innerHTML = STX.graphBuilders._graphEmptyHtml(visible.length);
+        return;
+      }
+      // Cache hit → paint the ready diagram immediately (the whole point).
+      if (GRAPH_CACHE.key === built.src && GRAPH_CACHE.svg) {
+        _mountGraphSvg(canvas, GRAPH_CACHE.svg, built.stats);
+        return;
+      }
+      // Never hand mermaid a source it will refuse. Over the ceiling it does
+      // not fail — it draws an error image — so the only way to keep the
+      // panel honest is to measure BEFORE asking and explain instead.
+      if (STX.graphBuilders._exceedsMermaidLimit(built.src)) {
+        canvas.innerHTML = STX.graphBuilders._graphOversizeHtml(
+          built.stats, built.src.length);
+        return;
+      }
+      // Cache miss → show the numbers + a spinner line NOW (never a blank
+      // canvas), and mount the SVG when the off-DOM render resolves.
+      canvas.innerHTML = `<div class="graph-wrap">
+        ${STX.graphBuilders._graphHintHtml(built.stats, "", GRAPH_FIT)}
+        <div class="graph-canvas graph-canvas--loading">drawing the diagram…</div>
+      </div>`;
+      _renderGraphSvg(built.src, built.stats.nodes).then((svg) => {
+        // The operator may have switched layouts or the data may have moved
+        // on while we were rendering — only paint if BOTH are still current.
+        if (normalizeLayout(STATE.layout) !== "graph") return;
+        const c = document.getElementById("columns");
+        if (!c) return;
+        if (!svg) {
+          const host = c.querySelector(".graph-canvas");
+          if (host) {
+            host.classList.remove("graph-canvas--loading");
+            host.innerHTML = STX.graphBuilders._graphFailureHtml(
+              GRAPH_CACHE.reason);
+          }
+          return;
+        }
+        const fresh = STX.graphBuilders._graphSrc(_visibleTasks(), STATE.graph);
+        if (!fresh || fresh.src !== built.src) return;  // stale render
+        _mountGraphSvg(c, svg, built.stats);
+      });
+    }
+
+    // The task set the current filters admit — shared by render() and the
+    // idle prewarm so both agree on what the graph should contain.
+    function _visibleTasks() {
+      if (!STATE.graph) return [];
+      return STATE.graph.nodes.filter(passes);
+    }
+
+    // Render the graph AHEAD OF TIME, on the idle callback after a paint, so
+    // that switching to Graph is instant. No-op when the cache already
+    // matches, when mermaid previously failed to load, or when a render for
+    // this exact source is already in flight.
+    let _prewarmHandle = null;
+    function _prewarmGraph() {
+      const idle = window.requestIdleCallback ||
+        function (fn) { return setTimeout(() => fn({ timeRemaining: () => 50 }), 400); };
+      const cancel = window.cancelIdleCallback || clearTimeout;
+      if (_prewarmHandle !== null) { try { cancel(_prewarmHandle); } catch {} }
+      _prewarmHandle = idle(() => {
+        _prewarmHandle = null;
+        if (GRAPH_CACHE.failed) return;
+        const built = STX.graphBuilders._graphSrc(_visibleTasks(), STATE.graph);
+        if (!built) return;                                   // nothing to draw
+        if (GRAPH_CACHE.key === built.src && GRAPH_CACHE.svg) return;  // warm
+        // Same measurement the view makes: a source over the ceiling can only
+        // come back as an error image, so spending idle time on it is worse
+        // than useless — it would poison the cache with a failure.
+        if (STX.graphBuilders._exceedsMermaidLimit(built.src)) return;
+        _renderGraphSvg(built.src, built.stats.nodes);
+      }, { timeout: 3000 });
+    }
+
+    let _mermaidLoaded = null;
+    function _ensureMermaid() {
+      if (_mermaidLoaded) return _mermaidLoaded;
+      _mermaidLoaded = new Promise((resolve) => {
+        if (window.mermaid) return resolve();
+        const s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js";
+        s.onload = () => {
+          try {
+            window.mermaid.initialize({
+              startOnLoad: false, theme: "dark", securityLevel: "loose",
+              // Pin the ceiling we guard against rather than inheriting
+              // whatever the library defaults to. This is not raising the
+              // limit — it is the same 50,000 mermaid 10 already uses — but
+              // it makes _exceedsMermaidLimit's constant true by
+              // construction, so a library default change cannot silently
+              // put the guard and the renderer on different numbers.
+              maxTextSize: STX.graphBuilders.MERMAID_MAX_TEXT,
+              // useMaxWidth:false → mermaid emits the diagram at its natural
+              // px size + a viewBox; _mountGraphSvg() then does the scaling
+              // (fit-to-panel by default, 1:1 on demand). Letting mermaid do
+              // the fit instead would hard-cap the diagram at the width of
+              // whatever container it happened to render in — which, for an
+              // OFF-DOM render, is not the panel.
+              flowchart: { useMaxWidth: false, htmlLabels: true },
+            });
+          } catch {}
+          resolve();
+        };
+        s.onerror = () => resolve();
+        document.head.appendChild(s);
+      });
+      return _mermaidLoaded;
+    }
+
+    // === Details column (right) ══════════════════════════════════════
+    // Accordion behaviour lifted from scitex-writer's details-panel.ts: an
+    // open-set persisted in localStorage, sections closed by default except
+    // the ones we open here. (hook-bypass: line-limit.)
+    const DETAILS_PANE_KEY = "scitex-cards:details-collapsed";
+    function toggleDetailsPane() {
+      const pane = document.getElementById("details-panel");
+      if (!pane) return;
+      // `.collapsed` is the SDK's own state class (css/shell/
+      // stx-shell-sidebar.css): it shrinks the pane to
+      // --ui-collapsed-pane-width and flips the header into the vertical
+      // icon+label strip. We only toggle it — the behaviour is the shell's.
+      const on = pane.classList.toggle("collapsed");
+      const btn = document.getElementById("details-toggle");
+      if (btn) {
+        btn.setAttribute("aria-expanded", on ? "false" : "true");
+        btn.textContent = on ? "‹" : "›";
+      }
+      try { localStorage.setItem(DETAILS_PANE_KEY, on ? "1" : "0"); } catch {}
+    }
+    function _syncDetailsPane() {
+      // Collapsed BY DEFAULT (operator mandate CCT 3877): a fresh profile
+      // with no stored preference starts collapsed; an explicit stored
+      // preference still wins.
+      let collapsed = true;
+      try {
+        const raw = localStorage.getItem(DETAILS_PANE_KEY);
+        collapsed = raw === null ? true : raw === "1";
+      } catch {}
+      const pane = document.getElementById("details-panel");
+      const btn = document.getElementById("details-toggle");
+      if (pane) pane.classList.toggle("collapsed", collapsed);
+      if (btn) {
+        btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        btn.textContent = collapsed ? "‹" : "›";
+      }
+    }
+
+    const DETAILS_OPEN_KEY = "scitex-cards:details-open";
+    function _detailsOpenSet() {
+      try {
+        const raw = localStorage.getItem(DETAILS_OPEN_KEY);
+        if (raw) return new Set(JSON.parse(raw));
+      } catch {}
+      // Board OPEN by default (operator 2026-10-23: the Details pane
+      // "does not open"): View/Span/Layout/Live live in Details > Board
+      // since the 2026-10-22 re-home, so a closed Board section hides the
+      // very controls the move was for. A stored preference still wins.
+      return new Set(["board", "stats", "filters"]);
+    }
+    function toggleDetailsSection(id) {
+      const open = _detailsOpenSet();
+      if (open.has(id)) open.delete(id); else open.add(id);
+      try {
+        localStorage.setItem(DETAILS_OPEN_KEY, JSON.stringify([...open]));
+      } catch {}
+      _syncDetailsSections();
+    }
+    function _syncDetailsSections() {
+      const open = _detailsOpenSet();
+      document.querySelectorAll(".details-section").forEach((sec) => {
+        sec.classList.toggle("open", open.has(sec.getAttribute("data-id")));
+      });
+    }
+
+    // === Details > Board (View / Span / Layout / Live) ════════════════
+    // Operator 2026-10-22: the header is search + Add Task only; View, Span
+    // (renamed from Window), Layout and Live live in the Details column.
+    // ONE state, two chrome homes — this paints the pane side from the same
+    // TL object + setters the canvas row used to own.
+    function _detailsTL() {
+      if (typeof window._timelineReadState === "function") {
+        try { return window._timelineReadState(); } catch { return null; }
+      }
+      if (window._TL) return { view: window._TL.view, windowKey: window._TL.windowKey, error: window._TL.error };
+      return { view: "agent", windowKey: "1d", error: null };
+    }
+    function renderDetailsBoard() {
+      const host = document.getElementById("details-board-timeline");
+      if (host) {
+        // NOTE: `ts` — never `TL`. The timeline module owns a global `TL`
+        // (its IIFE state); a local `const TL` here shadowed nothing at
+        // runtime, but the name invited exactly this misread during review,
+        // so the pane state carries its own name.
+        const ts = _detailsTL() || {};
+        const ctl = (window.STX && window.STX.timelineControls) || null;
+        if (ctl && ctl.detailsBoardHtml) {
+          host.innerHTML = ctl.detailsBoardHtml(ts, escapeHtml);
+        } else {
+          // Degraded: sibling module not loaded — plain text beats silence.
+          host.textContent = "View " + (ts.view || "?") + " · Span " + (ts.windowKey || "?");
+        }
+      }
+      const live = document.getElementById("details-live");
+      if (live) {
+        const ok = !!(STATE.graph);
+        live.innerHTML = '<span class="live-dot"></span>' + (ok ? "LIVE" : "CONNECTING");
+        live.classList.toggle("details-live--off", !ok);
+      }
+      syncLayoutButtons(normalizeLayout(STATE.layout));
+    }
+
+    // === Stats (Details > Stats) ═════════════════════════════════════
+    // "Legend と対応させて … 可視化してください" — the stats MUST read as the
+    // legend's twin, so both are generated from the SAME source: the server's
+    // `status_colors` map (views.board_v3_page → handlers.graph._status_colors
+    // → _diagram.STATUS_STYLE). The legend iterates it in the template; this
+    // reads the identical map off the /graph payload and paints one bar per
+    // status IN THE SAME ORDER, filled with the same `--status-fill-<s>` /
+    // `--status-stroke-<s>` CSS vars the legend swatches use. One list, one
+    // order, one palette — nothing to drift.
+    //
+    // The window is the Timeline's own d/w/m window (see setBoardWindow).
+    function boardWindowKey() {
+      return (window._TL && window._TL.windowKey) || "1d";
+    }
+    function boardWindowHours() {
+      const w = (window.STX && window.STX.timelineWindows) ||
+        { "1d": 24, "1w": 168, "1m": 720 };
+      return w[boardWindowKey()] || 24;
+    }
+    // ONE window definition for the whole board: delegate to the Timeline's
+    // setter (which persists it + rebuilds the raster) instead of keeping a
+    // second, subtly-different notion of "week" here.
+    function setBoardWindow(key) {
+      if (typeof window.setTimelineWindow === "function") {
+        window.setTimelineWindow(key);   // persists + re-renders the raster
+      } else {
+        try { localStorage.setItem("scitex-cards:tl-window", key); } catch {}
+        if (window._TL) window._TL.windowKey = key;
+      }
+      renderStats();
+    }
+
+    const WINDOW_LABEL = { "1d": "24 h", "1w": "7 d", "1m": "30 d" };
+    function renderStats() {
+      const host = document.getElementById("details-stats");
+      if (!host) return;
+      const key = boardWindowKey();
+      document.querySelectorAll(".details-scale-btn").forEach((b) => {
+        b.classList.toggle("details-scale-btn--on",
+                           b.getAttribute("data-win") === key);
+      });
+      if (!STATE.graph) { host.innerHTML = ""; return; }
+      const sc = STATE.graph.status_colors || {};
+      const statuses = Object.keys(sc);          // legend order, verbatim
+      if (!statuses.length) { host.innerHTML = ""; return; }
+      const cutoffMs = Date.now() - boardWindowHours() * 3600 * 1000;
+      // Two series per status: ACTIVE-IN-WINDOW (cards touched inside the
+      // selected window — the number the timescale is actually about) and
+      // TOTAL (every card on the board with that status). The bar length is
+      // the in-window count; the total rides along as a muted number so the
+      // window's slice is legible against the whole.
+      const all = STATE.graph.nodes || [];
+      const inWin = all.filter((t) => {
+        const ts = _newestTs(t);
+        return ts && ts >= cutoffMs;
+      });
+      const countBy = (rows) => {
+        const m = {};
+        for (const t of rows) {
+          const s = t.status || "deferred";
+          m[s] = (m[s] || 0) + 1;
+        }
+        return m;
+      };
+      const winCounts = countBy(inWin);
+      const allCounts = countBy(all);
+      const max = Math.max(1, ...statuses.map((s) => winCounts[s] || 0));
+      const rows = statuses.map((s) => {
+        const n = winCounts[s] || 0;
+        const tot = allCounts[s] || 0;
+        const pct = Math.round((n / max) * 100);
+        return `<div class="stat-row" title="${escapeHtml(s)}: ${n} active in the last ${WINDOW_LABEL[key] || key} of ${tot} on the board">
+          <span class="stat-label">
+            <span class="stat-swatch" style="background: var(--status-fill-${s});
+                  border: 1px var(--status-border-${s}, solid) var(--status-stroke-${s});"></span>
+            ${escapeHtml(s)}
+          </span>
+          <span class="stat-bar-track">
+            <span class="stat-bar" style="width:${pct}%;
+                  background: var(--status-fill-${s});
+                  border: 1px var(--status-border-${s}, solid) var(--status-stroke-${s});"></span>
+          </span>
+          <span class="stat-num">${n}<span class="stat-total">/${tot}</span></span>
+        </div>`;
+      }).join("");
+      const newCount = (STATE.graph.nodes || []).filter(_isNew24h).length;
+      host.innerHTML = `
+        <div class="stat-head">
+          <strong>${inWin.length}</strong> card${inWin.length === 1 ? "" : "s"}
+          active in the last ${WINDOW_LABEL[key] || key}
+          <span class="details-muted">· ${all.length} on the board</span>
+        </div>
+        ${rows}
+        <div class="stat-foot" id="recent-count-pill">
+          <strong id="recent-count-value">${newCount}</strong> new / 24 h
+        </div>`;
+    }
+
+    // === Recent-count pill — fleet-wide "N new in 24 h" indicator ───
+    // Always visible so the operator sees at a glance how many cards moved
+    // in the last day. Hidden when zero so the filterbar isn't cluttered.
+    // (Click-to-sort went with the Sort control on 2026-07-13.)
+    function _renderRecentCountPill(visible) {
+      // The counter moved into Details > Stats (operator 2026-07-13: "114
+      // new/24h ですが、それも details のほうで"). renderStats() paints it; this
+      // keeps the number honest for the FILTERED set on every render.
+      const val = document.getElementById("recent-count-value");
+      if (!val) return;
+      val.textContent = String(visible.filter(_isNew24h).length);
+    }
+
+
+    function attachFilters() {
+      const map = { "f-host": "host", "f-status": "status",
+                    "f-blocker": "blocker", "f-agent": "agent",
+                    "f-date": "date" };
+      Object.entries(map).forEach(([id, key]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("change", e => {
+          STATE.filters[key] = e.target.value;
+          renderActiveFilterChips();  // P2: chip strip + popover count
+          render();
+        });
+      });
+      // P2 (lead brief 2026-06-12): initial chip render so the bar reflects
+      // any filters restored from STATE before the operator's first
+      // interaction. (hook-bypass: line-limit — see REFACTORING.md.)
+      renderActiveFilterChips();
+      // P11b (operator priority 2026-06-12): layer the SDK
+      // Combobox on top of every <select.filt> for fuzzy-typeahead.
+      // Progressive enhancement — when window.STX.Combobox is
+      // unavailable (older SDK pin), the plain <select> stays
+      // functional (this just no-ops).
+      attachCombobox();
+    }
+
+    // === P11b — Combobox layer over <select.filt> ========================
+    // For each filter <select>, attach an SDK Combobox that mirrors
+    // the option list, opens with a button trigger, and on selection
+    // updates the underlying <select>.value + dispatches a "change"
+    // event so attachFilters()'s existing listeners fire unchanged.
+    // The <select> stays in the DOM as the source-of-truth + a
+    // keyboard / screen-reader fallback. (hook-bypass: line-limit.)
+    const _CB_INSTANCES = {};
+    function attachCombobox() {
+      if (!(window.STX && window.STX.Combobox)) return;  // graceful fallback
+      const FILTER_IDS = [
+        "f-host", "f-status", "f-blocker", "f-agent", "f-date",
+      ];
+      FILTER_IDS.forEach(id => _wrapSelectAsCombobox(id));
+    }
+
+    function _wrapSelectAsCombobox(selectId) {
+      const sel = document.getElementById(selectId);
+      if (!sel) return;
+      // Tear down a prior instance + DOM scaffolding if we're re-binding
+      // after a /graph reload populates fresh <option>s.
+      if (_CB_INSTANCES[selectId]) {
+        try { _CB_INSTANCES[selectId].destroy(); } catch {}
+        delete _CB_INSTANCES[selectId];
+        const oldWrap = sel.parentElement &&
+          sel.parentElement.querySelector(".cb-wrap-" + selectId);
+        if (oldWrap) oldWrap.remove();
+      }
+      // Build trigger button + container next to the select.
+      const wrap = document.createElement("span");
+      wrap.className = "cb-wrap cb-wrap-" + selectId;
+      wrap.style.display = "inline-flex";
+      wrap.style.alignItems = "center";
+      const trigger = document.createElement("button");
+      trigger.type = "button";
+      trigger.className = "filt cb-trigger";
+      trigger.id = selectId + "-cb-trigger";
+      trigger.setAttribute("aria-haspopup", "listbox");
+      trigger.title = "Type to filter " + selectId.replace("f-", "") + "s";
+      trigger.textContent = (sel.options[sel.selectedIndex] || {}).text || "—";
+      trigger.style.minWidth = "120px";
+      trigger.style.textAlign = "left";
+      const container = document.createElement("span");
+      container.className = "cb-container";
+      container.id = selectId + "-cb-container";
+      wrap.appendChild(trigger);
+      wrap.appendChild(container);
+      // Hide the plain <select> + insert the combobox in its place.
+      sel.style.display = "none";
+      sel.insertAdjacentElement("afterend", wrap);
+      const items = Array.from(sel.options).map(opt => ({
+        value: opt.value, label: opt.text || opt.value || "—",
+      }));
+      try {
+        const cb = new window.STX.Combobox({
+          container,
+          trigger,
+          items,
+          value: sel.value,
+          placeholder: "Search " + selectId.replace("f-", "") + "…",
+          onChange: (item) => {
+            sel.value = item.value;
+            // Dispatch a "change" event so the existing attachFilters()
+            // listeners + STATE.filters[key] update fire unchanged.
+            sel.dispatchEvent(new Event("change", { bubbles: true }));
+            // The trigger label is updated automatically by the
+            // Combobox; nothing else to do here.
+          },
+        });
+        _CB_INSTANCES[selectId] = cb;
+      } catch (e) {
+        // Combobox bootstrap failure → restore the plain <select>.
+        sel.style.display = "";
+        wrap.remove();
+      }
+    }
+
+    // Re-bind comboboxes whenever populateFilters() pushes fresh
+    // option lists into the <select>s — handled by the direct
+    // `attachCombobox()` call appended at the end of populateFilters
+    // (search for "P11b rebind" in this file). The Combobox bootstrap
+    // is idempotent (destroy + recreate), so calling on every
+    // /graph reload is safe + cheap.
+
+    // === P2 — active-filter chips + popover count ========================
+    // The 6 filter dropdowns are tucked inside a `<details class="filt-popover">`
+    // popover so the filterbar stays clean. To keep the operator oriented,
+    // every active filter renders as a chip in #filt-chips with a × button
+    // to clear it. The popover summary shows "🔧 Filters (N active)".
+    // (hook-bypass: line-limit — see REFACTORING.md.)
+    const FILT_CHIP_LABELS = {
+      project: "project",
+      host:    "host",
+      status:  "status",
+      blocker: "blocker",
+      agent:   "agent",
+      date:    "date",
+      search:  "search",
+    };
+    function renderActiveFilterChips() {
+      const wrap = document.getElementById("filt-chips");
+      const count = document.getElementById("filt-active-count");
+      const summary = document.getElementById("filt-popover-summary");
+      if (!wrap) return;
+      const chips = [];
+      for (const [key, label] of Object.entries(FILT_CHIP_LABELS)) {
+        const val = STATE.filters[key];
+        if (!val) continue;
+        chips.push(
+          `<span class="filt-chip" title="Click × to clear">
+            <span class="filt-chip-key">${escapeHtml(label)}:</span>
+            <span class="filt-chip-val">${escapeHtml(val)}</span>
+            <button type="button" class="filt-chip-clear"
+              aria-label="Clear ${escapeHtml(label)} filter"
+              onclick="clearOneFilter('${key}')">×</button>
+          </span>`
+        );
+      }
+      // blockingMe is a boolean toggle — show as a chip too.
+      if (STATE.filters.blockingMe) {
+        // Same self-contained rule as populateFilters(): the browser has
+        // STX_BOARD_T; an extractor running this function standalone does not.
+        const blockingMeLabel = (typeof STX_BOARD_T === "undefined")
+          ? "blocking me" : STX_BOARD_T.blockingMe;
+        chips.push(
+          `<span class="filt-chip" title="Click × to clear">
+           <span class="filt-chip-val">${blockingMeLabel}</span>
+            <button type="button" class="filt-chip-clear"
+              aria-label="Clear blocking-me filter"
+              onclick="clearOneFilter('blockingMe')">×</button>
+          </span>`
+        );
+      }
+      wrap.innerHTML = chips.join("");
+      // Active-count + summary highlight
+      const popoverKeys = ["project", "host", "status", "blocker", "agent", "date"];
+      const active = popoverKeys.filter(k => STATE.filters[k]).length;
+      if (count) count.textContent = `(${active})`;
+      if (summary) summary.classList.toggle("has-active", active > 0);
+    }
+
+    function clearOneFilter(key) {
+      if (key === "search") {
+        STATE.filters.search = "";
+        const el = document.getElementById("f-search");
+        if (el) el.value = "";
+        const dt = document.getElementById("f-text");
+        if (dt) dt.value = "";
+      } else if (key === "blockingMe") {
+        STATE.filters.blockingMe = false;
+        const tb = document.getElementById("f-blockingme");
+        if (tb) tb.checked = false;
+      } else {
+        STATE.filters[key] = "";
+        const el = document.getElementById("f-" + key);
+        if (el) el.value = "";
+      }
+      renderActiveFilterChips();
+      render();
+    }
+
+    function clearAllFilters() {
+      const popoverKeys = ["project", "host", "status", "blocker", "agent", "date"];
+      popoverKeys.forEach(k => {
+        STATE.filters[k] = "";
+        const el = document.getElementById("f-" + k);
+        if (el) el.value = "";
+      });
+      STATE.filters.search = "";
+      const hdr = document.getElementById("f-search");
+      if (hdr) hdr.value = "";
+      const dt = document.getElementById("f-text");
+      if (dt) dt.value = "";
+      // "Clear all" leaves the show-done toggle alone — it's a persistent
+      // user preference, not a transient filter selection (operator
+      // direct, lead `b9d135c1ea8348dea80f027ba66a0079`).
+      renderActiveFilterChips();
+      render();
+    }
+
+    // === Show-done toggle (operator direct, lead a2a
+    // `b9d135c1ea8348dea80f027ba66a0079` 2026-06-12). DEFAULT OFF —
+    // `status: done` cards drop from every layout (Column / Graph /
+    // Table / Calendar) unless this toggle flips on. Persisted in
+    // localStorage. The "(N hidden)" count in the toggle label is
+    // updated in render() so the operator can't think "where did my
+    // done cards go". (hook-bypass: line-limit.)
+    function onShowDoneChange(e) {
+      const on = !!(e && e.target && e.target.checked);
+      STATE.filters.showDone = on;
+      try {
+        localStorage.setItem("scitex-cards:show-done", on ? "1" : "0");
+      } catch {}
+      render();
+    }
+
+
+    // === Layout switcher ───────────────────────────────────────────
+    // Three orthogonal layouts; the choice is persisted in localStorage so
+    // it survives reloads.
+    //
+    // "column" / "table" removed 2026-07-13 (operator TG: "Column, Table
+    // view がいらないです"); "stale" removed 2026-07-10. All three are OUT of
+    // the whitelist, so a stored value from before either removal coerces
+    // to the default instead of rendering a BLANK board. Defined as a
+    // hoisted function so the STATE initializer above can call it.
+    function normalizeLayout(mode) {
+      return VALID_LAYOUTS.includes(mode) ? mode : DEFAULT_LAYOUT;
+    }
+    // Sync BOTH layout button sets — the Details > Board buttons are
+    // the live ones; the header set stays hidden as the contract mount.
+    // Buttons are keyed by data-layout, so both sets repaint together.
+    function syncLayoutButtons(m) {
+      document.querySelectorAll(".filt-layout-btn").forEach(btn => {
+        const active = btn.getAttribute("data-layout") === m;
+        btn.classList.toggle("filt-layout-btn--on", active);
+        btn.setAttribute("aria-checked", active ? "true" : "false");
+      });
+    }
+    function onLayoutChange(mode) {
+      const m = normalizeLayout(mode);
+      STATE.layout = m;
+      try { localStorage.setItem("scitex-cards:layout", m); } catch {}
+      // Repaint the segment buttons' active state without a full render.
+      syncLayoutButtons(m);
+      render();
+    }
+
+    function _newestTs(t) {
+      const candidates = [t.last_activity, t.created_at];
+      for (const c of candidates) {
+        if (!c) continue;
+        const ms = Date.parse(c);
+        if (!isNaN(ms)) return ms;
+      }
+      return 0;
+    }
+    function _isNew24h(t) {
+      const ts = _newestTs(t);
+      if (!ts) return false;
+      return (Date.now() - ts) < (24 * 3600 * 1000);
+    }
+
+
+    // ESC closes the open modal — operator TG 265: "popup は常に esc 有効
+    // なように." HIG / WAI-ARIA universal expectation. Long-term home is
+    // the SDK Modal primitive (so every SDK leaf gets it for free);
+    // this local handler is the short-term scitex-cards fix until that lands.
+    // Listens on document so the focus can be anywhere (the modal contents,
+    // an input field, the body) and ESC still closes.
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      // Operator TG 454 きもすぎ: the filterbar <details> dropdowns
+      // (hide-project list + hidden-cards list) didn't close on ESC.
+      // Native <details> doesn't ship that handler — add it here so
+      // every floating dropdown follows the same dismiss convention
+      // as the modals (matches the operator's universal "ESC closes
+      // open thing" expectation, TG 265).
+      const openDetails = document.querySelectorAll(
+        ".filterbar details[open], details.proj-hide[open], details.hidden-list[open]"
+      );
+      if (openDetails.length) {
+        openDetails.forEach(d => d.open = false);
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      const backdrop = document.getElementById("detail-backdrop");
+      if (backdrop && backdrop.classList.contains("show")) {
+        // If Resolve is armed (orange one-click-from-firing state) ESC
+        // disarms FIRST without closing — so the user can think + step
+        // back without losing the drawer they were reading. Second ESC
+        // (or one ESC when not armed) closes as before.
+        if (RESOLVE_ARMED) {
+          disarmResolve();
+        } else {
+          closeDetail();
+        }
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    });
+    // 🚧 blocking me — was a loud top-right button; now an ordinary filter
+    // row in the Details column (operator 2026-07-13: "右上に大きく書く必要は
+    // ないですね"). Same predicate, same chip, quieter home.
+    function onBlockingMeChange(e) {
+      STATE.filters.blockingMe = !!(e && e.target && e.target.checked);
+      renderActiveFilterChips();
+      render();
+    }
+
+    function openDetail(id) {
+      STATE.openId = id;
+      const t = (STATE.graph?.nodes || []).find(x => x.id === id);
+      if (!t) return;
+      document.getElementById("d-title").textContent = t.task || t.title;
+      // scitex-cards's entity is the USER (an agent is just user.kind=agent),
+      // so the meta line names the ASSIGNEE in user terms, not "agent".
+      // (hook-bypass: line-limit — board_v3.html split still queued.)
+      const assignee = t.assignee || t.agent || "—";
+      document.getElementById("d-meta").textContent =
+        `${t.project || "—"} · ${t.host || ""} · assignee ${assignee} · id ${t.id}`;
+      // --- USER ROLES (creator / assignee / collaborators / subscribers) ---
+      // creator = created_by, falling back to the earliest comment author,
+      // else "—" (legacy cards predate created_by). Empty lists render "—".
+      // See ADR-0009 + the graph.py node payload. (hook-bypass: line-limit.)
+      const fmtList = (xs) =>
+        (Array.isArray(xs) && xs.length) ? xs.map(escapeHtml).join(", ") : "—";
+      // Prefer the server-derived scalar; the scan below is the fallback.
+      // (hook-bypass: line-limit — 3,534-line template, split already tracked
+      // by card board-v3-template-oversized-blocks-edits-20260724.)
+      //
+      // The two are NOT identical by construction: the scalar is POSITIONAL
+      // (comments[0].author) while this scan skips entries whose author is
+      // missing or blank. Measured on the live store 2026-07-30 across 1,780
+      // carded threads: 0 diverge, and 0 cards have an authorless first comment,
+      // so they agree today. The `||` is what keeps them agreeing tomorrow — an
+      // authorless first comment makes the scalar null, which falls through to
+      // the scan and still gets the right answer. Do not collapse this to the
+      // scalar alone without re-measuring that count.
+      const firstCommentAuthor = t.first_comment_author || (t.comments || [])
+        .map(c => c && c.author).find(a => typeof a === "string" && a);
+      const creator = t.created_by || firstCommentAuthor || "—";
+      const rows = [
+        ["title", t.title], ["status", t.status], ["kind", t.kind || "(task)"],
+        ["blocker", t.blocker || "(none)"],
+        ["— users —", ""],
+        ["creator", escapeHtml(creator)],
+        ["assignee", escapeHtml(assignee)],
+        ["collaborators", fmtList(t.collaborators)],
+        ["subscribers", fmtList(STX.cardHelpers.subscriberUnion(
+          t.subscribers, creator, assignee))],
+        ["last_activity", STX.dateInfo.fmtLocalTime(t.last_activity)],
+        ["created_at", STX.dateInfo.fmtLocalTime(t.created_at)],
+        ["goal", t.goal || "—"],
+        ["pr_url", t.pr_url ? `<a href="${escapeHtml(t.pr_url)}" target="_blank">${escapeHtml(t.pr_url)}</a>` : "—"],
+        ["issue_url", t.issue_url ? `<a href="${escapeHtml(t.issue_url)}" target="_blank">${escapeHtml(t.issue_url)}</a>` : "—"],
+        ["depends_on", (STATE.graph.edges || []).filter(e => e.kind === "depends_on" && e.target === id).map(e => e.source).join(", ") || "—"],
+        // PRESENCE, not truthiness (hook-bypass: line-limit) — a card with 0
+        // comments reports comment_count: 0, and 0 is falsy, so `||` would send
+        // every empty card down the fallback. It would still print "0", which is
+        // exactly why the bug would never be noticed.
+        ["comments", String(
+          typeof t.comment_count === "number"
+            ? t.comment_count
+            : (t.comments || []).length)],
+      ];
+      document.getElementById("d-rows").innerHTML = rows.map(r =>
+        `<div class="detail-row"><div class="detail-key">${escapeHtml(r[0])}</div><div class="detail-val">${r[1]}</div></div>`
+      ).join("");
+      const rb = document.getElementById("d-resolve");
+      rb.disabled = (t.status === "done");
+      rb.textContent = (t.status === "done") ? "Already resolved" : "Resolve → notify agent";
+      // Every fresh drawer-open disarms Resolve so the 2-click confirm
+      // applies even if a previous open left it armed.
+      disarmResolve();
+      // Word-style comment thread — paint comments[] and clear the
+      // textarea so the operator starts fresh on every drawer-open.
+      renderComments(t);
+      const ta = document.getElementById("d-comment-text");
+      if (ta) ta.value = "";
+      document.getElementById("detail-backdrop").classList.add("show");
+    }
+    function closeDetail(e) {
+      if (e && e.target.classList.contains("detail")) return;
+      document.getElementById("detail-backdrop").classList.remove("show");
+      STATE.openId = null;
+      // Closing the drawer should also disarm — never leave a destructive
+      // primed state behind when the user backs out.
+      disarmResolve();
+    }
+
+    // Resolve-confirm state — see the "2-click confirm" comment on resolveTask.
+    let RESOLVE_ARMED = false;
+    let RESOLVE_ARM_TIMER = null;
+
+    function disarmResolve() {
+      RESOLVE_ARMED = false;
+      if (RESOLVE_ARM_TIMER !== null) {
+        clearTimeout(RESOLVE_ARM_TIMER);
+        RESOLVE_ARM_TIMER = null;
+      }
+      const rb = document.getElementById("d-resolve");
+      const cb = document.getElementById("d-cancel-resolve");
+      if (rb && !rb.disabled) rb.textContent = "Resolve → notify agent";
+      if (rb) rb.classList.remove("detail-resolve--armed");
+      if (cb) cb.style.display = "none";
+    }
+    function armResolve() {
+      RESOLVE_ARMED = true;
+      const rb = document.getElementById("d-resolve");
+      const cb = document.getElementById("d-cancel-resolve");
+      rb.textContent = "⚠ Click again to confirm";
+      rb.classList.add("detail-resolve--armed");
+      cb.style.display = "";
+      // Auto-disarm after 6s of no follow-through so the orange button
+      // does not linger after the user has clearly walked away.
+      RESOLVE_ARM_TIMER = setTimeout(disarmResolve, 6000);
+    }
+
+    function toast(msg, err) {
+      const el = document.getElementById("toast");
+      el.innerHTML = "";
+      const span = document.createElement("span");
+      span.textContent = msg;
+      el.appendChild(span);
+      el.classList.toggle("toast--err", !!err);
+      el.classList.add("show");
+      setTimeout(() => el.classList.remove("show"), 3600);
+    }
+    /* Toast with an Undo button. The button stays clickable for ``window`` ms
+       (default 10000) — long enough that a startled operator can click it
+       even after blinking, short enough that the agent stops waiting on the
+       human and moves on. Pair with /reopen on the backend. */
+    function toastUndo(msg, undoFn, window) {
+      const el = document.getElementById("toast");
+      const ms = (typeof window === "number" && window > 0) ? window : 10000;
+      el.innerHTML = "";
+      const span = document.createElement("span");
+      span.textContent = msg;
+      el.appendChild(span);
+      const btn = document.createElement("button");
+      btn.className = "toast-undo";
+      btn.textContent = "Undo";
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try { await undoFn(); } finally { /* hide whether or not undo errored */
+          el.classList.remove("show");
+        }
+      };
+      el.appendChild(btn);
+      el.classList.remove("toast--err");
+      el.classList.add("show");
+      setTimeout(() => el.classList.remove("show"), ms);
+    }
+
+    async function postResolve(id) {
+      const r = await fetch(API_BASE + "/resolve", { // (hook-bypass: line-limit)
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, actor: "operator" }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${r.status}`);
+      }
+      return r.json();
+    }
+
+    async function postReopen(id, priorStatus, priorBlocker) {
+      const r = await fetch(API_BASE + "/reopen", { // (hook-bypass: line-limit)
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id, actor: "operator",
+          prior_status: priorStatus || null,
+          prior_blocker: priorBlocker || null,
+        }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${r.status}`);
+      }
+      return r.json();
+    }
+
+    /* Resolve flow with 2-click confirm + Undo affordance — operator pain
+       TG 9763. Click 1: arms (button turns orange + Cancel appears + auto-
+       disarms after 6s). Click 2 (within the window): fires. After success,
+       the toast carries an Undo button hot for ~10s wiring back to /reopen. */
+    async function resolveTask() {
+      if (!STATE.openId) return;
+      const rb = document.getElementById("d-resolve");
+      if (!RESOLVE_ARMED) {
+        armResolve();
+        return;
+      }
+      // Second click — fire.
+      disarmResolve();
+      rb.disabled = true; rb.textContent = "resolving…";
+      const tid = STATE.openId;
+      try {
+        const result = await postResolve(tid);
+        const priorStatus = result.prior_status || null;
+        const priorBlocker = result.prior_blocker || null;
+        closeDetail();
+        await loadGraph();
+        toastUndo(`✓ Resolved ${tid}`, async () => {
+          try {
+            await postReopen(tid, priorStatus, priorBlocker);
+            toast(`Re-opened ${tid}`);
+            await loadGraph();
+          } catch (err) {
+            toast(`✗ undo failed: ${err.message}`, true);
+          }
+        });
+      } catch (e) {
+        toast(`✗ ${e.message}`, true);
+        rb.disabled = false; rb.textContent = "Resolve → notify agent";
+      }
+    }
+    /* BLOCKING-YOU panel button stays single-click for now (small target,
+       can't easily host the orange-arm UI) — but it inherits the Undo
+       toast so the safety net still applies. If the operator hits this
+       same trap from the panel, escalate to a confirm popup. */
+    async function resolveById(id, btn) {
+      if (btn) { btn.disabled = true; btn.textContent = "resolving…"; }
+      try {
+        const result = await postResolve(id);
+        const priorStatus = result.prior_status || null;
+        const priorBlocker = result.prior_blocker || null;
+        await loadGraph();
+        toastUndo(`✓ Resolved ${id}`, async () => {
+          try {
+            await postReopen(id, priorStatus, priorBlocker);
+            toast(`Re-opened ${id}`);
+            await loadGraph();
+          } catch (err) {
+            toast(`✗ undo failed: ${err.message}`, true);
+          }
+        });
+      } catch (e) {
+        toast(`✗ ${e.message}`, true);
+        if (btn) { btn.disabled = false; }
+      }
+    }
+
+    // === Comment thread (lead a2a a7e53184 — Word-style threaded comments)
+    // ─────────────────────────────────────────────────────────────────────
+    // Renders all comments[] chronologically (oldest first like a chat),
+    // colors operator/system trails distinctly, scrolls newest into view.
+    // Route trace (operator 2026-06-17): render the card's event stream as
+    // a chronological journey — "how it was routed". Built from created_at +
+    // comments[] (each carrying an optional `kind` ring tag the hooks stamp)
+    // + a synthetic done hop from status/completed_at. Derived from the event
+    // stream, so it adapts automatically as the workflow's rings change.
+    const ROUTE_RING = {
+      created: { label: "created", cls: "created" },
+      push: { label: "push", cls: "push" },
+      "ci-result": { label: "✓ CI", cls: "ci" },
+      ci: { label: "✓ CI", cls: "ci" },
+      done: { label: "✅ done", cls: "done" },
+      "card-message": { label: "message", cls: "message" },
+      message: { label: "message", cls: "message" },
+      system: { label: "system", cls: "system" },
+      escalate: { label: "⚠ escalate", cls: "escalate" },
+    };
+    function _routeHops(task) {
+      const hops = [];
+      if (task.created_at) {
+        hops.push({ ts: String(task.created_at), actor: task.agent || task.assignee || "—", kind: "created", text: "card created" });
+      }
+      (Array.isArray(task.comments) ? task.comments : []).forEach(c => {
+        let kind = c.kind || "";
+        if (!kind) {
+          // untagged legacy entries: [RESOLVED]/[CLOSED]/… are system trail;
+          // everything else is a board-card message (operator/agent).
+          kind = /^\[(RESOLVED|UNDONE|re-opened|CLOSED)/i.test(String(c.text || "")) ? "system" : "message";
+        }
+        hops.push({ ts: String(c.ts || ""), actor: String(c.author || "?"), kind, text: String(c.text || "") });
+      });
+      if (task.status === "done") {
+        const dts = (task._log_meta && task._log_meta.completed_at) || task.last_activity || "";
+        hops.push({ ts: String(dts), actor: "—", kind: "done", text: task.pr_url ? ("merged " + task.pr_url) : "marked done" });
+      }
+      hops.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+      return hops;
+    }
+    async function renderComments(task) {
+      const list = document.getElementById("d-comment-list");
+      if (!list) return;
+      // THE THREAD FETCHES ITSELF (hook-bypass: line-limit) — this is the last
+      // surface that reads comments[] off /graph, and the only one that
+      // genuinely needs comment CONTENT rather than a summary. comments[] is
+      // 8.5 MB of a 19.8 MB payload that the board refetches on nearly every
+      // 5 s poll, so having every card pay on every poll to serve one panel
+      // that is usually closed is the wrong trade: it pays for its own read,
+      // on open. GET /chat/<id> already returns {card_id, title, comments} and
+      // 404s an unknown card, so no new endpoint was needed.
+      //
+      // ALWAYS fetch, rather than only when comments[] is absent. Gating on
+      // absence would leave this path dormant until step 3 deletes the field —
+      // and code that has never run is exactly what bit us tonight in the
+      // fresh-store inbox bug. The payload copy stays as the FAILURE fallback
+      // only, so a fetch error degrades to today's behaviour instead of
+      // blanking the panel.
+      let thread = task;
+      try {
+        // (hook-bypass: line-limit) ONE LINE, and API_BASE concatenated with a
+        // string literal rather than interpolated. test__board_v3_mount_prefix
+        // requires the count of call sites to equal the count of the prefixed
+        // form as a CONTIGUOUS literal, so a line break between the paren and
+        // API_BASE fails it, and so does a template literal. Both are equally
+        // correct at runtime; the guard enforces one FORM because that is what
+        // makes "no un-prefixed call crept in" checkable at all. Conform rather
+        // than widen it. Do not reflow this line.
+        const r = await fetch(API_BASE + "/chat/" + encodeURIComponent(task.id));
+        if (r.ok) {
+          const p = await r.json();
+          if (Array.isArray(p.comments)) {
+            thread = Object.assign({}, task, { comments: p.comments });
+          }
+        }
+      } catch { /* keep `thread = task` — the /graph copy, if it is still sent */ }
+      const hops = _routeHops(thread);
+      if (!hops.length) {
+        list.innerHTML = `<div class="comment-empty">No route activity yet.</div>`;
+        return;
+      }
+      list.innerHTML = hops.map(h => {
+        const r = ROUTE_RING[h.kind] || { label: String(h.kind || "·"), cls: "message" };
+        return `<div class="route-hop route-hop--${r.cls}">
+          <span class="route-badge route-badge--${r.cls}">${escapeHtml(r.label)}</span>
+          <div class="route-body">
+            <div class="route-meta">
+              <span class="route-actor">${escapeHtml(h.actor)}</span>
+              <span class="route-ts">${escapeHtml(h.ts)}</span>
+            </div>
+            <div class="route-text">${escapeHtml(h.text)}</div>
+          </div>
+        </div>`;
+      }).join("");
+      list.scrollTop = list.scrollHeight;
+    }
+
+    async function postCommentFromDrawer() {
+      if (!STATE.openId) return;
+      const ta = document.getElementById("d-comment-text");
+      const btn = document.getElementById("d-comment-post");
+      if (!ta || !btn) return;
+      const text = (ta.value || "").trim();
+      if (!text) return;
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "posting…";
+      try {
+        const r = await fetch(API_BASE + "/comment", { // (hook-bypass: line-limit)
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: STATE.openId, text, author: "operator" }),
+        });
+        if (!r.ok) {
+          const errBody = await r.json().catch(() => ({}));
+          throw new Error(errBody.error || `HTTP ${r.status}`);
+        }
+        const body = await r.json().catch(() => ({}));
+        ta.value = "";
+        await loadGraph();
+        const t = STATE.graph && STATE.graph.nodes.find(x => x.id === STATE.openId);
+        if (t) renderComments(t);
+        // hook-bypass: line-limit — board_v3.html is a pre-existing
+        // 3900-line template far over the HTML cap; this P1 hotfix adds
+        // a few lines of loud-toast wiring, not new bulk. Splitting the
+        // template is a separate refactor, out of scope here.
+        //
+        // Comment is SAVED. The relay (notify the owning agent) is
+        // best-effort + may fail/time-out — surface that LOUD rather
+        // than swallow it (operator P1, 2026-06-25; fail-loud). A
+        // `relay.sent === false` with a non-skip reason is a real
+        // delivery failure; skip:* (self-comment / no-agent) is
+        // expected and stays quiet.
+        const relay = body.relay || {};
+        const skipped = typeof relay.wire === "string" && relay.wire.indexOf("skip:") === 0;
+        if (relay.sent === false && !skipped) {
+          const who = relay.target || "owner";
+          const why = relay.error || relay.reason || "unreachable";
+          toast(`⚠ Comment saved, but could not notify ${who}: ${why}`, true);
+        } else {
+          toast("✓ Comment posted");
+        }
+      } catch (e) {
+        toast(`✗ ${e.message}`, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    }
+
+
+    // Cmd/Ctrl-Enter inside the comment textarea posts immediately —
+    // small ergonomic win the operator gets for free since they type
+    // there most.
+    document.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        const ta = document.getElementById("d-comment-text");
+        if (ta && document.activeElement === ta) {
+          postCommentFromDrawer();
+          e.preventDefault();
+        }
+      }
+    });
+
+    // AutoRefresh via /rev mtime poll (same wire as the existing
+    // GraphView's AutoRefresh — ADR-0005).
+    async function autoRefreshTick() {
+      try {
+        const r = await fetch(API_BASE + "/rev"); // (hook-bypass: line-limit)
+        if (!r.ok) return;
+        const rev = await r.json();
+        // GUI-code hot-reload: if the board template changed on disk (a
+        // merged PR / local edit under the editable install), the server is
+        // already serving new HTML/JS but THIS pane is still running the old
+        // bundle. Hard-reload so the operator picks up GUI updates without a
+        // manual restart / F5. First observation only records the baseline.
+        if (rev.asset_rev !== undefined) {
+          if (STATE.assetRev === undefined) {
+            STATE.assetRev = rev.asset_rev;
+          } else if (rev.asset_rev !== STATE.assetRev) {
+            STATE.assetRev = rev.asset_rev;
+            location.reload();
+            return;
+          }
+        }
+        const key = `${rev.mtime}:${rev.count}`;
+        if (STATE.lastMtime === null) { STATE.lastMtime = key; return; }
+        if (key !== STATE.lastMtime) {
+          STATE.lastMtime = key;
+          // Non-disruptive refresh (hook-bypass: line-limit): skip the
+          // redraw when the freshly-fetched /graph payload is identical
+          // to what's already on screen (mtime can bump without a
+          // meaningful change), and preserve scroll when it DOES redraw.
+          await loadGraph({ preserveScroll: true, skipIfUnchanged: true });
+          // Keep the Timeline raster live on a store change (the simple
+          // view already re-rendered from STATE.graph inside loadGraph).
+          if (typeof window.timelineOnStoreChange === "function") {
+            window.timelineOnStoreChange();
+          }
+        }
+      } catch { /* transient; try next tick */ }
+    }
+
+    // === CRUD wiring (operator TG 344) ====================================
+    // Backend already implements /create /update /delete /restore (see
+    // _django/handlers/crud.py + 33 tests in test_crud.py); board v3
+    // previously only used /graph /rev /resolve. This block adds the
+    // browser-side wiring for the missing four ops.
+
+
+    // -- Add Task modal -----------------------------------------------------
+    function openAddTaskModal(presetProject) {
+      // Pre-populate the project datalist with auto-discovered projects.
+      if (STATE.graph) {
+        const projects = [...new Set(
+          STATE.graph.nodes.map(n => n.project).filter(Boolean)
+        )].sort();
+        document.getElementById("at-project-list").innerHTML =
+          projects.map(p => `<option value="${escapeHtml(p)}">`).join("");
+      }
+      // Suggest known owners (existing card owners) in the assignee datalist
+      // so the operator can pick fast, while still allowing a free-form name.
+      // hook-bypass: line-limit (board_v3.html split still queued)
+      if (STATE.graph) {
+        const owners = [...new Set(
+          STATE.graph.nodes.map(n => STX.cardHelpers.cardOwner(n)).filter(Boolean)
+        )].sort();
+        document.getElementById("at-assignee-list").innerHTML =
+          owners.map(o => `<option value="${escapeHtml(o)}">`).join("");
+      }
+      document.getElementById("at-title").value = "";
+      // Assignee is required; reset it empty on each open so a stale value
+      // can't silently re-own the next card.
+      document.getElementById("at-assignee").value = "";
+      // If invoked from an empty column's placeholder (operator TG 381),
+      // pre-fill the project so the new task goes straight to that
+      // column without retyping the name.
+      const projInput = document.getElementById("at-project");
+      projInput.value = presetProject && presetProject !== "—" ? presetProject : "";
+      document.getElementById("at-status").value = "deferred";
+      document.getElementById("at-task").value = "";
+      document.getElementById("add-task-backdrop").classList.add("show");
+      setTimeout(() => document.getElementById("at-title").focus(), 50);
+    }
+    function closeAddTaskModal(e) {
+      if (e && e.target && !e.target.classList.contains("at-backdrop")) return;
+      document.getElementById("add-task-backdrop").classList.remove("show");
+    }
+    async function submitAddTask() {
+      const title = document.getElementById("at-title").value.trim();
+      if (!title) {
+        toast("title is required", true);
+        document.getElementById("at-title").focus();
+        return;
+      }
+      // Assignee is REQUIRED — a card must have an owner (operator
+      // constitution, no silent fallbacks). Block the POST + show an inline
+      // message rather than create an owner-less card. The server enforces
+      // this too (handle_create -> add_task), this is the fast UX gate.
+      // hook-bypass: line-limit (board_v3.html split still queued)
+      const assignee = document.getElementById("at-assignee").value.trim();
+      if (!assignee) {
+        toast("assignee is required — pick an owner", true);
+        document.getElementById("at-assignee").focus();
+        return;
+      }
+      const project = document.getElementById("at-project").value.trim();
+      const status = document.getElementById("at-status").value;
+      const task = document.getElementById("at-task").value.trim();
+      const btn = document.getElementById("at-create");
+      btn.disabled = true; btn.textContent = "creating…";
+      try {
+        const body = { title, status, assignee };
+        if (project) body.project = project;
+        if (task) body.task = task;
+        const r = await fetch(API_BASE + "/create", { // (hook-bypass: line-limit)
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${r.status}`);
+        }
+        const result = await r.json();
+        toast(`✓ Created ${result.id || title}`);
+        document.getElementById("add-task-backdrop").classList.remove("show");
+        await loadGraph();
+      } catch (e) {
+        toast(`✗ ${e.message}`, true);
+      } finally {
+        btn.disabled = false; btn.textContent = "Create";
+      }
+    }
+
+    // -- Detail edit (in-drawer form, toggled by Edit button) ---------------
+    function enterDetailEdit() {
+      if (!STATE.openId) return;
+      const t = (STATE.graph?.nodes || []).find(x => x.id === STATE.openId);
+      if (!t) return;
+      document.getElementById("d-edit-title").value = t.title || "";
+      document.getElementById("d-edit-status").value = t.status || "deferred";
+      document.getElementById("d-edit-blocker").value = t.blocker || "";
+      document.getElementById("d-edit-project").value = t.project || "";
+      document.getElementById("d-edit-agent").value = t.agent || "";
+      document.getElementById("d-edit-task").value = t.task || "";
+      document.getElementById("d-edit-note").value = t.note || "";
+      document.getElementById("d-edit-form").classList.add("show");
+      document.getElementById("d-edit").style.display = "none";
+      document.getElementById("d-rows").style.display = "none";
+    }
+    function cancelDetailEdit() {
+      document.getElementById("d-edit-form").classList.remove("show");
+      document.getElementById("d-edit").style.display = "";
+      document.getElementById("d-rows").style.display = "";
+    }
+    async function saveDetailEdit() {
+      if (!STATE.openId) return;
+      const patch = {
+        id: STATE.openId,
+        title: document.getElementById("d-edit-title").value,
+        status: document.getElementById("d-edit-status").value,
+        project: document.getElementById("d-edit-project").value,
+        agent: document.getElementById("d-edit-agent").value,
+        task: document.getElementById("d-edit-task").value,
+        note: document.getElementById("d-edit-note").value,
+      };
+      const blocker = document.getElementById("d-edit-blocker").value;
+      // /update accepts patch semantics — only set blocker when provided
+      // AND status is blocked (the validator enforces that pairing).
+      patch.blocker = blocker || null;
+      try {
+        const r = await fetch(API_BASE + "/update", { // (hook-bypass: line-limit)
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${r.status}`);
+        }
+        toast(`✓ Updated ${STATE.openId}`);
+        cancelDetailEdit();
+        closeDetail();
+        await loadGraph();
+      } catch (e) {
+        toast(`✗ ${e.message}`, true);
+      }
+    }
+
+    // -- Delete + Undo ------------------------------------------------------
+    async function deleteCurrentTask() {
+      if (!STATE.openId) return;
+      const id = STATE.openId;
+      const t = (STATE.graph?.nodes || []).find(x => x.id === id);
+      const label = t ? `"${t.title}" (${id})` : id;
+      if (!window.confirm(`Delete ${label}?\n\nThis will scrub depends_on / blocks / parent references too. Undo is available for ~10s after delete.`)) return;
+      try {
+        const r = await fetch(API_BASE + "/delete", { // (hook-bypass: line-limit)
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${r.status}`);
+        }
+        const result = await r.json();
+        // Undo: POST /restore with the same removed payload + refs.
+        const undo = async () => {
+          try {
+            const rr = await fetch(API_BASE + "/restore", { // (hook-bypass: line-limit)
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                task: result.removed,
+                refs: result.refs || [],
+              }),
+            });
+            if (!rr.ok) throw new Error(`HTTP ${rr.status}`);
+            await loadGraph();
+            toast(`Restored ${id}`);
+          } catch (e) {
+            toast(`✗ Undo failed: ${e.message}`, true);
+          }
+        };
+        showUndoToast(`✓ Deleted ${id}`, undo);
+        closeDetail();
+        await loadGraph();
+      } catch (e) {
+        toast(`✗ ${e.message}`, true);
+      }
+    }
+    function showUndoToast(msg, undoFn) {
+      const el = document.getElementById("toast");
+      el.innerHTML = `${escapeHtml(msg)} <button class="toast-undo" id="t-undo-btn">Undo</button>`;
+      el.classList.remove("toast--err");
+      el.classList.add("show");
+      document.getElementById("t-undo-btn").onclick = async () => {
+        el.classList.remove("show");
+        await undoFn();
+      };
+      setTimeout(() => el.classList.remove("show"), 10000);
+    }
+
+    // -- Render-time integration --------------------------------------------
+    // Hook into render() via a wrapper that ALSO refreshes the project-hide
+    // list + hides any column whose project is in the hidden set. The
+    // original render() lives above; we wrap it without touching the body.
+    const _origRender = render;
+    render = function() {
+      _origRender();
+      // Hidden-cards dropdown (operator TG 381) — repaint the list +
+      // the header label count on every render so a new hide / un-hide
+      // shows up immediately. (The project-COLUMN hide that used to run
+      // here went with the Column layout on 2026-07-13.)
+      rebuildHiddenList();
+    };
+
+    // Touch long-press → context menu (operator TG 459/460). Native
+    // contextmenu isn't reliably fired on iOS, so we open it via a
+    // 600ms timer started on touchstart, cancelled on touchmove /
+    // touchend / touchcancel before the timer fires. Pointer events
+    // (Apple Pencil etc.) feed through the same path.
+    const _LONG_PRESS_MS = 600;
+    let _lpTimer = null, _lpEl = null;
+    document.addEventListener("touchstart", (e) => {
+      const card = e.target && e.target.closest && e.target.closest(".card[data-card-id]");
+      if (!card) return;
+      _lpEl = card;
+      card.classList.add("touch-pressing");
+      const t = e.touches[0];
+      const cx = t.clientX, cy = t.clientY;
+      _lpTimer = setTimeout(() => {
+        card.classList.remove("touch-pressing");
+        const id = card.getAttribute("data-card-id");
+        openCardCtx({
+          preventDefault: () => {},
+          clientX: cx, clientY: cy,
+        }, id);
+        _lpTimer = null;
+      }, _LONG_PRESS_MS);
+    }, { passive: true });
+    function _cancelLongPress() {
+      if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
+      if (_lpEl) { _lpEl.classList.remove("touch-pressing"); _lpEl = null; }
+    }
+    document.addEventListener("touchmove", _cancelLongPress, { passive: true });
+    document.addEventListener("touchend", _cancelLongPress, { passive: true });
+    document.addEventListener("touchcancel", _cancelLongPress, { passive: true });
+
+    // ── Hidden-cards dropdown (operator TG 381) ────────────────────────
+    // Walks STATE.graph.nodes for everything in hiddenSet() and paints
+    // a row per hidden card (title + project + un-hide button). Also
+    // updates the "👁 hidden (N)" count in the dropdown summary.
+    function rebuildHiddenList() {
+      const hidden = hiddenSet();
+      const panel = document.getElementById("hidden-list-panel");
+      const countEl = document.getElementById("hidden-count");
+      if (countEl) countEl.textContent = String(hidden.size);
+      if (!panel) return;
+      if (hidden.size === 0) {
+        panel.innerHTML = `<div class="hidden-list-empty">No hidden cards.</div>`;
+        return;
+      }
+      const byId = new Map((STATE.graph?.nodes || []).map(n => [n.id, n]));
+      const rows = [...hidden].map(id => {
+        const t = byId.get(id);
+        if (!t) {
+          // Hidden card no longer exists in the store (deleted by
+          // someone). Offer un-hide to clear the localStorage entry.
+          return `<div class="hidden-list-row">
+            <div style="flex:1">
+              <div class="hidden-list-title">${escapeHtml(id)}</div>
+              <div class="hidden-list-meta">(missing from store)</div>
+            </div>
+            <button class="hidden-list-unhide"
+              onclick="unhideTask('${escapeHtml(id)}')">Un-hide</button>
+          </div>`;
+        }
+        const title = t.title || t.task || id;
+        const proj = t.project || "—";
+        const status = t.status || "?";
+        return `<div class="hidden-list-row">
+          <div style="flex:1; min-width:0;">
+            <div class="hidden-list-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+            <div class="hidden-list-meta">${escapeHtml(proj)} · ${escapeHtml(status)} · id:${escapeHtml(id)}</div>
+          </div>
+          <button class="hidden-list-unhide"
+            onclick="unhideTask('${escapeHtml(id)}')">Un-hide</button>
+        </div>`;
+      }).join("");
+      const revealOn = STATE.filters.showHidden ? "checked" : "";
+      panel.innerHTML = rows + `
+        <div class="hidden-list-reveal">
+          <input type="checkbox" id="reveal-hidden" ${revealOn}
+                 onchange="toggleShowHidden({ currentTarget: this })">
+          <label for="reveal-hidden" style="cursor:pointer;">
+            Show hidden cards in place (don't filter)
+          </label>
+        </div>`;
+    }
+
+    // (renderFleetStrip + toggleAgentFilter removed with the #fleetstrip
+    //  element — see the filterbar comment near the top of this template.
+    //  fleet-liveness lives in the lead's periodic reports, not the board.)
+
+    // -- Keyboard shortcuts -------------------------------------------------
+    // Cmd/Ctrl+N opens the Add Task modal (operator-friendly create entry).
+    document.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "n") {
+        const backdrop = document.getElementById("add-task-backdrop");
+        if (backdrop && !backdrop.classList.contains("show")) {
+          e.preventDefault();
+          openAddTaskModal();
+        }
+      }
+      // Cmd/Ctrl-Enter inside the Add Task title submits.
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        const at = document.getElementById("add-task-backdrop");
+        if (at && at.classList.contains("show")) {
+          e.preventDefault();
+          submitAddTask();
+        }
+      }
+      // ESC closes the Add Task modal (the legacy ESC handler covers detail).
+      if (e.key === "Escape") {
+        const at = document.getElementById("add-task-backdrop");
+        if (at && at.classList.contains("show")) {
+          closeAddTaskModal({ target: { classList: { contains: () => true } } });
+        }
+      }
+    });
+
+    // P1 Search-as-launcher (lead brief 2026-06-12) — RESTORED 2026-06-12.
+    // "/" anywhere focuses #f-search; Esc inside the search blurs it.
+    // Skip "/" when typing in another input/textarea/select/contenteditable
+    // OR when a modifier is held (so browser shortcuts like Cmd-/ stay
+    // available). Same muscle memory as Gmail / Jira / Linear. Pinned by
+    // tests/scitex_cards/test__board_v3_signatures.py so a future squash
+    // can't silently regress it again.
+    function attachSearchKeyboardLauncher() {
+      const search = document.getElementById("f-search");
+      if (!search) return;
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          const t = e.target;
+          const tag = (t && t.tagName) ? t.tagName.toLowerCase() : "";
+          const editable =
+            tag === "input" || tag === "textarea" || tag === "select" ||
+            (t && t.isContentEditable);
+          if (editable) return;
+          e.preventDefault();
+          search.focus();
+          const v = search.value;
+          search.setSelectionRange(v.length, v.length);
+          return;
+        }
+        if (e.key === "Escape" && document.activeElement === search) {
+          search.blur();
+        }
+      });
+    }
+    attachSearchKeyboardLauncher();
+
+    // Instant-open: hover/focus-warm the JSON behind the Board|DM switcher.
+    // The board's own /graph is already in flight; the DM side is what a
+    // Board→Chat hop would otherwise wait on, so warm exactly that — once,
+    // on first hover or keyboard focus, via a low-priority hint the browser
+    // may drop under pressure. Best effort by design: a missing link or a
+    // refused insert changes nothing about the navigation itself.
+    // (hook-bypass: line-limit.)
+    (function _warmSwitcherJson() {
+      let warmed = false;
+      function warm(url) {
+        if (warmed || !url) return;
+        warmed = true;
+        try {
+          const hint = document.createElement("link");
+          hint.rel = "prefetch";
+          hint.href = url;
+          document.head.appendChild(hint);
+        } catch { /* best effort — the click still works */ }
+      }
+      document.querySelectorAll(".stx-cards-switcher__item").forEach((a) => {
+        if (a.getAttribute("aria-current") === "page") return;
+        const href = a.getAttribute("href") || "";
+        const url = /dm\/?$/.test(href) ? API_BASE + "/dm/threads" : null;
+        if (!url) return;
+        a.addEventListener("mouseenter", () => warm(url), { once: true });
+        a.addEventListener("focus", () => warm(url), { once: true });
+      });
+    })();
+
+    _syncDetailsPane();
+    _syncDetailsSections();
+    renderStats();
+    // Details > Board paints even when the graph fails (operator sees the
+    // View/Span/Layout/Live chrome on an error-state board, not an empty
+    // Details column). Gated on BOARD_MODULES_READY so the deferred
+    // timelineControls sibling has published detailsBoardHtml — an
+    // ungated boot call painted the degraded text fallback. render()
+    // re-syncs the tab states on every data paint.
+    BOARD_MODULES_READY.then(_syncDetailsBoardPane);
+    attachFilters();
+    loadGraph();
+    setInterval(autoRefreshTick, 5000);
+  </script>

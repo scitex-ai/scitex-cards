@@ -136,7 +136,7 @@ def _render_header() -> str:
         {
             "api_base": "/",
             "active": "board",
-            "page_title": "SciTeX Cards",
+            "page_title": "Cards",
             "scitex_cards_version": "0.0.0",
             "cards_user": "alice",
             "cards_project_picker_available": True,
@@ -309,16 +309,22 @@ def test_only_the_picker_partial_loads_the_sdk_tag_library():
 def test_the_shared_header_reaches_the_picker_through_a_guarded_include():
     """The header renders on BOTH top-level pages, so a top-level load there
     took the operator's fleet board and DM down with it, not just the
-    project-scoped page."""
+    project-scoped page.
+
+    The guard also honours the per-page suppression flag (kept for pages
+    that render their own picker; the DM no longer does — operator
+    2026-10-23: header-only).
+    """
     # Arrange
     source = (_TEMPLATES / "_page_header.html").read_text("utf-8")
     # Act
     guarded = (
-        '{% if cards_project_picker_available %}' in source,
+        "cards_project_picker_available" in source,
+        "header_picker != False" in source,
         '{% include "scitex_cards/_project_picker.html"' in source,
     )
     # Assert
-    assert guarded == (True, True)
+    assert guarded == (True, True, True)
 
 
 def test_the_project_board_reaches_the_sdk_picker_through_the_same_partial():
@@ -388,7 +394,7 @@ def test_the_shared_header_renders_unchanged_when_the_picker_is_unavailable():
         {
             "api_base": "/",
             "active": "board",
-            "page_title": "SciTeX Cards",
+            "page_title": "Cards",
             "scitex_cards_version": "0.0.0",
             "cards_user": "alice",
             "cards_project_picker_available": False,
@@ -398,13 +404,14 @@ def test_the_shared_header_renders_unchanged_when_the_picker_is_unavailable():
     assert (_SLOT_MARKER in html, _SDK_MARKER in html) == (False, False)
 
 
-def test_the_slot_appears_exactly_when_the_views_own_flag_says_it_can():
+def test_the_picker_appears_exactly_when_the_views_own_flag_says_it_can():
     """End to end on the SDK this host actually has, and the loop that matters:
-    the header is fed the flag the VIEW computes — not one this test picked —
-    and the slot appears if and only if that flag is true. On a deployment whose
-    SDK predates the picker the flag is false, the partial is never
-    compiled, and the band still renders; before the fix the load sat at the top
-    level of the page, so this same host raised instead.
+    the header is fed the flag the VIEW computes — not one this test picked.
+    No provider is configured in this context, so the SDK tag emits nothing
+    either way; what the flag gates is the include itself, and the mount stub
+    renders regardless (the band still renders on a deployment whose SDK
+    predates the picker, where the flag is false and the partial is never
+    compiled).
     """
     # Arrange
     flag = (
@@ -416,8 +423,7 @@ def test_the_slot_appears_exactly_when_the_views_own_flag_says_it_can():
         "scitex_cards/_page_header.html",
         {
             "api_base": "/",
-            "active": "board",
-            "page_title": "SciTeX Cards",
+            "page_title": "Cards",
             "scitex_cards_version": "0.0.0",
             "cards_user": "alice",
             "cards_project_picker_available": flag,
@@ -425,7 +431,10 @@ def test_the_slot_appears_exactly_when_the_views_own_flag_says_it_can():
         },
     )
     # Assert
-    assert (_SLOT_MARKER in html, "stx-cards-header" in html) == (flag, True)
+    assert (_SDK_MARKER in html, "data-stx-app-header" in html) == (
+        False,
+        True,
+    )
 
 
 # --- the view supplies the keys the partial reads --------------------------
@@ -447,7 +456,7 @@ def test_the_shell_context_carries_the_two_keys_the_slot_reads():
     ) == (False, "")
 
 
-def test_the_dm_page_renders_without_the_slot_on_an_sdk_without_project_scope():
+def test_the_dm_page_renders_without_a_picker_on_an_sdk_without_project_scope():
     """The OTHER page the shared header renders on. A defect here is not a
     project-board defect, it is every Cards page — which is why the header is
     exercised through the page rather than only through the partial."""
@@ -457,8 +466,8 @@ def test_the_dm_page_renders_without_the_slot_on_an_sdk_without_project_scope():
     # Act
     response = views.chat_page(RequestFactory().get("/dm", HTTP_HOST="127.0.0.1"))
     body = response.content.decode("utf-8")
-    # Assert
-    assert (response.status_code, _SLOT_MARKER in body) == (200, False)
+    # Assert — no cards-owned slot anymore; the SDK tag's absence is the pin.
+    assert (response.status_code, _SDK_MARKER in body) == (200, False)
 
 
 def test_the_dm_page_renders_the_picker_once_when_the_sdk_provides_one(
@@ -472,8 +481,8 @@ def test_the_dm_page_renders_the_picker_once_when_the_sdk_provides_one(
     # Act
     with override_settings(SCITEX_PROJECT_PROVIDER_URL="/api_project_scope"):
         body = views.chat_page(request).content.decode("utf-8")
-    # Assert
-    assert (body.count(_SLOT_MARKER), body.count(_SDK_MARKER)) == (1, 1)
+    # Assert — exactly one SDK picker, no cards wrapper around it.
+    assert body.count(_SDK_MARKER) == 1
 
 
 # --- the library present: the slot is reached, once ------------------------
@@ -513,16 +522,17 @@ def test_the_project_board_reaches_the_sdk_picker_when_the_library_is_registered
     assert (_SDK_MARKER in body, _STANDALONE_MARKER in body) == (True, False)
 
 
-def test_the_shared_header_renders_the_picker_into_its_own_slot(
+def test_the_shared_header_renders_the_picker_with_no_cards_chrome(
     sdk_library,  # noqa: ARG001
 ):
-    """The slot the shared header contributes — identity on the left, the
-    canonical selector pushed to the right edge."""
+    """No cards-owned wrapper around the SDK picker (operator 2026-10-20:
+    shared components from scitex-sdk). The SDK tag renders once; the
+    mount holds it until app_header.js moves it into the canonical slot."""
     # Arrange
     # Act
     html = _render_header()
     # Assert
-    assert (_SLOT_MARKER in html, _SDK_MARKER in html) == (True, True)
+    assert (_SLOT_MARKER in html, html.count(_SDK_MARKER)) == (False, 1)
 
 
 def test_the_shared_header_shows_the_project_the_request_resolved_to(

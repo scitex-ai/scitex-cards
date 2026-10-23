@@ -1,0 +1,18 @@
+{% comment %}
+App TAB ROW — the Board|DM switcher, rendered BELOW the shared title row.
+
+This is app chrome, not the shared headerline: the SDK title row
+(`_page_header.html`) holds label + version + project selector ONLY, and
+each page composes that row with THIS row beneath it (operator 2026-10-20).
+One file owns the tab row so the two pages cannot disagree about it — the
+same single-source rule the title row follows, one layer down.
+
+Callers pass the page they are on:
+
+    {% templatetag openblock %} include "scitex_cards/_page_tabs.html" with active="board" {% templatetag closeblock %}
+
+`api_base` (mounted clearance) is inherited from the page context.
+{% endcomment %}
+<div class="stx-cards-header{% if api_base != '/' %} stx-cards-header--mounted{% endif %}">
+  {% include "scitex_cards/_page_switcher.html" with active=active %}
+</div>

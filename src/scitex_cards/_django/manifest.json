@@ -2,6 +2,7 @@
   "name": "scitex_cards_app",
   "slug": "scitex-cards",
   "label": "Cards",
+  "group": "foundation",
   "pip_package": "scitex-cards",
   "icon": "fas fa-list-check",
   "subtitle": "Dependency-graph view of the scitex-cards task store",
@@ -52,7 +53,8 @@
     "writable_routes": [
       "dm/thread/<str:peer>",
       "dm/thread/<str:peer>/reaction",
-      "dm/upload"
+      "dm/upload",
+      "dm/thread/<str:peer>/hidden"
     ]
   }
 }

@@ -36,10 +36,15 @@
 .card::before {
   content: "";
   position: absolute;
-  top: 0;
+  top: 8px;
   left: 0;
-  bottom: 0;
+  bottom: 8px;
   width: 4px;
+  /* Straight square-ended status tick (operator 2026-10-23: no curly
+   * highlight on the left of cards): inset clear of the card's 8px corner
+   * rounding so the bar never inherits the curl, and no radius of its own.
+   * Status COLORS below are untouched — only the geometry straightens. */
+  border-radius: 0;
 }
 /* Per-status COLOR layer — single-sourced from STATUS_STYLE via the
  * server-rendered `--status-*` CSS vars (see board_v3.html
@@ -125,10 +130,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.card-goal::before {
-  content: "🎯 ";
-  opacity: 0.7;
-}
 .card-task {
   font-size: 0.95rem;
   font-weight: 600;
@@ -159,7 +160,7 @@
   background: rgba(244, 67, 54, 0.18);
   color: var(--red);
   border: 1px solid var(--red);
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   font-size: 0.68rem;
   font-weight: 600;
 }
@@ -238,7 +239,7 @@
   outline: none;
   border-color: var(--purple);
   background: rgba(109, 76, 173, 0.12);
-  box-shadow: 0 0 0 2px rgba(109, 76, 173, 0.3);
+  box-shadow: none;
 }
 .filt-search-kbd {
   display: inline-flex;
@@ -282,7 +283,7 @@
   padding: 1px 8px;
   font-size: 0.72rem;
   font-weight: 600;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-muted);
@@ -292,13 +293,13 @@
   background: var(--red);
   border-color: var(--red);
   /* Calm: static glow — the overdue meaning does not change between frames. */
-  box-shadow: 0 0 8px 1px rgba(244, 67, 54, 0.55);
+  box-shadow: none;
 }
 .date-pill--today {
   color: #000;
   background: var(--gold);
   border-color: var(--gold);
-  box-shadow: 0 0 8px 1px rgba(255, 193, 7, 0.55);
+  box-shadow: none;
 }
 .date-pill--soon {
   color: var(--red);
@@ -335,7 +336,7 @@
   padding: 0px 7px;
   font-size: 0.68rem;
   font-weight: 600;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-muted);
@@ -364,7 +365,7 @@
   color: #fff;
   background: var(--red);
   border-color: var(--red);
-  box-shadow: 0 0 6px 1px rgba(244, 67, 54, 0.45);
+  box-shadow: none;
 }
 
 /* Activity bucket badge (render side of working-status decay).
@@ -391,7 +392,7 @@
   padding: 0px 7px;
   font-size: 0.66rem;
   font-weight: 600;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-muted);
@@ -403,7 +404,7 @@
   color: var(--green);
   border-color: var(--green);
   background: rgba(76, 175, 80, 0.14);
-  box-shadow: 0 0 4px 0 rgba(76, 175, 80, 0.35);
+  box-shadow: none;
 }
 .activity-badge--warm {
   color: var(--amber);

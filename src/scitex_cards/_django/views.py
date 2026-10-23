@@ -8,6 +8,7 @@ are absent). ``api_dispatch`` routes ``/<endpoint>`` to the ``HANDLERS`` dict.
 """
 
 import dataclasses
+import io
 import scitex_logging as slogging
 import os
 import threading
@@ -102,7 +103,6 @@ def _cards_internal_chrome_enabled(request) -> bool:
 
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static" / "scitex_cards"
-_FAVICON_PATH = _STATIC_DIR / "favicon.svg"
 
 
 def _tasks_path_from_request(request):
@@ -259,7 +259,7 @@ def _cards_shell_context(request, api_base: str) -> dict[str, object]:
     relative_view = request.path[len(api_base) :].strip("/")
     return {
         **shell_context(
-            "Cards",
+            "SciTeX Cards",
             panes={"ai": "unused", "files": "unused", "viewer": "unused"},
         ),
         **mount_context(request, view_path=relative_view),
@@ -281,18 +281,25 @@ def _cards_shell_context(request, api_base: str) -> dict[str, object]:
 
 
 def favicon_view(request):
-    """Serve the bundled SciTeX "S" SVG for the implicit `/favicon.ico` request.
+    """Serve the SDK official mark for the implicit `/favicon.ico` request.
 
     Modern browsers honor `Content-Type: image/svg+xml` for `.ico` URLs, so we
     serve the SVG directly. The standalone template also declares a
     `<link rel="icon" type="image/svg+xml">`, but browsers still request
     `/favicon.ico` on first visit before parsing <head>; without this route
     that request would fall through to `api_dispatch` and 404 (operator 3683).
+
+    The file served is the SDK SSOT (white snake on navy, operator
+    2026-10-23) — never a leaf-local copy, and the same in dev and prod.
     """
-    if not _FAVICON_PATH.exists():
+    from importlib.resources import files as _files
+
+    try:
+        data = (_files("scitex_sdk.ui") / "static" / "scitex_sdk" / "ui" / "img" / "scitex-favicon.svg").read_bytes()
+    except (FileNotFoundError, ModuleNotFoundError):
         return HttpResponseNotFound()
     # FileResponse handles streaming and the Content-Length header for us.
-    return FileResponse(_FAVICON_PATH.open("rb"), content_type="image/svg+xml")
+    return FileResponse(io.BytesIO(data), content_type="image/svg+xml")
 
 
 def _cards_version() -> str:
@@ -409,6 +416,12 @@ def board_v3_page(request, *, _announce=None):
             {
                 "scitex_cards_version": _version,
                 "api_base": api_base,
+                # Browser tab: the board names its view like the DM page names
+                # its own ("DM — SciTeX Cards v…" in chat_page) — a bare
+                # product name in one tab next to a view-qualified name in the
+                # other reads as two different naming schemes. The SDK shell
+                # default ("SciTeX App") would be worse: a wrong product.
+                "app_label": f"Board — SciTeX Cards v{_version}",
                 # Instant-open: the mount-aware /graph URL for the
                 # <link rel="prefetch"> hint. api_base keeps its trailing
                 # slash for the API_BASE const ("/" at a root mount); the
@@ -459,12 +472,23 @@ def chat_page(request):
     # root-mount guess).
     api_base = _include_root(request.path, _DM_ALIASES)
 
+    # Unified page (operator 2026-10-20): chat.html also embeds the board
+    # pane (same _board_pane partial the standalone board serves), so it
+    # needs the board's context keys too — same readers as board_v3_page,
+    # no new dependencies.
+    from .handlers.graph import _status_colors
+
     context = _cards_shell_context(request, api_base)
     context.update(
         {
             "app_label": f"DM — SciTeX Cards v{_version}",
             "scitex_cards_version": _version,
             "api_base": api_base,
+            "graph_prefetch_url": api_base.rstrip("/") + "/graph",
+            "status_colors": _status_colors(),
+            "cards_internal_chrome_enabled": _cards_internal_chrome_enabled(
+                request
+            ),
         }
     )
     html = render_to_string(
@@ -615,7 +639,7 @@ def _static_graph_markup(mermaid_src, store, count, error, internal_chrome) -> s
 </script>
 </head>
 <body>
-  <h1>SciTeX Card &mdash; dependency graph</h1>
+  <h1>SciTeX Cards &mdash; dependency graph</h1>
   {meta}
   {body}
 </body>

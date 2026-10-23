@@ -146,7 +146,7 @@
   color: #fff;
   background: var(--purple);
   border: 1px solid var(--purple);
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
 }
 .filt-chip-key {
   opacity: 0.78;
@@ -224,7 +224,7 @@
   color: var(--text);
   background: rgba(255, 193, 7, 0.12);
   border: 1px solid var(--gold, #ffc107);
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
 }
 .group-strip-banner-swatch {
   width: 10px;
@@ -338,11 +338,11 @@
   color: #fff;
   border: 1px solid var(--green);
   font-weight: 700;
-  box-shadow: 0 0 8px 1px rgba(76, 175, 80, 0.45);
+  box-shadow: none;
 }
 .at-btn-create:hover {
   background: #5dbb60;
-  box-shadow: 0 0 14px 3px rgba(76, 175, 80, 0.65);
+  box-shadow: none;
 }
 .at-btn-create:disabled {
   opacity: 0.55;
@@ -377,7 +377,7 @@
 .detail-delete:hover {
   background: var(--red);
   color: #fff;
-  box-shadow: 0 0 8px 1px rgba(244, 67, 54, 0.45);
+  box-shadow: none;
 }
 .detail-edit-form {
   display: none;

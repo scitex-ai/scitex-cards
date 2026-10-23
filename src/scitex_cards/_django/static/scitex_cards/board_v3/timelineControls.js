@@ -4,13 +4,18 @@
  * (which sits at the per-file line cap, same reason as timelinePack.js /
  * timelineGeo.js / timelineGate.js / timelineSelect.js):
  *
- *   1. controlsHtml(TL, esc) — the shared controls row (View/Window
- *      selects + count + error) used by all three timeline views, PLUS a
- *      small edge-key legend appended for the agent/project rasters
- *      (the simple list has no edges). The swatches are inline-SVG <line>s
- *      carrying the SAME .tl-edge--depends / .tl-edge--blocks classes as
- *      the real edges, so the key stays single-sourced with 09-timeline.css
- *      and flips with the dark/light theme.
+ *   1. controlsHtml(TL, countLabel, esc, opts) — the shared controls
+ *      row used by all three timeline views. Since 2026-10-22 the View /
+ *      Span tabs live in Details > Board; the canvas row renders COMPACT
+ *      (count + error + raster legend only) via opts.compact and the tabs
+ *      live in the Details pane, SYNCED to the same TL state through the
+ *      same setTimelineView/setTimelineWindow setters — one state, two
+ *      chrome homes, never two sources. The small edge-key legend still
+ *      appends for the agent/project rasters (the simple list has no
+ *      edges). The swatches are inline-SVG <line>s carrying the SAME
+ *      .tl-edge--depends / .tl-edge--blocks classes as the real edges, so
+ *      the key stays single-sourced with 09-timeline.css and flips with
+ *      the dark/light theme.
  *
  *   2. hover-highlight — when the operator hovers a task DOT (or an edge),
  *      brighten the connected edges + neighbour dots and dim everything
@@ -80,7 +85,7 @@
   ];
   function windowTabs(cur) {
     return (
-      '<span class="tl-window-tabs" role="tablist" aria-label="Time window">' +
+      '<span class="tl-window-tabs" role="tablist" aria-label="Time span">' +
       WINDOW_TABS.map(function (kv) {
         var on = kv[0] === cur;
         return (
@@ -100,24 +105,45 @@
       "</span>"
     );
   }
-  function controlsHtml(TL, countLabel, esc) {
+  var VIEW_TABS = [
+    ["agent", "By Agent"],
+    ["project", "By Project"],
+    ["simple", "Simple"],
+  ];
+  function viewTabs(cur) {
+    return (
+      '<span class="tl-view-tabs" role="tablist" aria-label="Timeline view">' +
+      VIEW_TABS.map(function (kv) {
+        var on = kv[0] === cur;
+        return (
+          '<button type="button" role="tab" class="tl-window-tab' +
+          (on ? " tl-window-tab--on" : "") +
+          '" data-view="' +
+          kv[0] +
+          '" aria-selected="' +
+          (on ? "true" : "false") +
+          "\" onclick=\"setTimelineView('" +
+          kv[0] +
+          "')\">" +
+          kv[1] +
+          "</button>"
+        );
+      }).join("") +
+      "</span>"
+    );
+  }
+  // Since 2026-10-22 the View / Span tabs live in Details > Board and
+  // the canvas row renders COMPACT (count + error + raster legend) when
+  // opts.compact is set — the tabs' chrome moved, the setters did not.
+  // detailsBoardHtml() below renders the FULL tabs row for the Details
+  // pane; both read the SAME TL object, so they cannot disagree.
+  function controlsHtml(TL, countLabel, esc, opts) {
     TL = TL || {};
     esc =
       esc ||
       function (s) {
         return String(s == null ? "" : s);
       };
-    function opt(val, cur, label) {
-      return (
-        '<option value="' +
-        val +
-        '"' +
-        (val === cur ? " selected" : "") +
-        ">" +
-        label +
-        "</option>"
-      );
-    }
     var err = TL.error
       ? '<span class="tl-error" title="' +
         esc(TL.error) +
@@ -128,18 +154,18 @@
     // The edge key only makes sense for the agent/project rasters — the
     // simple per-task list draws no edges, so omit it there.
     var legend = TL.view === "simple" ? "" : edgeLegendHtml(esc);
+    var compact = opts && opts.compact;
+    var tabs = compact
+      ? ""
+      : '<span class="tl-ctl">View ' +
+        viewTabs(TL.view) +
+        "</span>" +
+        '<span class="tl-ctl">Span ' +
+        windowTabs(TL.windowKey) +
+        "</span>";
     return (
       '<div class="tl-controls">' +
-      '<label class="tl-ctl">View ' +
-      '<select onchange="setTimelineView(this.value)" ' +
-      'title="Rows by agent or project, or a rich per-task list">' +
-      opt("agent", TL.view, "By Agent") +
-      opt("project", TL.view, "By Project") +
-      opt("simple", TL.view, "Simple (per task)") +
-      "</select></label>" +
-      '<span class="tl-ctl">Window ' +
-      windowTabs(TL.windowKey) +
-      "</span>" +
+      tabs +
       '<span class="tl-count">' +
       esc(countLabel) +
       "</span>" +
@@ -148,9 +174,57 @@
       "</div>"
     );
   }
+  // detailsBoardHtml(TL, esc) — the FULL View / Span tabs row for
+  // Details > Board. Same builders, same setters, same TL — the canvas
+  // row (compact) and this pane row are two views of one state.
+  // Fail LOUD on a state/view-model mix-up (operator 2026-10-22: a stale
+  // paint showed Week-ON while TL said 1d — invisible because both sides
+  // were "valid"). The pane state carries exactly {view, windowKey, error};
+  // anything else (e.g. a full task row) is a caller bug — throw, don't
+  // render a confident wrong tab.
+  var _PANE_KEYS = { view: 1, windowKey: 1, error: 1 };
+  function _assertPaneState(TL, where) {
+    if (TL == null || typeof TL !== "object") return;
+    var extra = Object.keys(TL).filter(function (k) {
+      return !_PANE_KEYS[k];
+    });
+    if (extra.length)
+      throw new Error(
+        "[detailsBoardHtml@" + where + "] pane state carries non-pane keys: " + extra.join(",")
+      );
+  }
+  function detailsBoardHtml(TL, esc) {
+    TL = TL || {};
+    _assertPaneState(TL, "detailsBoardHtml");
+    esc =
+      esc ||
+      function (s) {
+        return String(s == null ? "" : s);
+      };
+    var err = TL.error
+      ? '<span class="tl-error" title="' +
+        esc(TL.error) +
+        '">! ' +
+        esc(TL.error) +
+        "</span>"
+      : "";
+    return (
+      '<span class="tl-ctl">View ' +
+      viewTabs(TL.view) +
+      "</span>" +
+      '<span class="tl-ctl">Span ' +
+      windowTabs(TL.windowKey) +
+      "</span>" +
+      err
+    );
+  }
 
   // Publish the pure helpers early (page + node).
-  var _api = { controlsHtml: controlsHtml, edgeLegendHtml: edgeLegendHtml };
+  var _api = {
+    controlsHtml: controlsHtml,
+    edgeLegendHtml: edgeLegendHtml,
+    detailsBoardHtml: detailsBoardHtml,
+  };
   if (typeof globalThis !== "undefined") {
     globalThis.STX = globalThis.STX || {};
     globalThis.STX.timelineControls = _api;

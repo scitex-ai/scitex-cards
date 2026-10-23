@@ -176,6 +176,24 @@ def test_ja_catalog_covers_the_filter_chrome(msgid: str):
     assert translated, f"no JA translation for {msgid!r}"
 
 
+def _board_sources() -> str:
+    """Board markup as served: board_v3.html plus its three partials.
+
+    Since the unified page (operator 2026-10-20) chrome snippets (i18n
+    markers, option dicts) live across _board_pane/_board_head/_board_foot —
+    one source served standalone AND embedded.
+    """
+    return "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in (
+            _BOARD_V3,
+            _BOARD_V3.parent / "_board_pane.html",
+            _BOARD_V3.parent / "_board_head.html",
+            _BOARD_V3.parent / "_board_foot.html",
+        )
+    )
+
+
 def test_board_template_loads_the_i18n_library():
     """``board_v3.html`` cannot translate chrome without the i18n library."""
     # Arrange
@@ -200,7 +218,7 @@ def test_board_template_loads_the_i18n_library():
 def test_board_template_marks_chrome_snippets_for_translation(snippet: str):
     """Chrome — incl. the JS option dict — must go through translate."""
     # Arrange
-    source = _BOARD_V3.read_text(encoding="utf-8")
+    source = _board_sources()
     # Act — none; the pin inspects the served template text.
     # Assert
     assert snippet in source, f"board_v3.html lost {snippet!r}"

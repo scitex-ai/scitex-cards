@@ -3,6 +3,8 @@
 """CLI noun group ``scitex-cards dm`` — direct-message store verbs.
 
   * ``dm send``     — persist one direct message through the public API.
+  * ``dm hide``     — hide one conversation for this agent (view state).
+  * ``dm unhide``   — show it again.
   * ``dm backfill`` — copy ``threads.json`` into the ``dm_*`` tables.
   * ``dm verify``   — diff the sidecar against the store, by message id.
   * ``dm export``   — dump the DM tables in the shape a peer host can merge.
@@ -504,6 +506,77 @@ def dm_list_cmd(peer: str | None, sender: str | None, store: str | None, as_json
         click.echo(f"  {m.get('ts')}  {m.get('from')!r} -> {m.get('to')!r}: {m.get('body')}")
 
 
-__all__ = ["dm_group", "register", "send_cmd"]
+@dm_group.command(
+    "hide",
+    **spec_command_kwargs(
+        summary="Hide a DM conversation for this agent.",
+        description=(
+            "Calls the public scitex_cards.dm_hide API. View state, not "
+            "content: the thread's messages are untouched, so this is not "
+            "deletion under the append-only ruling. No confirmation is "
+            "asked — unhide reverses it instantly, like the list's swipe.",
+        ),
+        examples=(
+            (
+                "{prog} dm hide worker",
+                "Hide the conversation with worker for this agent.",
+            ),
+        ),
+    ),
+)
+@click.argument("peer")
+@click.option("--sender", default=None, help="Hide as this identity (default: $SCITEX_CARDS_AGENT_ID).")
+@click.option("--json", "as_json", is_flag=True, help="Emit one structured JSON result.")
+def dm_hide_cmd(peer: str, sender: str | None, as_json: bool) -> None:
+    """Hide the DM conversation with PEER for this agent (reversible)."""
+    _dm_visibility_cmd(peer, True, sender=sender, as_json=as_json)
+
+
+@dm_group.command(
+    "unhide",
+    **spec_command_kwargs(
+        summary="Show a hidden DM conversation again.",
+        description=(
+            "Calls the public scitex_cards.dm_hide API with hidden=false. "
+            "Appends a later unhide event — never a deletion.",
+        ),
+        examples=(
+            (
+                "{prog} dm unhide worker",
+                "Show the hidden conversation with worker again.",
+            ),
+        ),
+    ),
+)
+@click.argument("peer")
+@click.option("--sender", default=None, help="Unhide as this identity (default: $SCITEX_CARDS_AGENT_ID).")
+@click.option("--json", "as_json", is_flag=True, help="Emit one structured JSON result.")
+def dm_unhide_cmd(peer: str, sender: str | None, as_json: bool) -> None:
+    """Show the hidden DM conversation with PEER again."""
+    _dm_visibility_cmd(peer, False, sender=sender, as_json=as_json)
+
+
+def _dm_visibility_cmd(
+    peer: str, hidden: bool, *, sender: str | None, as_json: bool
+) -> None:
+    """Shared hide/unhide body: one toggle, two verbs, zero drift."""
+    import scitex_cards
+    from .._messaging import AgentIdentityUnresolved
+
+    try:
+        result = scitex_cards.dm_hide(peer, hidden, sender=sender)
+    except AgentIdentityUnresolved as exc:
+        raise click.ClickException(str(exc)) from exc
+    except KeyError:
+        raise click.ClickException(f"unknown thread with {peer!r}") from None
+    if as_json:
+        click.echo(json.dumps(result))
+        return
+    verb = "Hidden" if result.get("hidden") else "Visible"
+    changed = " (changed)" if result.get("changed") else " (already so)"
+    click.echo(f"{verb} conversation with {result.get('peer')}{changed}")
+
+
+__all__ = ["dm_group", "dm_hide_cmd", "dm_unhide_cmd", "register", "send_cmd"]
 
 # EOF

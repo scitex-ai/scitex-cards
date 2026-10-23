@@ -18,17 +18,30 @@ Endpoints::
          ``has_thread`` marks agents the current reader already has a room
          with. No provider → ``[]``; the store is optional here.
 
-    GET  /dm/threads
+    GET  /dm/threads[?show=all|hidden]
       -> 200 + {"agents": [{"name", "kind", "unread", "last_ts",
-                            "last_body"}, ...]}
+                            "last_body", "hidden"}, ...]}
          The union of the ``users:`` registry and any peer that already has
          a DM thread with the operator, sorted by most-recent activity.
+         Every row carries ``hidden`` for the current reader; hidden rows
+         are EXCLUDED by default. ``?show=all`` includes them (flagged);
+         ``?show=hidden`` answers only them — the Hidden section the
+         iOS-style list renders from the same call.
 
     GET  /dm/thread/<peer>[?mark_read=1]
       -> 200 + {"thread": <id>, "peer": <peer>, "messages": [...]}
          The operator's thread with ``peer`` (chronological). With
          ``mark_read=1``, messages addressed TO the operator are flipped
          read (poll-and-ack in one call — what the open thread pane does).
+
+    POST /dm/thread/<peer>/hidden   body = {"hidden": true|false}
+      -> 200 + {"thread": <id>, "peer": <peer>, "hidden": <bool>,
+                "changed": <bool>}
+         Hide (or unhide) the current user's conversation with ``peer``.
+         View state, not content: the thread's messages are untouched, so
+         this is NOT deletion under the append-only ruling — it only decides
+         whether this reader's list shows the row. 400 on an unknown thread
+         (hiding names an existing conversation) or a non-boolean body.
 
     POST /dm/thread/<peer>   body = {"body": "<text>"}
       -> 202 + {"message": <stored record>, "exchange": <delivery state>}
@@ -419,6 +432,13 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
         )
     store = _store_of(request)
     reader = _author_of(request)
+    show = (request.GET.get("show") or "").strip().lower()
+    if show not in ("", "all", "hidden"):
+        return JsonResponse(
+            {"error": "unknown show mode", "valid": ["all", "hidden"]},
+            status=400,
+        )
+    hidden_threads = _dm_read.hidden_for(reader, store=store)
     rows: dict[str, dict] = {}
     for agent in _registry_agents(store):
         rows[agent["name"]] = {
@@ -427,6 +447,7 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
             "unread": 0,
             "last_ts": None,
             "last_body": None,
+            "hidden": False,
         }
     # Merge in any peer that already has a thread with the CURRENT reader
     # (covers unregistered senders — the thread store is the SSOT of who
@@ -453,15 +474,23 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
                 "unread": 0,
                 "last_ts": None,
                 "last_body": None,
+                "hidden": False,
             },
         )
+        row["hidden"] = key in hidden_threads
         row["unread"] = summary["unread"].get(reader, 0)
         last = summary["last"]
         if last is not None:
             row["last_ts"] = last.get("ts")
             row["last_body"] = last.get("body")
+    if show == "":
+        agents = [r for r in rows.values() if not r["hidden"]]
+    elif show == "hidden":
+        agents = [r for r in rows.values() if r["hidden"]]
+    else:
+        agents = list(rows.values())
     agents = sorted(
-        rows.values(), key=lambda r: (r["last_ts"] or "", r["name"]), reverse=True
+        agents, key=lambda r: (r["last_ts"] or "", r["name"]), reverse=True
     )
     return JsonResponse({"agents": agents})
 
@@ -728,12 +757,74 @@ def dm_reaction_view(request: HttpRequest, peer: str) -> HttpResponse:
     )
 
 
+@csrf_exempt
+@_typed_store_refusals
+def dm_visibility_view(request: HttpRequest, peer: str) -> HttpResponse:
+    """Hide (or unhide) the CURRENT USER's conversation with ``peer``.
+
+    The THREAD is derived server-side from ``(reader, peer)`` where
+    ``reader`` is the authenticated principal — the caller names a peer,
+    never a thread id, so a hub user cannot hide a conversation they are
+    not part of (same authority rule as the reaction endpoint).
+
+    Hiding is VIEW STATE, not content: the thread's messages, members and
+    receipts are untouched, so this is not deletion under the append-only
+    ruling — it only decides whether this reader's list shows the row.
+    ``unknown-thread`` (400) is the honest answer for a peer with no
+    conversation: hiding names an existing row, iOS-style.
+    """
+    if request.method != "POST":
+        return JsonResponse(
+            {"error": "method-not-allowed", "method": request.method}, status=405
+        )
+    if not peer or not peer.strip():
+        return JsonResponse({"error": "empty peer name"}, status=400)
+    peer = peer.strip()
+    reader = _author_of(request)
+    try:
+        payload = json.loads(request.body or b"{}")
+    except json.JSONDecodeError as exc:
+        return JsonResponse({"error": f"invalid JSON body: {exc}"}, status=400)
+    if not isinstance(payload, dict):
+        return JsonResponse({"error": "visibility requires a JSON object"}, status=400)
+
+    hidden = payload.get("hidden")
+    if not isinstance(hidden, bool):
+        return JsonResponse(
+            {"error": "visibility requires a boolean 'hidden'"},
+            status=400,
+        )
+    key = _threads.thread_key(reader, peer)
+    try:
+        result = _dm_write.set_thread_visibility(
+            key, reader, hidden, store=_write_store_of(request), actor=reader
+        )
+    except KeyError:
+        return JsonResponse(
+            {"error": "unknown-thread", "peer": peer},
+            status=400,
+        )
+    # Answer with the RESULTING state rather than echoing the request, so
+    # the tapping client renders what every other client will see on its
+    # next poll instead of guessing the result of its own write.
+    return JsonResponse(
+        {
+            "thread": result["thread_id"],
+            "peer": peer,
+            "hidden": result["hidden"],
+            "changed": result["changed"],
+        },
+        json_dumps_params={"default": str},
+    )
+
+
 __all__ = [
     "dm_agents_view",
     "dm_exchange_view",
     "dm_reaction_view",
     "dm_thread_view",
     "dm_threads_view",
+    "dm_visibility_view",
 ]
 
 # EOF

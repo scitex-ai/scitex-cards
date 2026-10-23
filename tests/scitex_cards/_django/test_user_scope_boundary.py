@@ -141,6 +141,34 @@ def _mount_policy() -> dict:
     return policy
 
 
+def _served_dm_routes() -> list[str]:
+    """The WRITE routes ``urls.py`` actually serves under ``dm/``.
+
+    Read off the URL patterns, not pasted from memory: a pasted list would
+    pass while the served set drifted, which is the defect this pin exists
+    to catch. Patterns are anchored full-matches on the mount sub-path
+    (``dm/`` stripped), in the manifest's ``dm/<route>`` spelling. GET-only
+    routes (``dm/exchange`` — a status poll) are excluded: the mount gate
+    only constrains non-safe methods.
+    """
+    import re
+
+    from scitex_cards._django import urls as _urls
+
+    served = []
+    for entry in getattr(_urls, "urlpatterns", []):
+        pattern = getattr(getattr(entry, "pattern", None), "_route", "") or ""
+        if not pattern.startswith("dm/"):
+            continue
+        route = pattern[len("dm/"):]
+        if not re.search(r"<(str|slug|uuid|int|path):[^>]+>", route):
+            continue
+        if "exchange" in route:
+            continue
+        served.append("dm/" + route)
+    return served
+
+
 def test_manifest_mount_policy_declares_the_file_jail_case1():
     """Positive control: the board touches files AND names the jail to hold it.
 
@@ -272,6 +300,33 @@ def test_manifest_writable_routes_include_the_upload_route():
         f"mount_policy.writable_routes is {writable!r} — the board uploads "
         "files via dm/upload (urls.py) and promises uploads in its "
         "description; dropping it here silently unwrites that promise."
+    )
+
+
+def test_manifest_writable_routes_include_the_visibility_route():
+    """The hide/unhide route stays declared writable — or hiding 403s.
+
+    ``urls.py`` serves ``POST dm/thread/<peer>/hidden`` and the browser
+    calls it with a session cookie; ``plugin_guards`` re-arms CSRF for
+    ``@csrf_exempt`` views only on routes the manifest declares writable
+    (a restricted-audience plugin with no declaration denies ALL non-safe
+    methods — fail closed). The old manifest predates the route, so this
+    pin is the thing that carries it into the deployed contract: a merged
+    route with an undeployed manifest keeps its URL while its writes are
+    refused at the mount layer — measured live 2026-10-22, swipe-to-Hide
+    returned the mount-layer 403 while every direct unit passed.
+    """
+    # Arrange
+    policy = _mount_policy()
+    declared = policy.get("writable_routes")
+    # Act
+    serves = _served_dm_routes()
+    # Assert — the served set and the declared set must agree, not merely
+    # contain one route each: either direction of drift 403s a shipped UI.
+    assert set(declared or []) >= set(serves), (
+        f"mount_policy.writable_routes is {declared!r} but urls.py serves "
+        f"{serves!r} — the undeclared write route 403s at the mount layer "
+        "while its URL keeps resolving."
     )
 
 
