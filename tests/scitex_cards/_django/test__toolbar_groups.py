@@ -469,9 +469,8 @@ def test_template_details_board_section_open_by_default() -> None:
     html = _read_board_family()
     # Act
     m = re.search(r"return new Set\(\[([^\]]*)\]\);", html)
-    # Assert
-    assert m, "could not locate the details-section default open set"
-    assert '"board"' in m.group(1), (
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert m is not None and '"board"' in m.group(1), (
         "Details > Board section is closed by default — "
         "View/Span/Layout/Live hide behind a shut accordion"
     )

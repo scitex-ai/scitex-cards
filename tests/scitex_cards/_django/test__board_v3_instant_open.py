@@ -302,13 +302,14 @@ def test_skeleton_spinner_visibly_spins():
     # Arrange
     css = _SKELETON_CSS.read_text(encoding="utf-8")
     # Act
-    spins = "board-skeleton-spin" in css
     keyframes = re.search(
         r"@keyframes\s+board-skeleton-spin\s*\{[^}]*rotate\(360deg\)", css
     )
-    # Assert
-    assert spins, "spinner has no spin animation wired"
-    assert keyframes, "spin keyframes must rotate a full turn"
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert "board-skeleton-spin" in css and keyframes, (
+        "spinner must wire the board-skeleton-spin animation "
+        "and its keyframes must rotate a full turn"
+    )
 
 
 # --- graph arrival must not outrun the deferred painters -------------------

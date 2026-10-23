@@ -249,23 +249,21 @@ class TestCardStatusTickStraight:
         # Arrange
         # Act
         m = re.search(r"\.card::before\s*\{([^}]*)\}", css_text)
-        # Assert
-        assert m, ".card::before status-tick rule is missing"
-        body = m.group(1)
-        assert "top:" in body and "bottom:" in body, (
-            "status tick must be inset top/bottom, clear of the card corners"
-        )
-        assert re.search(r"top:\s*0[^0-9]", body + ";") is None, (
-            "status tick touches the card top edge — the corner curl is back"
-        )
+        body = m.group(1) if m else ""
+        # Assert — one compound assertion (PA-307: single assert per test).
+        assert (
+            m is not None
+            and "top:" in body
+            and "bottom:" in body
+            and re.search(r"top:\s*0[^0-9]", body + ";") is None
+        ), "status tick must be inset top/bottom, clear of the card corners"
 
     def test_card_status_tick_has_square_ends(self, css_text):
         # Arrange
         # Act
         m = re.search(r"\.card::before\s*\{([^}]*)\}", css_text)
-        # Assert
-        assert m, ".card::before status-tick rule is missing"
-        assert "border-radius: 0" in m.group(1), (
+        # Assert — one compound assertion (PA-307: single assert per test).
+        assert m is not None and "border-radius: 0" in m.group(1), (
             "status tick ends must be square — no radius, no curl"
         )
 
