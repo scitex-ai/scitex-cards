@@ -37,11 +37,15 @@ def _store_path() -> str:
 def _seed_old(task_id="old-deferred", status="deferred", days=30):
     now = datetime.datetime.now(datetime.timezone.utc)
     stamped = (now - datetime.timedelta(days=days)).replace(microsecond=0)
+    # Stamp BOTH clocks: last_activity alone older than created_at is an
+    # impossible state (last_activity starts equal, only moves forward),
+    # and the sweep reads the freshest stamp.
     add_task(
         id=task_id,
         title="a long stale card for the forgetting sweep",
         status=status,
         assignee="agent:test-suite",
+        created_at=stamped.isoformat(),
         last_activity=stamped.isoformat(),
     )
 
@@ -157,10 +161,10 @@ def test_forget_none_days_reports_disabled(postgres_dsn):
     assert "disabled" in res.output.lower()
 
 
-def test_forget_env_none_disables_the_sweep(postgres_dsn, monkeypatch):
+def test_forget_env_none_disables_the_sweep(postgres_dsn, env):
     # Arrange
     _seed_old()
-    monkeypatch.setenv("SCITEX_CARDS_FORGET_DAYS", "none")
+    env.set("SCITEX_CARDS_FORGET_DAYS", "none")
     runner = CliRunner()
     # Act
     res = runner.invoke(main, ["forget"])

@@ -75,6 +75,7 @@ _COMMAND_CATEGORIES = (
             "inbox",
             "init-store",
             "reconcile-merged-prs",
+            "forget",
         ),
     ),
     # `deliver-notifications`, not `deliver` — the bare verb is a hidden

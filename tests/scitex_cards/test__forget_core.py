@@ -96,27 +96,27 @@ def test_explicit_none_disables_despite_config_file():
     assert cfg.enabled is False
 
 
-def test_env_none_disables_the_sweep(monkeypatch):
+def test_env_none_disables_the_sweep(env):
     # Arrange
-    monkeypatch.setenv("SCITEX_CARDS_FORGET_DAYS", "none")
+    env.set("SCITEX_CARDS_FORGET_DAYS", "none")
     # Act
     cfg = load_forget_config(cfg={})
     # Assert
     assert cfg.enabled is False
 
 
-def test_env_numeric_sets_the_horizon(monkeypatch):
+def test_env_numeric_sets_the_horizon(env):
     # Arrange
-    monkeypatch.setenv("SCITEX_CARDS_FORGET_DAYS", "10")
+    env.set("SCITEX_CARDS_FORGET_DAYS", "10")
     # Act
     cfg = load_forget_config(cfg={})
     # Assert
     assert cfg.days == 10
 
 
-def test_env_beats_the_config_file(monkeypatch):
+def test_env_beats_the_config_file(env):
     # Arrange
-    monkeypatch.setenv("SCITEX_CARDS_FORGET_DAYS", "10")
+    env.set("SCITEX_CARDS_FORGET_DAYS", "10")
     raw = {FORGET_SECTION: {"days": 7}}
     # Act
     cfg = load_forget_config(cfg=raw)
