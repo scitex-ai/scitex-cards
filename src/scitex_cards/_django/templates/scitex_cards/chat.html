@@ -233,12 +233,6 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   #agents .agent .preview { color: var(--dim); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #agents .empty { color: var(--dim); font-size: 0.8rem; padding: 14px; }
-  /* Project selector row (operator 2026-10-22: at the top of the
-     conversation list, like other applications). The canonical SDK partial
-     renders inside; this only gives it the row's spacing so a missing
-     provider costs nothing and a present one aligns with the filter row. */
-  #dm-project { flex: 0 0 auto; padding: 8px 8px 0; }
-  #dm-project:empty { display: none; }
   /* ---- hide/unhide (card cards-dm-spaces-crud-hide-20261022) ----
      iOS pattern: the row slides left over a Hide action (touch swipe);
      on desktop the same action appears on hover/focus instead of a slide.
@@ -771,7 +765,7 @@ the tab row below it arrive via the shared partial, identical on both pages.
   messages with the agents", and the browser tab reads "DM — SciTeX Cards v…").
   The band above the switcher names the PRODUCT; the switcher names the page.
   {% endcomment %}
-  {% include "scitex_cards/_page_header.html" with page_title="SciTeX Cards" header_picker=False %}
+  {% include "scitex_cards/_page_header.html" with page_title="SciTeX Cards" %}
 </header>
 {% include "scitex_cards/_page_tabs.html" with active="chat" %}
 <div id="dm-pane">
@@ -795,21 +789,8 @@ template). `#agents` keeps its id because the mobile drawer is mounted on it and
 every `#agents .agent` rule still matches through the new wrapper.
 {% endcomment %}
   <nav id="agents" aria-label="Agents">
-{% comment %}
-The project selector lives HERE — at the top of the conversation list —
-not in the header. Operator 2026-10-22: it "must be placed there just like
-other applications", and there is the agent-list sidebar they inspected.
-The canonical SDK partial renders it (same markup the header used to serve,
-so behaviour and styling are identical); this page passes
-`header_picker=False` above so the header slot stays empty and the page
-carries exactly ONE selector. Like the filter row, it CANNOT live inside
-`#agent-list` — `renderAgents` clears that element on every poll.
-{% endcomment %}
-    {% if cards_project_picker_available %}
-    <div id="dm-project">
-      {% include "scitex_cards/_project_picker.html" with current=cards_current_project_id picker_scope=app_scope %}
-    </div>
-    {% endif %}
+    {# Operator 2026-10-23: the project selector lives ONLY in the top-most #}
+    {# application header (shared SDK element) — the DM copy is dropped. #}
     <div id="agent-filter-row">
       <input id="agent-filter" type="search" autocomplete="off"
              placeholder="Filter agents&hellip;" aria-label="Filter agents"
