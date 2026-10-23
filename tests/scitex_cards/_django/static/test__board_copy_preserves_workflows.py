@@ -223,14 +223,19 @@ def test_populated_status_filter_keeps_the_closed_machine_values():
         "", "goal", "done", "in_progress", "blocked", "deferred", "failed", "cancelled"]
 
 
-def test_refresh_preserves_an_existing_project_choice():
-    # Arrange
+def test_populate_filters_no_longer_manages_a_project_select():
+    # Arrange — operator 2026-10-23: the single project picker lives in the
+    # app header; the Details project row is gone, so populateFilters must
+    # neither create nor retain an f-project control (a null
+    # getElementById would kill the whole populate in the browser).
     payload = {"nodes": [{"id": "c1", "project": "paper"}],
                "selected": {"f-project": "paper"}}
     # Act
     result = _run("filters", payload)
-    # Assert
-    assert result["f-project"]["value"] == "paper"
+    # Assert — the harness pre-seeds stub elements for every selected id,
+    # so presence alone proves nothing; the pin is that populateFilters
+    # wrote no options into the phantom (empty html = unmanaged).
+    assert result["f-project"]["html"] == ""
 
 
 @pytest.mark.parametrize("filters,task,expected", [
