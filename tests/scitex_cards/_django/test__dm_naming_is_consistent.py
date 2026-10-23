@@ -106,7 +106,7 @@ def test_the_tab_title_still_carries_the_version(chat_html):
     # Act
     title = _title_of(html)
     # Assert
-    assert "SciTeX Cards v" in title
+    assert "Cards v" in title
 
 
 # --- the switcher ----------------------------------------------------------
@@ -224,7 +224,7 @@ def test_the_page_heading_does_not_change_between_board_and_dm(chat_html):
     THE DM WORDING WAS NOT DROPPED, and the three tests around this one are why
     this change is safe: the switcher item still reads "DM" and is the element
     that highlights, its tooltip still reads "Direct messages with the agents",
-    and the browser tab still reads "DM — SciTeX Cards v…". Their 2026-07-29
+    and the browser tab still reads "DM — Cards v…". Their 2026-07-29
     request was "not chat, use DM wording"; this one is about the heading
     CHANGING. Both hold once the band names the product and the switcher names
     the page.
@@ -242,7 +242,7 @@ def test_the_page_heading_does_not_change_between_board_and_dm(chat_html):
     html = chat_html
 
     # Act
-    heading = 'data-app-title="SciTeX Cards"' in html
+    heading = 'data-app-title="Cards"' in html
 
     # Assert
     assert heading

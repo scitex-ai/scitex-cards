@@ -8,6 +8,7 @@ are absent). ``api_dispatch`` routes ``/<endpoint>`` to the ``HANDLERS`` dict.
 """
 
 import dataclasses
+import io
 import scitex_logging as slogging
 import os
 import threading
@@ -102,7 +103,6 @@ def _cards_internal_chrome_enabled(request) -> bool:
 
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static" / "scitex_cards"
-_FAVICON_PATH = _STATIC_DIR / "favicon.svg"
 
 
 def _tasks_path_from_request(request):
@@ -281,18 +281,25 @@ def _cards_shell_context(request, api_base: str) -> dict[str, object]:
 
 
 def favicon_view(request):
-    """Serve the bundled SciTeX "S" SVG for the implicit `/favicon.ico` request.
+    """Serve the SDK official mark for the implicit `/favicon.ico` request.
 
     Modern browsers honor `Content-Type: image/svg+xml` for `.ico` URLs, so we
     serve the SVG directly. The standalone template also declares a
     `<link rel="icon" type="image/svg+xml">`, but browsers still request
     `/favicon.ico` on first visit before parsing <head>; without this route
     that request would fall through to `api_dispatch` and 404 (operator 3683).
+
+    The file served is the SDK SSOT (white snake on navy, operator
+    2026-10-23) — never a leaf-local copy, and the same in dev and prod.
     """
-    if not _FAVICON_PATH.exists():
+    from importlib.resources import files as _files
+
+    try:
+        data = (_files("scitex_sdk.ui") / "static" / "scitex_sdk" / "ui" / "img" / "scitex-favicon.svg").read_bytes()
+    except (FileNotFoundError, ModuleNotFoundError):
         return HttpResponseNotFound()
     # FileResponse handles streaming and the Content-Length header for us.
-    return FileResponse(_FAVICON_PATH.open("rb"), content_type="image/svg+xml")
+    return FileResponse(io.BytesIO(data), content_type="image/svg+xml")
 
 
 def _cards_version() -> str:
@@ -468,7 +475,7 @@ def chat_page(request):
     context = _cards_shell_context(request, api_base)
     context.update(
         {
-            "app_label": f"DM — SciTeX Cards v{_version}",
+            "app_label": f"DM — Cards v{_version}",
             "scitex_cards_version": _version,
             "api_base": api_base,
             "graph_prefetch_url": api_base.rstrip("/") + "/graph",
@@ -610,7 +617,7 @@ def _static_graph_markup(mermaid_src, store, count, error, internal_chrome) -> s
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>SciTeX Cards</title>
+<title>Cards</title>
 <style>
   body {{ font-family: -apple-system, system-ui, sans-serif; background: #1e1e2e;
     color: #e0e0e0; margin: 0; padding: 24px; }}

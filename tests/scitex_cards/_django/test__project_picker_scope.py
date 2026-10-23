@@ -42,7 +42,7 @@ def _context(scope=MISSING, **extra):
     context = {
         "api_base": "/",
         "active": "board",
-        "page_title": "SciTeX Cards",
+        "page_title": "Cards",
         "scitex_cards_version": "test",
         "cards_user": "alice",
         "cards_project_picker_available": True,

@@ -74,7 +74,7 @@ def test_unified_page_renders_exactly_one_shared_header_mount(unified_html):
     # one SDK mount stub per page, identity as data attributes.
     # Act
     mounts = re.findall(r"<div data-stx-app-header", unified_html)
-    titled = 'data-app-title="SciTeX Cards"' in unified_html
+    titled = 'data-app-title="Cards"' in unified_html
     versioned = 'data-app-version="0.56.4"' in unified_html
     # Assert
     assert (len(mounts), titled, versioned) == (1, True, True)
