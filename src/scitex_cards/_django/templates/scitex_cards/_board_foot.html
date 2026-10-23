@@ -1688,7 +1688,11 @@
         const raw = localStorage.getItem(DETAILS_OPEN_KEY);
         if (raw) return new Set(JSON.parse(raw));
       } catch {}
-      return new Set(["stats", "filters"]);
+      // Board OPEN by default (operator 2026-10-23: the Details pane
+      // "does not open"): View/Span/Layout/Live live in Details > Board
+      // since the 2026-10-22 re-home, so a closed Board section hides the
+      // very controls the move was for. A stored preference still wins.
+      return new Set(["board", "stats", "filters"]);
     }
     function toggleDetailsSection(id) {
       const open = _detailsOpenSet();
