@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.56.7] - 2026-10-23
+
+- Board /graph fetch is bounded (operator 2026-10-24: "loading board ...
+  forever", PR #1148): fetch() has no deadline, so a never-settling /graph
+  left the server-painted skeleton on screen with no panel and no retry.
+  The fetch now aborts at 30 s (timer cleared on settle) so the worst case
+  degrades to the same loud error panel as every other failure. Pinned.
+
 ## Unreleased
 
 - Single project picker lives in the app header (operator 2026-10-23,
