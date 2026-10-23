@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- In-app product name reads "SciTeX Cards" everywhere (operator 2026-10-23):
+  shared header (board + DM), project-scoped leaf bands, both browser tabs
+  ("Board/DM — SciTeX Cards v…"), the exception-fallback page, and the
+  switcher landmark aria-label. /apps/ tile intentionally stays short
+  ("Cards"). Each surface pinned by tests.
 - Collapsed Details rail stays expandable (operator 2026-10-23: the
   column "cannot be expanded"). The SDK stacks title-then-toggle in a
   full-height column and the board's vertical title pushes the 13px
