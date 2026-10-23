@@ -346,6 +346,11 @@ def _run_graph_arrival(case):
     globalThis.LAST_GRAPH_JSON = null;
     globalThis.normalizeLayout = x => x;
     globalThis.populateFilters = () => {};
+    // Details re-home (c39a060c): loadGraph syncs the Layout segment
+    // buttons to STATE on first paint. The definition lives ~1800 lines
+    // outside this harness's loadGraph extract (same script in the
+    // browser, out of scope here), so stub the port like the rest.
+    globalThis.syncLayoutButtons = () => {};
     globalThis.captureScroll = () => [];
     globalThis.restoreScroll = () => {};
     globalThis._prewarmGraph = () => {};
