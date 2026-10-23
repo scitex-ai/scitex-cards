@@ -1946,6 +1946,7 @@
       trigger.className = "filt cb-trigger";
       trigger.id = selectId + "-cb-trigger";
       trigger.setAttribute("aria-haspopup", "listbox");
+      trigger.title = "Type to filter " + selectId.replace("f-", "") + "s";
       trigger.textContent = (sel.options[sel.selectedIndex] || {}).text || "—";
       trigger.style.minWidth = "120px";
       trigger.style.textAlign = "left";
