@@ -120,6 +120,49 @@ def test_picker_partial_opts_user_scoped_leaves_in():
 # --- hide/unhide wiring ----------------------------------------------------
 
 
+def test_agent_rows_offer_a_context_menu():
+    """Right-click on an agent row must open a row menu (operator 2026-10-23:
+    CRUD ops as right-click on the agent list). The template serves the
+    menu markup; chat_menu.js mounts it. A menu with nothing behind it
+    would be a dead control — Hide/Unhide rides the existing visibility
+    endpoint, the only row action with a backend."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    script = (_STATIC / "chat" / "chat_menu.js").read_text(encoding="utf-8")
+    # Act
+    served = 'id="agent-menu"' in template
+    mounted = "mountAgentMenu" in script or "agentMenu" in script
+    # Assert
+    assert served and mounted
+
+
+def test_agent_menu_hides_and_unhides_through_the_visibility_endpoint():
+    """The row menu's Hide/Unhide posts to the visibility endpoint —
+    the same one the swipe action uses. No second write path."""
+    # Arrange
+    script = (_STATIC / "chat" / "chat_menu.js").read_text(encoding="utf-8")
+    hide = (_STATIC / "chat" / "chat_hide.js").read_text(encoding="utf-8")
+    # Act
+    path = "/dm/thread/"
+    menu_posts = path in script and "/hidden" in script
+    same_as_swipe = path in hide and "/hidden" in hide
+    # Assert
+    assert menu_posts and same_as_swipe
+
+
+def test_agent_menu_receives_the_list_and_refresh_seams():
+    """The row menu needs the agent list element (right-click target)
+    and the list refresh (post-Hide repaint). chat.js passes both —
+    a menu mounted without them silently never opens."""
+    # Arrange
+    script = (_STATIC / "chat" / "chat.js").read_text(encoding="utf-8")
+    # Act
+    seams = "agentsEl" in script and "refreshAgents" in script
+    mounted = "ChatMenu.mount" in script
+    # Assert
+    assert seams and mounted
+
+
 def test_list_fetches_every_row_including_hidden():
     """The client partitions (visible + Hidden disclosure), so it must fetch
     ``?show=all`` — the default would hide hidden rows from the client that
