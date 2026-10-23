@@ -67,7 +67,14 @@
     };
 
     let STATE = { graph: null, openId: null, lastMtime: null,
-      filters: { project: "", host: "", status: "", blocker: "", agent: "",
+      // Project comes from the HEADER picker (operator 2026-10-23: one
+      // picker per page, in the app header — never a leaf-local Details
+      // duplicate). The server seeds it from the resolved scope
+      // (cards_current_project_id); the SDK picker navigates (?project=)
+      // so a change reloads with the new seed. No Details <select> writes
+      // this key — attachFilters/populateFilters must not reference
+      // f-project (a null getElementById would kill the whole populate).
+      filters: { project: "{{ cards_current_project_id|default:''|escapejs }}", host: "", status: "", blocker: "", agent: "",
                  blockingMe: false, showHidden: false,
                  // Show-done — DEFAULT OFF (operator direct, lead a2a
                  // `b9d135c1ea8348dea80f027ba66a0079` 2026-06-12).
@@ -601,12 +608,10 @@
           items.map(i => `<option value="${i}">${i}</option>`).join("");
         if (items.includes(cur)) el.value = cur;
       };
-      // f-project includes an explicit "Uncategorized" entry when any
-      // task in the store lacks a `project` field (operator TG 383 —
-      // makes the empty-project column filterable).
-      const projects = uniq("project");
-      if (nodes.some(n => !n.project)) projects.push("Uncategorized");
-      set("f-project", projects, T.allProjects);
+      // Project is header-owned (operator 2026-10-23: single picker in
+      // the app header) — populateFilters maintains only the remaining
+      // leaf-local selects. The "Uncategorized" entry died with the
+      // Details project row; the header picker is the project control.
       set("f-host", uniq("host"), T.allHosts);
       set("f-agent", uniq("agent"), T.allAssignees);
       // Status / blocker = closed enums. Status now lists the 7 REAL
@@ -1084,7 +1089,7 @@
         f.project = ""; f.host = ""; f.status = "";
         f.blocker = ""; f.agent = ""; f.date = "";
         f.search = ""; f.blockingMe = false;
-        for (const id of ["f-project", "f-host", "f-status",
+        for (const id of ["f-host", "f-status",
                           "f-blocker", "f-agent", "f-date"]) {
           const el = document.getElementById(id);
           if (el) el.value = "";
@@ -1884,7 +1889,7 @@
 
 
     function attachFilters() {
-      const map = { "f-project": "project", "f-host": "host", "f-status": "status",
+      const map = { "f-host": "host", "f-status": "status",
                     "f-blocker": "blocker", "f-agent": "agent",
                     "f-date": "date" };
       Object.entries(map).forEach(([id, key]) => {
@@ -1919,7 +1924,7 @@
     function attachCombobox() {
       if (!(window.STX && window.STX.Combobox)) return;  // graceful fallback
       const FILTER_IDS = [
-        "f-project", "f-host", "f-status", "f-blocker", "f-agent", "f-date",
+        "f-host", "f-status", "f-blocker", "f-agent", "f-date",
       ];
       FILTER_IDS.forEach(id => _wrapSelectAsCombobox(id));
     }

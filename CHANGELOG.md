@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Single project picker lives in the app header (operator 2026-10-23,
+  hard rule): the board's Details Filters project row is gone — the
+  shared SDK header slot is the one project control. The boot STATE
+  literal seeds filters.project from the server-resolved scope and the
+  SDK picker navigates (?project=) so a change reloads with the new
+  seed; populateFilters/attachFilters/combobox no longer reference the
+  removed select (a null lookup would kill the whole populate).
 - Operator batch 2026-10-23 (no curly objects; wider status spread;
   overlay dropdowns; free-text filter): all chip/badge-class pills across
   board_v3 CSS square to 2px (filt-chip, date/age/activity badges,
