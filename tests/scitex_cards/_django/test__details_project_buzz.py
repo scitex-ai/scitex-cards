@@ -94,7 +94,12 @@ def test_project_buzz_mounts_an_overlay_container() -> None:
 
 
 def test_project_buzz_binding_covers_f_project_and_rebinds() -> None:
-    """f-project is in the bound id list and populateFilters re-binds."""
+    """All surviving filter selects are bound, and populateFilters re-binds.
+
+    f-project is DELIBERATELY absent (operator 2026-10-23 single-picker
+    rule, #1140): the header picker owns project, so the Details row is
+    gone. The buzz affordance covers the remaining selects — pin those,
+    not the removed one."""
     # Arrange
     src = _FOOT.read_text(encoding="utf-8")
     # Act
@@ -102,5 +107,9 @@ def test_project_buzz_binding_covers_f_project_and_rebinds() -> None:
     rebind = "attachCombobox()" in src
     # Assert — one compound assertion (PA-307: single assert per test).
     assert (
-        ids is not None and '"f-project"' in ids.group(1) and rebind
-    ), "f-project missing from FILTER_IDS or no populateFilters rebind"
+        ids is not None
+        and '"f-project"' not in ids.group(1)
+        and '"f-host"' in ids.group(1)
+        and '"f-agent"' in ids.group(1)
+        and rebind
+    ), "FILTER_IDS must bind the surviving selects (never the removed f-project) with a populateFilters rebind"
