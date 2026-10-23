@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Operator batch 2026-10-23 (no curly objects; wider status spread;
+  overlay dropdowns; free-text filter): all chip/badge-class pills across
+  board_v3 CSS square to 2px (filt-chip, date/age/activity badges,
+  qhints, toggles, fleetstrip, stat bars; round avatar dots/swatches/
+  spinner untouched), the Stats D/W/M group clips at 2px, in_progress
+  moves sky-blue and deferred violet out of the amber wedge (STATUS_STYLE
+  SSOT + README Table 5; 7 categories kept — the store's RAW-status
+  filter and enum pins forbid a reduction), Details filter rows cap
+  width with ellipsis so the pane never shifts, and the Details Filters
+  section gains a free-text input two-way synced with the header search
+  (same fuzzy match, same debounce, cleared by both clear paths).
 - Board LIVE badge ships dark until a read succeeds (operator 2026-09-17):
   Details > Board claimed LIVE as static markup with zero card nodes in the
   DOM. It now ships CONNECTING + .details-live--off; the existing single

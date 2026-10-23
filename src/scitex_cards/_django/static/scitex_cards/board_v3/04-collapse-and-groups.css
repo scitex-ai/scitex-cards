@@ -146,7 +146,7 @@
   color: #fff;
   background: var(--purple);
   border: 1px solid var(--purple);
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
 }
 .filt-chip-key {
   opacity: 0.78;
@@ -224,7 +224,7 @@
   color: var(--text);
   background: rgba(255, 193, 7, 0.12);
   border: 1px solid var(--gold, #ffc107);
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
 }
 .group-strip-banner-swatch {
   width: 10px;

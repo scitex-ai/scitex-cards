@@ -405,8 +405,31 @@
       _searchDebouncer.schedule(render);
     }
 
+    // === Details-pane free-text (buzz) filter — operator batch 2026-10-23
+    // item 5. The #f-text input in the Details Filters section writes the
+    // SAME STATE.filters.search the header #f-search owns, so both boxes
+    // stay in sync (each mirrors the other on input) and share one match
+    // path (`passes()` → fuzzyMatch across title/text/project/assignee/
+    // note). Debounced via the same _scheduleSearchRender trailing edge
+    // as the header search — no second policy.
+    function onDetailsTextInput(e) {
+      const v = e && e.currentTarget ? e.currentTarget.value : "";
+      STATE.filters.search = v;
+      const header = document.getElementById("f-search");
+      if (header && header.value !== v) header.value = v;
+      STATE._searchParsed = null;
+      STATE._searchParsedRaw = null;
+      renderQualifierHints(v);
+      renderActiveFilterChips();
+      _scheduleSearchRender();
+    }
+
     function onSearchInput(e) {
       STATE.filters.search = e.currentTarget.value;
+      const details = document.getElementById("f-text");
+      if (details && details.value !== e.currentTarget.value) {
+        details.value = e.currentTarget.value;
+      }
       // Invalidate the qualifier-parse cache on every keystroke.
       STATE._searchParsed = null;
       STATE._searchParsedRaw = null;
@@ -1068,6 +1091,8 @@
         }
         const search = document.getElementById("f-search");
         if (search) search.value = "";
+        const detailsText = document.getElementById("f-text");
+        if (detailsText) detailsText.value = "";
         renderActiveFilterChips();
         render();
       });
@@ -2028,6 +2053,8 @@
         STATE.filters.search = "";
         const el = document.getElementById("f-search");
         if (el) el.value = "";
+        const dt = document.getElementById("f-text");
+        if (dt) dt.value = "";
       } else if (key === "blockingMe") {
         STATE.filters.blockingMe = false;
         const tb = document.getElementById("f-blockingme");
@@ -2048,6 +2075,11 @@
         const el = document.getElementById("f-" + k);
         if (el) el.value = "";
       });
+      STATE.filters.search = "";
+      const hdr = document.getElementById("f-search");
+      if (hdr) hdr.value = "";
+      const dt = document.getElementById("f-text");
+      if (dt) dt.value = "";
       // "Clear all" leaves the show-done toggle alone — it's a persistent
       // user preference, not a transient filter selection (operator
       // direct, lead `b9d135c1ea8348dea80f027ba66a0079`).
