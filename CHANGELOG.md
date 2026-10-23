@@ -46,6 +46,35 @@
   shape assert + re-sync on every paint path; rendered inline-script
   parse pin).
 
+## [0.56.6] - 2026-10-23
+
+- Operator batch 2026-10-23 follow-up: Details PROJECT combobox trigger
+  advertises its free-text search (title affordance on every filter
+  trigger), so the closed row reads as searchable (#1144). The SDK
+  Combobox layer (overlay + autofocused input + fuzzy match) was
+  already bound — the gap was discoverability, pinned by 4 new tests.
+- Single project picker lives in the app header (operator 2026-10-23,
+  hard rule): the board's Details Filters project row is gone — the
+  shared SDK header slot is the one project control (#1140). The boot
+  STATE literal seeds filters.project from the server-resolved scope
+  and the SDK picker navigates (?project=) so a change reloads with
+  the new seed.
+- Operator batch 2026-10-23 (no curly objects; wider status spread;
+  overlay dropdowns; free-text filter) (#1142): all chip/badge-class
+  pills across board_v3 CSS square to 2px, the Stats D/W/M group
+  clips at 2px with the brand accent for the active state, in_progress
+  moves sky-blue and deferred violet out of the amber wedge
+  (STATUS_STYLE SSOT + README Table 5; 7 categories kept), Details
+  filter rows cap width with ellipsis so the pane never shifts, and
+  the Details Filters section gains a free-text input two-way synced
+  with the header search.
+- DM visibility dedup scoped by sequence (not action-second):
+  hide-then-unhide within the same second no longer swallows the
+  unhide (#1141). Migration helper wound back to the post-v16 rung.
+- Timeline simple-view fixture stamps the clock (no more hardcoded
+  date aging out of the 24h window) (#1139). Favicon absence pin
+  scoped away from the vite build outDir (#1143).
+
 ## [0.56.4] - 2026-10-20
 
 - Timeline Day/Week/Month window control restyled as underline tabs in the
