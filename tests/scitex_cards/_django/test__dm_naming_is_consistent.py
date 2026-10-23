@@ -207,9 +207,26 @@ def test_the_switcher_landmark_is_announced_as_dm(chat_html):
     # Arrange
     html = chat_html
     # Act
-    announced = 'aria-label="Cards sections"' in html
+    announced = 'aria-label="SciTeX Cards sections"' in html
     # Assert
     assert announced
+
+
+def test_the_switcher_landmark_names_the_product(chat_html):
+    """The landmark announces the same product name the eye sees.
+
+    Operator 2026-10-23: the in-app header must read "SciTeX Cards". The
+    switcher nav's aria-label is read aloud by assistive tech — announcing
+    bare "Cards sections" next to a visible "SciTeX Cards" header names two
+    products. The landmark carries the full product name, same rule as the
+    visible band (pinned verbatim, like the landmark itself).
+    """
+    # Arrange
+    html = chat_html
+    # Act
+    announced = 'aria-label="Cards sections"' in html
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert announced is False
 
 
 def test_the_switcher_landmark_never_announces_chat(chat_html):

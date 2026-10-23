@@ -65,7 +65,7 @@ Styling lives in static/scitex_cards/page-switcher.css and consumes the
 released SDK workspace, application-accent, and status tokens directly.
 {% endcomment %}
 {% load i18n %}
-<nav class="stx-cards-switcher" aria-label="{% translate 'Cards sections' %}">
+<nav class="stx-cards-switcher" aria-label="{% translate 'SciTeX Cards sections' %}">
   <a class="stx-cards-switcher__item{% if active == 'chat' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}dm" aria-label="{% translate 'Direct messages' %}{% if dm_unread_count %}, {{ dm_unread_count }} unread{% endif %}" {% if active == 'chat' %}aria-current="page" {% endif %}title="{% translate 'Direct messages with the agents' %}">
     <span class="stx-cards-switcher__label-full">{% translate "Direct messages" %}</span>
     <span class="stx-cards-switcher__label-short" aria-hidden="true">DM</span>
