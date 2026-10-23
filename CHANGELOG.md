@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Board LIVE badge ships dark until a read succeeds (operator 2026-09-17):
+  Details > Board claimed LIVE as static markup with zero card nodes in the
+  DOM. It now ships CONNECTING + .details-live--off; the existing single
+  writer renderDetailsBoard() (keyed on STATE.graph) flips it to LIVE only
+  once a read succeeds and reverts on any failed refresh. Pinned by tests.
 - In-app product name reads "SciTeX Cards" everywhere (operator 2026-10-23):
   shared header (board + DM), project-scoped leaf bands, both browser tabs
   ("Board/DM — SciTeX Cards v…"), the exception-fallback page, and the
