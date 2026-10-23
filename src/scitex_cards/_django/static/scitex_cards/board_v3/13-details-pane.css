@@ -315,3 +315,14 @@
 .details-live--off .live-dot {
   background: var(--text-muted);
 }
+
+/* --- collapsed rail: keep the expand control reachable ------------------ *
+ * The SDK stacks title-then-toggle in a full-height column; the board's
+ * vertical title (~350px) pushes the toggle below the pane's clipped bottom
+ * on short viewports, leaving a strip with no visible control (operator
+ * 2026-10-23: the Details column "cannot be expanded"). Pin the toggle
+ * FIRST so it is always the topmost, clickable thing in the rail. Scoped to
+ * .collapsed only — the expanded header keeps the SDK order. */
+.details-pane.stx-shell-sidebar.collapsed .stx-shell-sidebar__toggle {
+  order: -1;
+}
