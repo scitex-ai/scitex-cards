@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -294,6 +295,23 @@ def test_skeleton_stylesheet_honours_reduced_motion():
     assert honours
 
 
+def test_skeleton_spinner_visibly_spins():
+    """The ring must ROTATE while /graph is in flight (operator 2026-10-23:
+    a static ring reads as a stuck page). Rotation only — the
+    reduced-motion block above still stands it down."""
+    # Arrange
+    css = _SKELETON_CSS.read_text(encoding="utf-8")
+    # Act
+    keyframes = re.search(
+        r"@keyframes\s+board-skeleton-spin\s*\{[^}]*rotate\(360deg\)", css
+    )
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert "board-skeleton-spin" in css and keyframes, (
+        "spinner must wire the board-skeleton-spin animation "
+        "and its keyframes must rotate a full turn"
+    )
+
+
 # --- graph arrival must not outrun the deferred painters -------------------
 
 
@@ -346,6 +364,11 @@ def _run_graph_arrival(case):
     globalThis.LAST_GRAPH_JSON = null;
     globalThis.normalizeLayout = x => x;
     globalThis.populateFilters = () => {};
+    // Details re-home (c39a060c): loadGraph syncs the Layout segment
+    // buttons to STATE on first paint. The definition lives ~1800 lines
+    // outside this harness's loadGraph extract (same script in the
+    // browser, out of scope here), so stub the port like the rest.
+    globalThis.syncLayoutButtons = () => {};
     globalThis.captureScroll = () => [];
     globalThis.restoreScroll = () => {};
     globalThis._prewarmGraph = () => {};

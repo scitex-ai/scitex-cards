@@ -43,6 +43,7 @@ source strings and travel with their renderer.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -236,6 +237,35 @@ class TestP1SearchAsLauncher:
         # Act
         # Assert
         assert "min-width: 220px" in css_text
+
+
+class TestCardStatusTickStraight:
+    """Pins for the operator 2026-10-23 'no curly highlight' slice: the
+    card's left status bar is a straight square-ended tick, never a curl
+    inherited from the card's 8px corner rounding. Status COLORS are
+    pinned elsewhere (bundle-enums); this class owns geometry only."""
+
+    def test_card_status_tick_is_inset_clear_of_corners(self, css_text):
+        # Arrange
+        # Act
+        m = re.search(r"\.card::before\s*\{([^}]*)\}", css_text)
+        body = m.group(1) if m else ""
+        # Assert — one compound assertion (PA-307: single assert per test).
+        assert (
+            m is not None
+            and "top:" in body
+            and "bottom:" in body
+            and re.search(r"top:\s*0[^0-9]", body + ";") is None
+        ), "status tick must be inset top/bottom, clear of the card corners"
+
+    def test_card_status_tick_has_square_ends(self, css_text):
+        # Arrange
+        # Act
+        m = re.search(r"\.card::before\s*\{([^}]*)\}", css_text)
+        # Assert — one compound assertion (PA-307: single assert per test).
+        assert m is not None and "border-radius: 0" in m.group(1), (
+            "status tick ends must be square — no radius, no curl"
+        )
 
 
 class TestMobileDeclutter:
