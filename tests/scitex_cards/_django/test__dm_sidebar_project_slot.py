@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The DM sidebar carries the project selector + hide wiring (no mocks).
+"""The DM sidebar + hide wiring (no mocks). The header carries the picker.
 
-Operator 2026-10-22: the project selector "must be placed there just like
-other applications" — there being the agent-list sidebar the element
-inspector captured (``div#agent-list`` in ``nav#agents``). Card
-cards-dm-spaces-crud-hide-20261022 adds hide/unhide beside it.
+Operator 2026-10-23: the project selector lives ONLY in the top-most
+application header (shared SDK element) — the DM sidebar copy is dropped.
+Card cards-dm-spaces-crud-hide-20261022 adds hide/unhide beside the list.
 
 What is pinned:
 
-  1. The sidebar renders the CANONICAL picker (``_project_picker.html``),
+  1. The HEADER renders the CANONICAL picker (``_project_picker.html``),
      guarded by the availability flag — never a second hand-rolled picker.
-  2. Exactly ONE picker per page: chat suppresses the header slot
-     (``header_picker=False``); the board does not pass the flag, so its
-     header slot is unaffected.
+  2. Exactly ONE picker per page: NEITHER page passes ``header_picker=False``;
+     the sidebar carries no picker markup.
   3. The list fetches ``?show=all`` (the client partitions) and mounts
      ``ChatHide`` for the row actions — asserted against the sources, the
      way ``test__dm_unread_in_page_title`` asserts wiring.
@@ -65,34 +63,24 @@ def _nav_agents_region(source: str) -> str:
 # --- ONE canonical picker, in the sidebar ----------------------------------
 
 
-def test_sidebar_includes_the_canonical_picker():
-    """The sidebar serves the SDK partial, not a hand-rolled dropdown."""
+def test_sidebar_carries_no_picker():
+    """The DM sidebar drops the picker; the header owns it."""
     # Arrange
     region = _nav_agents_region(_CHAT.read_text(encoding="utf-8"))
     # Act
-    serves = '_project_picker.html' in region
+    clean = '_project_picker.html' not in region and 'dm-project' not in region
     # Assert
-    assert serves
+    assert clean
 
 
-def test_sidebar_picker_is_availability_guarded():
-    """No provider → no picker chrome and no empty row costs."""
-    # Arrange
-    region = _nav_agents_region(_CHAT.read_text(encoding="utf-8"))
-    # Act
-    guarded = "cards_project_picker_available" in region
-    # Assert
-    assert guarded
-
-
-def test_chat_suppresses_the_header_picker_slot():
-    """Two pickers on one page is the defect; the flag is the fix."""
+def test_chat_uses_the_header_picker_slot():
+    """Two pickers on one page is the defect; header-only is the fix."""
     # Arrange
     source = _CHAT.read_text(encoding="utf-8")
     # Act
     suppressed = "header_picker=False" in source
     # Assert
-    assert suppressed
+    assert not suppressed
 
 
 def test_board_keeps_the_header_picker_slot():
