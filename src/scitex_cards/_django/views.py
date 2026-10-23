@@ -259,7 +259,7 @@ def _cards_shell_context(request, api_base: str) -> dict[str, object]:
     relative_view = request.path[len(api_base) :].strip("/")
     return {
         **shell_context(
-            "Cards",
+            "SciTeX Cards",
             panes={"ai": "unused", "files": "unused", "viewer": "unused"},
         ),
         **mount_context(request, view_path=relative_view),
@@ -416,6 +416,12 @@ def board_v3_page(request, *, _announce=None):
             {
                 "scitex_cards_version": _version,
                 "api_base": api_base,
+                # Browser tab: the board names its view like the DM page names
+                # its own ("DM — SciTeX Cards v…" in chat_page) — a bare
+                # product name in one tab next to a view-qualified name in the
+                # other reads as two different naming schemes. The SDK shell
+                # default ("SciTeX App") would be worse: a wrong product.
+                "app_label": f"Board — SciTeX Cards v{_version}",
                 # Instant-open: the mount-aware /graph URL for the
                 # <link rel="prefetch"> hint. api_base keeps its trailing
                 # slash for the API_BASE const ("/" at a root mount); the
@@ -475,7 +481,7 @@ def chat_page(request):
     context = _cards_shell_context(request, api_base)
     context.update(
         {
-            "app_label": f"DM — Cards v{_version}",
+            "app_label": f"DM — SciTeX Cards v{_version}",
             "scitex_cards_version": _version,
             "api_base": api_base,
             "graph_prefetch_url": api_base.rstrip("/") + "/graph",
@@ -617,7 +623,7 @@ def _static_graph_markup(mermaid_src, store, count, error, internal_chrome) -> s
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Cards</title>
+<title>SciTeX Cards</title>
 <style>
   body {{ font-family: -apple-system, system-ui, sans-serif; background: #1e1e2e;
     color: #e0e0e0; margin: 0; padding: 24px; }}
@@ -633,7 +639,7 @@ def _static_graph_markup(mermaid_src, store, count, error, internal_chrome) -> s
 </script>
 </head>
 <body>
-  <h1>SciTeX Card &mdash; dependency graph</h1>
+  <h1>SciTeX Cards &mdash; dependency graph</h1>
   {meta}
   {body}
 </body>

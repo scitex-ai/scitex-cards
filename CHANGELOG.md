@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- In-app product name reads "SciTeX Cards" everywhere (operator 2026-10-23):
+  shared header (board + DM), project-scoped leaf bands, both browser tabs
+  ("Board/DM — SciTeX Cards v…"), the exception-fallback page, and the
+  switcher landmark aria-label. /apps/ tile intentionally stays short
+  ("Cards"). Each surface pinned by tests.
+- Collapsed Details rail stays expandable (operator 2026-10-23: the
+  column "cannot be expanded"). The SDK stacks title-then-toggle in a
+  full-height column and the board's vertical title pushes the 13px
+  toggle below the pane's clipped bottom on short viewports. The
+  toggle is now pinned first in the collapsed rail (order:-1) and any
+  collapsed-rail click expands the pane (guarded, so open-pane clicks
+  never collapse it). Collapsed-by-default preference unchanged.
 - Board header declutter (operator 2026-10-22): View, Span, Layout and
   Live move out of the header into a new Details > Board section; the
   header keeps search + Add Task only. "Window" renamed to "Span"
