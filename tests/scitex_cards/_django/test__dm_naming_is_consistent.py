@@ -242,7 +242,7 @@ def test_the_page_heading_does_not_change_between_board_and_dm(chat_html):
     html = chat_html
 
     # Act
-    heading = 'data-app-title="Cards"' in html
+    heading = 'data-app-title="SciTeX Cards"' in html
 
     # Assert
     assert heading

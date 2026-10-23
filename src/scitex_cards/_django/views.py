@@ -259,7 +259,7 @@ def _cards_shell_context(request, api_base: str) -> dict[str, object]:
     relative_view = request.path[len(api_base) :].strip("/")
     return {
         **shell_context(
-            "Cards",
+            "SciTeX Cards",
             panes={"ai": "unused", "files": "unused", "viewer": "unused"},
         ),
         **mount_context(request, view_path=relative_view),
@@ -475,7 +475,7 @@ def chat_page(request):
     context = _cards_shell_context(request, api_base)
     context.update(
         {
-            "app_label": f"DM — Cards v{_version}",
+            "app_label": f"DM — SciTeX Cards v{_version}",
             "scitex_cards_version": _version,
             "api_base": api_base,
             "graph_prefetch_url": api_base.rstrip("/") + "/graph",
