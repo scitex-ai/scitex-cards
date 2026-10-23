@@ -553,10 +553,10 @@ untouched `deferred` cards.
 |---------------|-----------------|---------------|
 | `goal`        | gold `#ffe082`  | solid         |
 | `done`        | green `#c8e6c9` | solid         |
-| `in_progress` | yellow `#fff9c4`| solid         |
+| `in_progress` | sky-blue `#b3e5fc`| solid         |
 | `blocked`     | bright-orange `#ff8a65` | solid |
 | `cancelled`   | grey `#eceff1`          | solid |
-| `deferred`    | amber `#ffca28`         | dashed border |
+| `deferred`    | violet `#d1c4e9`        | dashed border |
 | `failed`      | red `#ffcdd2`   | solid         |
 
 <sub><b>Table 5.</b> Board status colours — fill and edge per status.</sub>

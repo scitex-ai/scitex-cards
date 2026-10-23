@@ -22,19 +22,22 @@ import sys
 
 # fill, stroke, stroke-dasharray (empty = solid border)
 #
-# Intensification 2026-06-06 (operator UX "ブロッカーが何かわからない" / lead
-# a2a 2843279f): `blocked` was pale `#fff3e0` and `deferred` was near-invisible
-# `#f5f5f5` — both got lost in the canvas + mermaid renderings. Bumped to a
-# bright orange + a saturated amber so stuck threads jump out across BOTH the
-# Django board (FE reads `_status_colors()` from /graph) AND the mermaid
-# artifacts (Python `build_mermaid()` reads this same table directly), keeping
-# the visual cue consistent everywhere. `goal` stays softer-amber so the new
-# `deferred` doesn't collide with it — `deferred`'s dashed `5 3` border is the
-# kept differentiator from `goal`'s solid border.
+# Spread 2026-10-23 (operator: statuses read too close together; option (b) —
+# spread WIDER in color space, keep all 7 categories). The old cluster sat
+# goal/in_progress/deferred in one amber-yellow wedge (#ffe082/#fff9c4/
+# #ffca28). New spread, one family per semantic:
+#   goal        gold        (identity anchor — README Table 5 + mermaid pin it)
+#   done        green       (completed — unchanged)
+#   in_progress sky-blue    (active work reads blue; max distance from gold
+#                            AND from blocked-orange)
+#   blocked     orange      (stuck jumps out — unchanged)
+#   cancelled   grey        (inactive — unchanged)
+#   deferred    violet      (parked-but-alive; distant from gold, grey, red)
+#   failed      red         (broken — unchanged)
 STATUS_STYLE: dict[str, tuple[str, str, str]] = {
     "goal": ("#ffe082", "#ff6f00", ""),
     "done": ("#c8e6c9", "#2e7d32", ""),
-    "in_progress": ("#fff9c4", "#f9a825", ""),
+    "in_progress": ("#b3e5fc", "#0277bd", ""),
     "blocked": ("#ff8a65", "#bf360c", ""),
     # ``cancelled`` (closed as not planned, terminal) reuses the muted grey
     # the abolished ``pending`` (2026-07-10) formerly occupied: a closed node
@@ -42,7 +45,7 @@ STATUS_STYLE: dict[str, tuple[str, str, str]] = {
     # goal/deferred ambers. Matches the sticky-wall neutral precedent
     # (board_v3 11-sticky-wall.css ``.sw-note--cancelled``).
     "cancelled": ("#eceff1", "#90a4ae", ""),
-    "deferred": ("#ffca28", "#ff8f00", "5 3"),
+    "deferred": ("#d1c4e9", "#4527a0", "5 3"),
     "failed": ("#ffcdd2", "#c62828", ""),
 }
 

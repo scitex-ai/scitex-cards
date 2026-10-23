@@ -160,7 +160,7 @@
   background: rgba(244, 67, 54, 0.18);
   color: var(--red);
   border: 1px solid var(--red);
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   font-size: 0.68rem;
   font-weight: 600;
 }
@@ -283,7 +283,7 @@
   padding: 1px 8px;
   font-size: 0.72rem;
   font-weight: 600;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-muted);
@@ -336,7 +336,7 @@
   padding: 0px 7px;
   font-size: 0.68rem;
   font-weight: 600;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-muted);
@@ -392,7 +392,7 @@
   padding: 0px 7px;
   font-size: 0.66rem;
   font-weight: 600;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-muted);

@@ -409,6 +409,13 @@
           </button>
           <div class="details-section-body">
             <div class="details-row details-row--filter">
+              <label for="f-text">{% translate "Text" %}</label>
+              <input class="filt filt-text" id="f-text" type="search"
+                     placeholder="buzzword…"
+                     title="Free-text: substring, case-insensitive, across title / text / project / assignee / note"
+                     oninput="onDetailsTextInput(event)">
+            </div>
+            <div class="details-row details-row--filter">
               <label for="f-project">{% translate "Project" %}</label>
               <select class="filt" id="f-project"><option value="">{% translate "All projects" %}</option></select>
             </div>
