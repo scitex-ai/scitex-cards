@@ -623,7 +623,7 @@ def _static_graph_markup(mermaid_src, store, count, error, internal_chrome) -> s
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Cards</title>
+<title>SciTeX Cards</title>
 <style>
   body {{ font-family: -apple-system, system-ui, sans-serif; background: #1e1e2e;
     color: #e0e0e0; margin: 0; padding: 24px; }}
@@ -639,7 +639,7 @@ def _static_graph_markup(mermaid_src, store, count, error, internal_chrome) -> s
 </script>
 </head>
 <body>
-  <h1>SciTeX Card &mdash; dependency graph</h1>
+  <h1>SciTeX Cards &mdash; dependency graph</h1>
   {meta}
   {body}
 </body>
