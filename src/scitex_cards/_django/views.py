@@ -416,6 +416,12 @@ def board_v3_page(request, *, _announce=None):
             {
                 "scitex_cards_version": _version,
                 "api_base": api_base,
+                # Browser tab: the board names its view like the DM page names
+                # its own ("DM — SciTeX Cards v…" in chat_page) — a bare
+                # product name in one tab next to a view-qualified name in the
+                # other reads as two different naming schemes. The SDK shell
+                # default ("SciTeX App") would be worse: a wrong product.
+                "app_label": f"Board — SciTeX Cards v{_version}",
                 # Instant-open: the mount-aware /graph URL for the
                 # <link rel="prefetch"> hint. api_base keeps its trailing
                 # slash for the API_BASE const ("/" at a root mount); the

@@ -66,6 +66,17 @@ def chat_html():
     return views.chat_page(request).content.decode("utf-8")
 
 
+@pytest.fixture
+def board_html():
+    """The standalone board page as the server serves it (root mount).
+
+    PG-free like the inline-script pin: the shell renders before any store
+    read (cards load client-side via /graph).
+    """
+    request = RequestFactory().get("/")
+    return views.board_v3_page(request).content.decode("utf-8")
+
+
 def _title_of(html: str) -> str:
     match = _TITLE_RE.search(html)
     return match.group(1).strip() if match else ""
@@ -107,6 +118,35 @@ def test_the_tab_title_still_carries_the_version(chat_html):
     title = _title_of(html)
     # Assert
     assert "Cards v" in title
+
+
+def test_the_tab_title_names_the_product(chat_html, board_html):
+    """Both browser tabs name the product — header and tab must agree.
+
+    Operator 2026-10-23: the in-app header must read "SciTeX Cards". The tab
+    is the same product name surfaced by the OS window manager — a tab that
+    says "DM — Cards v…" next to a header that says "SciTeX Cards" reads as
+    two products. The full product name is pinned, not a substring: "Cards v"
+    passes for both the old and the new form, so it cannot catch the drift.
+
+    A tuple, so a failure says WHICH page regressed the product name.
+    """
+    # Arrange
+    pages = (chat_html, board_html)
+    # Act
+    titles = tuple(_title_of(html) for html in pages)
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert titles == (
+        f"DM — SciTeX Cards v{_version_of(chat_html)}",
+        f"Board — SciTeX Cards v{_version_of(board_html)}",
+    )
+
+
+def _version_of(html: str) -> str:
+    """The version the page itself prints (data-app-version mount attr)."""
+    match = re.search(r'data-app-version="([^"]+)"', html)
+    assert match, "served page carries no data-app-version mount attr"
+    return match.group(1)
 
 
 # --- the switcher ----------------------------------------------------------
