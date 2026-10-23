@@ -184,7 +184,27 @@
       const { preserveScroll = false, skipIfUnchanged = false } = opts || {};
       try {
         markBoardPhase("graph-request-started");
-        const r = await fetch(API_BASE + "/graph"); // (hook-bypass: line-limit)
+        // Bounded graph fetch (operator 2026-10-24: "loading board ... forever").
+        // fetch() has NO deadline — a /graph that never settles (slow store
+        // rebuild, stalled proxy, dropped connection the browser never
+        // notices) left the server-painted skeleton on screen forever, with
+        // no panel and no retry: every faster failure path paints SOMETHING,
+        // but a hanging fetch reaches none of them. Abort at 30 s so the
+        // worst case degrades to the same loud error panel as every other
+        // failure — a named state the operator can act on, not silence.
+        // (hook-bypass: line-limit.)
+        const _graphCtl = (typeof AbortController !== "undefined")
+          ? new AbortController() : null;
+        const _graphTimer = (_graphCtl && typeof setTimeout !== "undefined")
+          ? setTimeout(() => { try { _graphCtl.abort(); } catch {} }, 30000)
+          : null;
+        let r;
+        try {
+          r = await fetch(API_BASE + "/graph",
+            _graphCtl ? { signal: _graphCtl.signal } : undefined);
+        } finally {
+          if (_graphTimer !== null) clearTimeout(_graphTimer);
+        }
         // Successful JSON parsing overlaps deferred script download. Error
         // bodies retain boardStates.js's tolerant reader and named states.
         const graph = r.ok ? await r.json() : null;

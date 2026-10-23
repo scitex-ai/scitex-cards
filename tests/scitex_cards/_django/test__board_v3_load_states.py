@@ -140,6 +140,29 @@ def test_unrecognized_failure_keeps_loud_error_with_server_error_field(
     assert escalates_with_error_field
 
 
+def test_graph_fetch_is_bounded_so_a_hang_cannot_hold_the_skeleton_forever(
+    board_source,
+):
+    """The /graph fetch must carry a deadline (operator 2026-10-24:
+    "loading board ... forever"). fetch() has NO deadline — a /graph that
+    never settles left the skeleton on screen forever with no panel and no
+    retry, because every faster failure path paints SOMETHING and a hanging
+    fetch reaches none of them. An AbortController + timer bounds the wait
+    so the worst case degrades to the same loud error panel, and the timer
+    is cleared on settle so a healthy board never aborts itself."""
+    # Arrange
+    source = board_source
+    # Act
+    bounded = (
+        "new AbortController()" in source
+        and "signal: _graphCtl.signal" in source
+        and "clearTimeout(_graphTimer)" in source
+        and 'fetch(API_BASE + "/graph"' in source
+    )
+    # Assert
+    assert bounded
+
+
 def test_the_thrown_message_is_not_escaped_on_the_way_into_the_error(
     board_source,
 ):
