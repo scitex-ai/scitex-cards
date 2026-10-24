@@ -42,15 +42,19 @@
            Search-as-launcher (P1, lead brief 2026-06-12) — the PRIMARY
            filterbar entry point. -->
       <span class="filt-search-wrap" id="f-search-wrap">
-        {% translate 'Search… ( / to focus, Esc to blur) — try project:paper-scitex-clew, status:blocked, kind:compute, …' as search_ph %}
+        {% translate 'Search… — try project:paper-scitex-clew, status:blocked, kind:compute, …' as search_ph %}
         <input class="filt filt-search" id="f-search" type="search"
                placeholder="{{ search_ph }}"
-               title="Fuzzy match + GitHub-style qualifiers (project: / agent: / status: / kind: / parent: / scope: / id: / priority: / host:). Press / to focus, Esc to blur. Tab to autocomplete the qualifier or value under the cursor."
+               title="Fuzzy match + GitHub-style qualifiers (project: / agent: / status: / kind: / parent: / scope: / id: / priority: / host:). Press Ctrl+K to focus, Esc to blur. Tab to autocomplete the qualifier or value under the cursor."
                oninput="onSearchInput(event)" onkeydown="onSearchKeyDown(event)"
                onfocus="onSearchFocus(event)" onblur="onSearchBlur(event)"
                role="combobox" aria-autocomplete="list"
                aria-controls="search-suggest" aria-expanded="false"
                autocomplete="off">
+        {# Hub-style end-of-field shortcut hint (operator 2026-10-24): the kbd marker #}
+        {# carries the shortcut so the placeholder never inlines it. Hidden on focus/typing #}
+        {# and on phones by the existing sibling + responsive rules. #}
+        <span class="filt-search-kbd" aria-hidden="true"><kbd>Ctrl+K</kbd></span>
         <!-- Autocomplete dropdown (operator TG 12318) -->
         <ul class="search-suggest" id="search-suggest" role="listbox"
             aria-label="{% translate 'Search suggestions' %}" hidden></ul>
@@ -284,8 +288,14 @@
              an open pane never collapse it; the toggle button's own handler
              runs first on bubble and clears the class, so this is a no-op
              there rather than a double toggle.
+             Keyboard parity: the rail is focusable while collapsed
+             (tabindex, kept in sync by toggleDetailsPane/_syncDetailsPane)
+             and Enter/Space expand it under the same collapsed guard, so
+             pointer-free users are not limited to the 13px toggle.
            {% endcomment %}
-           onclick="if(this.classList.contains('collapsed'))toggleDetailsPane()">
+           tabindex="0"
+           onclick="if(this.classList.contains('collapsed'))toggleDetailsPane()"
+           onkeydown="if(this.classList.contains('collapsed')&&(event.key==='Enter'||event.key===' ')){event.preventDefault();toggleDetailsPane()}">
       {% comment %}
         The pane itself is the SDK's `.stx-shell-sidebar` — the SAME
         workspace-pane primitive Writer / Scholar / Console use (shell CSS

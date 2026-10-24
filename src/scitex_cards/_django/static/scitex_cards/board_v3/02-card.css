@@ -218,11 +218,15 @@
   min-width: 220px;
   flex: 1 1 220px;
   padding: 5px 10px !important;
+  padding-right: 60px !important;
   font-size: 0.85rem;
   font-weight: 500;
   border: 1px solid var(--border) !important;
   border-radius: 6px !important;
-  background: rgba(109, 76, 173, 0.04);
+  /* Theme-aware fill like the sibling .filt controls (operator 2026-10-24:
+     the purple wash rgba(109,76,173,*) read as foreign chrome — it was the
+     same purple as the old filter chip). No purple in any state. */
+  background: var(--card-bg, #232a36);
   transition:
     box-shadow 120ms ease,
     background 120ms ease,
@@ -233,41 +237,38 @@
   font-weight: 400;
 }
 .filt-search:hover {
-  background: rgba(109, 76, 173, 0.08);
+  border-color: var(--text-muted);
 }
 .filt-search:focus {
   outline: none;
-  border-color: var(--purple);
-  background: rgba(109, 76, 173, 0.12);
+  border-color: var(--text-link);
+  background: var(--card-bg, #232a36);
   box-shadow: none;
 }
 .filt-search-kbd {
+  /* Hub-style end-of-field hint (operator 2026-10-24): the shortcut lives
+     in a kbd marker overlaid at the input's end, never inlined in the
+     placeholder. No purple: neutral border and text like the DM twin. */
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-left: -4px;
-  padding: 2px 8px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
   user-select: none;
   pointer-events: none;
+  transition: opacity 120ms ease;
 }
 .filt-search-kbd kbd {
   display: inline-block;
   min-width: 14px;
-  padding: 0 5px;
+  padding: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.7rem;
   line-height: 1.4;
-  color: var(--text);
-  background: rgba(109, 76, 173, 0.18);
-  border: 1px solid var(--purple);
-  border-bottom-width: 2px;
-  border-radius: 4px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
 }
 .filt-search:focus + .filt-search-kbd,
 .filt-search:not(:placeholder-shown) + .filt-search-kbd {

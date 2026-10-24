@@ -90,13 +90,13 @@ def _switcher_labels(html: str) -> list[str]:
 
 
 def test_the_tab_title_says_dm(chat_html):
-    """The exact string in the operator's screenshot, corrected."""
+    """The DM wording survives the 2026-10-24 shortening: "Cards DM"."""
     # Arrange
     html = chat_html
     # Act
     title = _title_of(html)
     # Assert
-    assert title.startswith("DM ")
+    assert title == "Cards DM"
 
 
 def test_the_tab_title_no_longer_says_chat(chat_html):
@@ -109,37 +109,32 @@ def test_the_tab_title_no_longer_says_chat(chat_html):
     assert "Chat" not in title
 
 
-def test_the_tab_title_still_carries_the_version(chat_html):
-    """Renaming the surface must not cost the version the operator quotes when
-    reporting what they are looking at."""
+def test_the_tab_title_is_the_short_view_name(chat_html):
+    """Operator 2026-10-24: the tab reads "Cards DM" — the version the
+    operator quotes when reporting lives on the page (the data-app-version
+    mount attr), not in the tab."""
     # Arrange
     html = chat_html
     # Act
     title = _title_of(html)
     # Assert
-    assert "Cards v" in title
+    assert title == "Cards DM"
 
 
-def test_the_tab_title_names_the_product(chat_html, board_html):
-    """Both browser tabs name the product — header and tab must agree.
+def test_the_tab_title_names_the_view(chat_html, board_html):
+    """Both browser tabs carry the short view title — operator 2026-10-24:
+    "Cards DM (N)" and "Board (N in last 1h)", the count suffixed at
+    runtime. The in-app header keeps the full product name; the tab keeps
+    the short view name both pages share as a scheme.
 
-    Operator 2026-10-23: the in-app header must read "SciTeX Cards". The tab
-    is the same product name surfaced by the OS window manager — a tab that
-    says "DM — Cards v…" next to a header that says "SciTeX Cards" reads as
-    two products. The full product name is pinned, not a substring: "Cards v"
-    passes for both the old and the new form, so it cannot catch the drift.
-
-    A tuple, so a failure says WHICH page regressed the product name.
+    A tuple, so a failure says WHICH page regressed the tab title.
     """
     # Arrange
     pages = (chat_html, board_html)
     # Act
     titles = tuple(_title_of(html) for html in pages)
     # Assert — one compound assertion (PA-307: single assert per test).
-    assert titles == (
-        f"DM — SciTeX Cards v{_version_of(chat_html)}",
-        f"Board — SciTeX Cards v{_version_of(board_html)}",
-    )
+    assert titles == ("Cards DM", "Board")
 
 
 def _version_of(html: str) -> str:
@@ -281,7 +276,8 @@ def test_the_page_heading_does_not_change_between_board_and_dm(chat_html):
     THE DM WORDING WAS NOT DROPPED, and the three tests around this one are why
     this change is safe: the switcher item still reads "DM" and is the element
     that highlights, its tooltip still reads "Direct messages with the agents",
-    and the browser tab still reads view-first ("DM — SciTeX Cards v…"). Their 2026-07-29
+    and the browser tab reads the short view name ("Cards DM", suffixed
+    with the unread count at runtime). Their 2026-07-29
     request was "not chat, use DM wording"; this one is about the heading
     CHANGING. Both hold once the band names the product and the switcher names
     the page.

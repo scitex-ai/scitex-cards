@@ -142,24 +142,32 @@
   gap: 6px;
   padding: 3px 4px 3px 9px;
   font-size: 0.78rem;
-  font-weight: 600;
-  color: #fff;
-  background: var(--purple);
-  border: 1px solid var(--purple);
+  /* No bold (operator 2026-10-24) — the chip reads as a label, not a call. */
+  font-weight: 400;
+  /* Brand CTA fill, not purple (operator 2026-10-24: the white-on-purple
+     chip read as foreign chrome). Same pairing as the Send rule and the
+     DWM --on state: --stx-brand flips navy/gold across themes while the
+     text token stays readable on both. */
+  color: var(--bg, var(--text-inverse));
+  background: var(--stx-brand, var(--text-link));
+  border: 1px solid var(--stx-brand, var(--text-link));
   border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
 }
 .filt-chip-key {
   opacity: 0.78;
-  font-weight: 500;
+  font-weight: 400;
 }
 .filt-chip-val {
-  font-weight: 700;
+  font-weight: 500;
 }
 .filt-chip-clear {
   appearance: none;
-  background: rgba(255, 255, 255, 0.18);
+  /* currentColor, not white: the chip text flips with the brand fill
+     (navy/gold), and a fixed-white × would wash out on gold. */
+  background: transparent;
   border: none;
-  color: #fff;
+  color: inherit;
+  opacity: 0.75;
   width: 18px;
   height: 18px;
   line-height: 16px;
@@ -167,10 +175,10 @@
   border-radius: 50%;
   cursor: pointer;
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 400;
 }
 .filt-chip-clear:hover {
-  background: rgba(255, 255, 255, 0.32);
+  opacity: 1;
 }
 
 /* Sort-by (P9) — small select inline with the filter trigger. */

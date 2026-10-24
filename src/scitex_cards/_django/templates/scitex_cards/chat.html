@@ -20,9 +20,9 @@ MIGRATION, not a rename: every bookmark the operator has and every agent
 reference to /chat would break for a label change. See _page_switcher.html,
 which carries the same decision next to the href it does NOT rename.
 
-chat_title.js PREFIXES this string at runtime — "(3) DM — SciTeX Cards v…" —
-so the base title lives here, in one place, and that module spells neither the
-version nor the word DM.
+chat_title.js SUFFIXES this string at runtime — "Cards DM (3)" (operator
+2026-10-24) — so the base title lives here, in one place, and that module
+spells neither the version nor the wording.
 {% endcomment %}
 {% comment %}
 No favicon link here: the SDK's shell supplies the shared SciTeX brand mark
@@ -173,7 +173,11 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
      for that reason: left on the nav, the filter scrolls away exactly when a
      list long enough to need filtering is being scrolled. */
   #agents {
-    width: 240px; flex: 0 0 auto; background: var(--panel);
+    /* 300px: the 240px column truncated the filter placeholder
+       ("Filter agents (Ctr…") and cramped Filter+New side by side
+       (operator 2026-10-24: the filter must fill its width). Phone
+       keeps the full-width drawer (chat_panes.css), untouched. */
+    width: 300px; flex: 0 0 auto; background: var(--panel);
     border-right: 1px solid var(--line);
     display: flex; flex-direction: column; min-height: 0;
   }
@@ -186,12 +190,27 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     display: flex; align-items: center; gap: 8px;
   }
   #agent-filter {
-    flex: 1 1 auto; min-width: 0; background: var(--panel-2); color: var(--text);
+    flex: 1 1 auto; min-width: 0; width: 100%; background: var(--panel-2); color: var(--text);
     border: 1px solid var(--line); border-radius: 6px;
-    padding: 6px 8px; font-size: 0.78rem; font-family: inherit;
+    padding: 6px 56px 6px 8px; font-size: 0.78rem; font-family: inherit;
   }
   #agent-filter::placeholder { color: var(--dim); }
   #agent-filter:focus { outline: none; border-color: var(--accent); }
+  /* Hub-style end-of-field shortcut hint (operator 2026-10-24): the kbd
+     marker carries the shortcut so the placeholder never inlines it.
+     Overlaid at the input's end, out of the tab order and pointer path,
+     fading while the operator types — the board twin behaves the same. */
+  .agent-filter-wrap { position: relative; flex: 1 1 auto; min-width: 0; display: flex; }
+  .agent-filter-kbd {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.68rem; line-height: 1.4; color: var(--dim);
+    background: none; border: none; padding: 0;
+    white-space: nowrap; pointer-events: none;
+    user-select: none; transition: opacity 120ms ease;
+  }
+  #agent-filter:focus ~ .agent-filter-kbd,
+  #agent-filter:not(:placeholder-shown) ~ .agent-filter-kbd { opacity: 0; }
   /* #dm-new — the "start a conversation" affordance beside the filter.
      It was a bare browser-default button next to a styled input (operator,
      2026-10-20: "not polished well"). It follows the page's ONE primary-
@@ -247,14 +266,20 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     font-size: 0.75rem; font-weight: 600; font-family: inherit;
     opacity: 0; pointer-events: none;
   }
-  /* Touch: the slide reveals the action sitting BENEATH the row (iOS).
-     Desktop: no slide — the action overlays the row's end on hover/focus,
-     so the row never shifts under a mouse that is about to click it. */
+  /* Touch: the slide reveals the action sitting BENEATH the row (iOS) —
+     the only place the inline action still appears. Desktop hover/focus
+     no longer reveals it (operator 2026-10-24): Hide/Pin live in the
+     right-click menu, and an action that appears on hover reads as a
+     control showing by default. */
   #agents .agent-wrap.open .row-act { opacity: 1; pointer-events: auto; }
-  #agents .agent-wrap:not(.open):hover .row-act, #agents .agent-wrap:not(.open):focus-within .row-act { opacity: 1; pointer-events: auto; z-index: 2; }
   #agents .row-hide { background: var(--panel-2); color: var(--dim); }
   #agents .row-hide:hover { color: var(--text); }
   #agents .row-unhide { background: var(--panel-2); color: var(--text-link); }
+  /* Pinned rows float first (server order); the mark is a glyph, not a
+     colour, so it survives every theme and needs no palette entry. */
+  #agents .agent-wrap.is-pinned .agent .name::before {
+    content: "📌 ";
+  }
   /* Hidden section: a disclosure row at the end of the list, iOS Hidden-album
      style. Collapsed by default; expanding shows the hidden rows with an
      Unhide action each. Unread hidden threads count into the disclosure. */
@@ -648,6 +673,12 @@ identical URLs, and the duplication is what keeps the board's load ORDER
 <style>
   /* Positioning only — every visual rule comes from base. */
   #msg-menu-wrap, #react-bar, #forward-menu { position: fixed; display: none; z-index: 40; }
+  /* Agent-row menu: hidden until opened, like the message menu above.
+     (Without this the Hide/Pin menu renders in flow on page load —
+     operator 2026-10-24: never show it by default.) The JS toggles
+     .open on #agent-menu itself and positions it inline at the cursor. */
+  #agent-menu { display: none; }
+  #agent-menu.open { display: block; }
   #forward-menu.open { display: block; }
   /* The wrap is the operator's sketch made literal: the quick reaction ROW,
      then the action LIST beneath it, opening and closing as one thing. Only
@@ -806,9 +837,12 @@ every `#agents .agent` rule still matches through the new wrapper.
     {# Operator 2026-10-23: the project selector lives ONLY in the top-most #}
     {# application header (shared SDK element) — the DM copy is dropped. #}
     <div id="agent-filter-row">
-      <input id="agent-filter" type="search" autocomplete="off"
-             placeholder="Filter agents&hellip;" aria-label="Filter agents"
-             aria-controls="agent-list">
+      <span class="agent-filter-wrap">
+        <input id="agent-filter" type="search" autocomplete="off"
+               placeholder="Filter agents&hellip;" aria-label="Filter agents"
+               aria-controls="agent-list">
+        <kbd class="agent-filter-kbd" aria-hidden="true">Ctrl+K</kbd>
+      </span>
       <button id="dm-new" type="button" aria-label="New conversation">New</button>
     </div>
     <div id="agent-list"><div class="empty">Loading conversations&hellip;</div></div>
@@ -876,6 +910,7 @@ actually SERVE it.
   <div id="agent-menu-wrap">
     <div id="agent-menu" class="stx-app-context-menu" role="menu" aria-label="Conversation actions">
       <button class="stx-app-context-menu__item" id="am-hide" role="menuitem">Hide</button>
+      <button class="stx-app-context-menu__item" id="am-pin" role="menuitem">Pin</button>
     </div>
   </div>
 {% comment %}

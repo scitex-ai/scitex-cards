@@ -193,21 +193,39 @@ class TestP1SearchAsLauncher:
         # Assert
         assert "attachSearchKeyboardLauncher()" in board_js
 
+    def test_search_launcher_uses_ctrl_k_not_slash(self, board_js):
+        # Operator 2026-10-24: the hub shell owns "/" for its global
+        # search — a page-level "/" capture starves it. The launcher
+        # answers Ctrl+K / Cmd+K and must not contain the old capture.
+        # Arrange
+        start = board_js.find("function attachSearchKeyboardLauncher")
+        # Act
+        body = board_js[start : start + 1200]
+        # Assert
+        assert 'e.key === "k"' in body and 'e.key === "/"' not in body
+
+    def test_search_escape_clears_before_blurring(self, board_js):
+        # Operator 2026-10-24: Esc is responsive — it empties a non-empty
+        # query first (DM parity, synthetic input event keeps chips/suggest
+        # in sync) and blurs the empty field as before.
+        # Arrange
+        start = board_js.find("function attachSearchKeyboardLauncher")
+        # Act
+        body = board_js[start : start + 1600]
+        # Assert
+        assert 'new Event("input"' in body and "search.blur()" in body
+
     def test_kbd_hint_in_search_placeholder_board_text_contains(self, board_text):
-        # Lead `032e41545fcf4ab4b98d864ec1770249` 2026-06-12: the
-        # standalone `.filt-search-kbd` pill was operator-judged
-        # noise and folded into the search input's placeholder per
-        # operator "just write the kbd in the search box". The pin
-        # now asserts the hint is INSIDE the placeholder text on
-        # `#f-search`, so the affordance is still discoverable but
-        # without the extra DOM chrome.
+        # Operator 2026-10-24: the shortcut lives in a hub-style kbd marker
+        # overlaid at the input's end — never inlined in the placeholder.
+        # The pin asserts the marker is SERVED and the placeholder carries
+        # no shortcut prose, so the affordance stays discoverable without
+        # eating the query space.
         # Arrange
         # Act
         # Assert
-        assert "/ to focus" in board_text, (
-            "search input must hint at the '/' keyboard shortcut in "
-            "its placeholder (operator UX, lead a2a "
-            "`032e41545fcf4ab4b98d864ec1770249`)"
+        assert '<kbd>Ctrl+K</kbd>' in board_text, (
+            "board search must serve the Ctrl+K kbd marker (operator UX)"
         )
 
     def test_kbd_hint_in_search_placeholder_board_text_contains_2(self, board_text):

@@ -81,6 +81,16 @@
     });
   }
 
+  /* True when a keydown must move focus to the filter input (operator
+   * 2026-10-24: Ctrl+K / Cmd+K — never bare `/`, which would fire while the
+   * operator types a message and steal the keystroke). Pure so the suite
+   * can exercise the real decision under node. */
+  function isFocusFilterKey(ev) {
+    if (!ev) return false;
+    if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return false;
+    return ev.key === "k" || ev.key === "K";
+  }
+
   /* Mount the filter.
    *
    * `input` and `list` are elements; the caller owns the lookup so this module
@@ -134,12 +144,30 @@
 
     input.addEventListener("input", apply);
 
-    /* Escape clears rather than blurs: the query is the thing in the way. */
+    /* Ctrl+K / Cmd+K focuses the filter from anywhere on the page (operator
+     * 2026-10-24: the focus shortcut, not bare `/`). preventDefault so the
+     * browser/chrome never sees it; select() so a repeated press retypes
+     * from a clean query rather than appending. */
+    function onDocKeydown(event) {
+      if (!isFocusFilterKey(event)) return;
+      event.preventDefault();
+      input.focus();
+      if (typeof input.select === "function") input.select();
+    }
+    doc.addEventListener("keydown", onDocKeydown);
+
+    /* Escape clears a non-empty query, blurs an empty one (board parity:
+     * Esc on the board empties first, then blurs — the two filters behave
+     * as one. preventDefault only rides the clear: on an empty field the
+     * event still bubbles so the swipe-row closer hears it. */
     input.addEventListener("keydown", function (event) {
-      if (event.key === "Escape" && input.value) {
+      if (event.key !== "Escape") return;
+      if (input.value) {
         event.preventDefault();
         input.value = "";
         apply();
+      } else if (typeof input.blur === "function") {
+        input.blur();
       }
     });
 
@@ -162,6 +190,7 @@
       destroy: function () {
         if (observer) observer.disconnect();
         input.removeEventListener("input", apply);
+        doc.removeEventListener("keydown", onDocKeydown);
       },
     };
   }
@@ -170,6 +199,7 @@
     matches: matches,
     filterNames: filterNames,
     substringMatch: substringMatch,
+    isFocusFilterKey: isFocusFilterKey,
     mount: mount,
   };
 });

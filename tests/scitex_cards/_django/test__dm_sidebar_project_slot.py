@@ -101,7 +101,7 @@ def test_header_slot_honours_the_suppression_flag():
     # Act
     honoured = "header_picker != False" in source
     # Assert
-    honoured
+    assert honoured
 
 
 def test_picker_partial_opts_user_scoped_leaves_in():
@@ -161,6 +161,107 @@ def test_agent_menu_receives_the_list_and_refresh_seams():
     mounted = "ChatMenu.mount" in script
     # Assert
     assert seams and mounted
+
+
+def test_agent_menu_serves_a_pin_item():
+    """The row menu offers Pin beside Hide (operator 2026-10-24) — served
+    in the template, not built at runtime, so the page can be asserted
+    to actually serve it."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    served = 'id="am-pin"' in template
+    # Assert
+    assert served
+
+
+def test_agent_menu_is_hidden_until_opened():
+    """The Hide/Pin menu must not render on page load (operator 2026-10-24:
+    never show it by default) — it opens at the cursor on right-click."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    hidden = "#agent-menu { display: none; }" in template
+    shown = "#agent-menu.open { display: block; }" in template
+    # Assert
+    assert hidden and shown
+
+
+def test_hover_does_not_reveal_the_inline_row_action():
+    """Hide/Pin live in the right-click menu only (operator 2026-10-24) —
+    a hover-revealed action reads as a control showing by default. The
+    touch slide (.open) keeps its reveal: it is the touch path to Hide."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    no_hover = ":hover .row-act" not in template
+    no_focus_reveal = "focus-within" not in template
+    slide_kept = ".agent-wrap.open .row-act" in template
+    # Assert
+    assert no_hover and no_focus_reveal and slide_kept
+
+
+def test_agent_menu_pins_through_its_own_endpoint():
+    """Pin/Unpin posts to the pinned endpoint — the same one-write-path
+    rule as Hide, not a second shape."""
+    # Arrange
+    script = (_STATIC / "chat" / "chat_menu.js").read_text(encoding="utf-8")
+    # Act
+    posts = '"/pinned"' in script and "{ pinned: pinned }" in script
+    refreshed = "refreshAgents" in script
+    # Assert
+    assert posts and refreshed
+
+
+def test_agent_menu_labels_pin_from_row_state():
+    """The item reads Unpin on a pinned row, Pin elsewhere — decided off
+    the row's own markup, the way Hide reads its hidden state."""
+    # Arrange
+    script = (_STATIC / "chat" / "chat_menu.js").read_text(encoding="utf-8")
+    # Act
+    labelled = 'pinBtn.textContent = pinned ? "Unpin" : "Pin"' in script
+    # Assert
+    assert labelled
+
+
+def test_pinned_rows_carry_their_marker_class():
+    """The 📌 mark rides an `is-pinned` row class fed by the server flag —
+    chat.js must stamp it or pinned rows float first with no visible mark."""
+    # Arrange
+    script = _CHAT_JS.read_text(encoding="utf-8")
+    # Act
+    stamped = "is-pinned" in script and "a.pinned" in script
+    # Assert
+    assert stamped
+
+
+def test_agent_list_fits_the_filter_row():
+    """The 240px column truncated the filter placeholder mid-shortcut
+    ("Filter agents (Ctr…") and cramped Filter+New (operator 2026-10-24:
+    the filter must fill its width). The column must clear 280px."""
+    # Arrange
+    import re
+
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    match = re.search(r"#agents \{(.*?)\}", template, flags=re.DOTALL)
+    width = re.search(r"width:\s*(\d+)px", match.group(1)) if match else None
+    # Assert
+    assert width is not None and int(width.group(1)) >= 280
+
+
+def test_agent_filter_carries_a_kbd_shortcut_marker():
+    """Operator 2026-10-24: the shortcut lives in a hub-style kbd marker
+    at the input's end — the placeholder never inlines it. Served in the
+    template, aria-hidden, and pointed nowhere (pointer-events none lives
+    in CSS, not assertable here)."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    served = '<kbd class="agent-filter-kbd" aria-hidden="true">Ctrl+K</kbd>' in template
+    short = "Ctrl+K to focus" not in template and "(Ctrl+K)" not in template
+    # Assert
+    assert served and short
 
 
 def test_list_fetches_every_row_including_hidden():
