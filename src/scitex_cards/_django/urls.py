@@ -11,6 +11,7 @@ from .handlers.chat import chat_view
 from .handlers.dm import (
     dm_agents_view,
     dm_exchange_view,
+    dm_pinned_view,
     dm_reaction_view,
     dm_thread_view,
     dm_threads_view,
@@ -154,6 +155,14 @@ urlpatterns = [
         "dm/thread/<str:peer>/hidden",
         dm_visibility_view,
         name="dm_visibility",
+    ),
+    # Pin/unpin a conversation for the current reader (operator 2026-10-24:
+    # CRUD ops as right-click on the agent list). Same nesting, same
+    # authority rule, same append-only view-state table as hiding.
+    path(
+        "dm/thread/<str:peer>/pinned",
+        dm_pinned_view,
+        name="dm_pinned",
     ),
     # Chat attachments — the operator's top blocker was a text-only chat.
     # Upload returns a relative URL the composer puts in the message body;

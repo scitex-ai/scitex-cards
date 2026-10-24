@@ -202,7 +202,10 @@
    * the swipe action ChatHide owns. Without ChatHide the row degrades to a
    * plain tap-to-open row — no dead controls. */
   function agentItem(a, isHidden) {
-    var wrap = el("div", "agent-wrap" + (isHidden ? " is-hidden" : ""));
+    var wrap = el(
+      "div",
+      "agent-wrap" + (isHidden ? " is-hidden" : "") + (a.pinned ? " is-pinned" : ""),
+    );
     var item = el("div", "agent" + (a.name === state.peer ? " active" : ""));
     item.appendChild(avatarFor(a.name));
     var cols = el("div", "cols");

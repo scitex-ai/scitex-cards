@@ -20,13 +20,13 @@ Endpoints::
 
     GET  /dm/threads[?show=all|hidden]
       -> 200 + {"agents": [{"name", "kind", "unread", "last_ts",
-                            "last_body", "hidden"}, ...]}
+                            "last_body", "hidden", "pinned"}, ...]}
          The union of the ``users:`` registry and any peer that already has
-         a DM thread with the operator, sorted by most-recent activity.
-         Every row carries ``hidden`` for the current reader; hidden rows
-         are EXCLUDED by default. ``?show=all`` includes them (flagged);
-         ``?show=hidden`` answers only them — the Hidden section the
-         iOS-style list renders from the same call.
+         a DM thread with the operator, pinned rows first, then most-recent
+         activity. Every row carries ``hidden`` and ``pinned`` for the
+         current reader; hidden rows are EXCLUDED by default. ``?show=all``
+         includes them (flagged); ``?show=hidden`` answers only them — the
+         Hidden section the iOS-style list renders from the same call.
 
     GET  /dm/thread/<peer>[?mark_read=1]
       -> 200 + {"thread": <id>, "peer": <peer>, "messages": [...]}
@@ -42,6 +42,14 @@ Endpoints::
          this is NOT deletion under the append-only ruling — it only decides
          whether this reader's list shows the row. 400 on an unknown thread
          (hiding names an existing conversation) or a non-boolean body.
+
+    POST /dm/thread/<peer>/pinned   body = {"pinned": true|false}
+      -> 200 + {"thread": <id>, "peer": <peer>, "pinned": <bool>,
+                "changed": <bool>}
+         Pin (or unpin) the current user's conversation with ``peer``.
+         Per-reader view state in the same append-only event table as
+         hiding — pinned rows float above the recency order. 400 on an
+         unknown thread or a non-boolean body.
 
     POST /dm/thread/<peer>   body = {"body": "<text>"}
       -> 202 + {"message": <stored record>, "exchange": <delivery state>}
@@ -440,6 +448,7 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
             status=400,
         )
     hidden_threads = _dm_read.hidden_for(reader, store=store)
+    pinned_threads = _dm_read.pinned_for(reader, store=store)
     rows: dict[str, dict] = {}
     for agent in _registry_agents(store):
         rows[agent["name"]] = {
@@ -449,6 +458,7 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
             "last_ts": None,
             "last_body": None,
             "hidden": False,
+            "pinned": False,
         }
     # Merge in any peer that already has a thread with the CURRENT reader
     # (covers unregistered senders — the thread store is the SSOT of who
@@ -476,9 +486,11 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
                 "last_ts": None,
                 "last_body": None,
                 "hidden": False,
+                "pinned": False,
             },
         )
         row["hidden"] = key in hidden_threads
+        row["pinned"] = key in pinned_threads
         row["unread"] = summary["unread"].get(reader, 0)
         last = summary["last"]
         if last is not None:
@@ -490,8 +502,13 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
         agents = [r for r in rows.values() if r["hidden"]]
     else:
         agents = list(rows.values())
+    # Pinned rows float above the recency order (operator 2026-10-24); the
+    # client partitions hidden/visible without re-sorting, so the server
+    # order is the rendered order.
     agents = sorted(
-        agents, key=lambda r: (r["last_ts"] or "", r["name"]), reverse=True
+        agents,
+        key=lambda r: (r["pinned"], r["last_ts"] or "", r["name"]),
+        reverse=True,
     )
     return JsonResponse({"agents": agents})
 
@@ -835,9 +852,66 @@ def dm_visibility_view(request: HttpRequest, peer: str) -> HttpResponse:
     )
 
 
+@csrf_exempt
+@_typed_store_refusals
+def dm_pinned_view(request: HttpRequest, peer: str) -> HttpResponse:
+    """Pin (or unpin) the CURRENT USER's conversation with ``peer``.
+
+    The pin mirror of :func:`dm_visibility_view`: the thread is derived
+    server-side from ``(reader, peer)``, pinning is per-reader view state
+    (``pin``/``unpin`` events in the same append-only table — never
+    content, never a deletion), and the response answers the resulting
+    state. ``unknown-thread`` (400) for a peer with no conversation.
+    """
+    if request.method != "POST":
+        return JsonResponse(
+            {"error": "method-not-allowed", "method": request.method}, status=405
+        )
+    if not peer or not peer.strip():
+        return JsonResponse({"error": "empty peer name"}, status=400)
+    peer = peer.strip()
+    reader = _author_of(request)
+    try:
+        payload = json.loads(request.body or b"{}")
+    except json.JSONDecodeError as exc:
+        return JsonResponse({"error": f"invalid JSON body: {exc}"}, status=400)
+    if not isinstance(payload, dict):
+        return JsonResponse({"error": "pin requires a JSON object"}, status=400)
+
+    pinned = payload.get("pinned")
+    if not isinstance(pinned, bool):
+        return JsonResponse(
+            {"error": "pin requires a boolean 'pinned'"},
+            status=400,
+        )
+    key = _threads.thread_key(reader, peer)
+    try:
+        result = _dm_write.set_thread_pinned(
+            key, reader, pinned, store=_write_store_of(request), actor=reader
+        )
+    except KeyError:
+        return JsonResponse(
+            {"error": "unknown-thread", "peer": peer},
+            status=400,
+        )
+    # Answer with the RESULTING state rather than echoing the request, so
+    # the tapping client renders what every other client will see on its
+    # next poll instead of guessing the result of its own write.
+    return JsonResponse(
+        {
+            "thread": result["thread_id"],
+            "peer": peer,
+            "pinned": result["pinned"],
+            "changed": result["changed"],
+        },
+        json_dumps_params={"default": str},
+    )
+
+
 __all__ = [
     "dm_agents_view",
     "dm_exchange_view",
+    "dm_pinned_view",
     "dm_reaction_view",
     "dm_thread_view",
     "dm_threads_view",

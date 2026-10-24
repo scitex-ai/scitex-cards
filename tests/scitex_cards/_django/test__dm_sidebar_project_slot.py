@@ -163,6 +163,52 @@ def test_agent_menu_receives_the_list_and_refresh_seams():
     assert seams and mounted
 
 
+def test_agent_menu_serves_a_pin_item():
+    """The row menu offers Pin beside Hide (operator 2026-10-24) — served
+    in the template, not built at runtime, so the page can be asserted
+    to actually serve it."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    served = 'id="am-pin"' in template
+    # Assert
+    assert served
+
+
+def test_agent_menu_pins_through_its_own_endpoint():
+    """Pin/Unpin posts to the pinned endpoint — the same one-write-path
+    rule as Hide, not a second shape."""
+    # Arrange
+    script = (_STATIC / "chat" / "chat_menu.js").read_text(encoding="utf-8")
+    # Act
+    posts = '"/pinned"' in script and "{ pinned: pinned }" in script
+    refreshed = "refreshAgents" in script
+    # Assert
+    assert posts and refreshed
+
+
+def test_agent_menu_labels_pin_from_row_state():
+    """The item reads Unpin on a pinned row, Pin elsewhere — decided off
+    the row's own markup, the way Hide reads its hidden state."""
+    # Arrange
+    script = (_STATIC / "chat" / "chat_menu.js").read_text(encoding="utf-8")
+    # Act
+    labelled = 'pinBtn.textContent = pinned ? "Unpin" : "Pin"' in script
+    # Assert
+    assert labelled
+
+
+def test_pinned_rows_carry_their_marker_class():
+    """The 📌 mark rides an `is-pinned` row class fed by the server flag —
+    chat.js must stamp it or pinned rows float first with no visible mark."""
+    # Arrange
+    script = _CHAT_JS.read_text(encoding="utf-8")
+    # Act
+    stamped = "is-pinned" in script and "a.pinned" in script
+    # Assert
+    assert stamped
+
+
 def test_list_fetches_every_row_including_hidden():
     """The client partitions (visible + Hidden disclosure), so it must fetch
     ``?show=all`` — the default would hide hidden rows from the client that

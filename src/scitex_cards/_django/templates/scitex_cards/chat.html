@@ -255,6 +255,11 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   #agents .row-hide { background: var(--panel-2); color: var(--dim); }
   #agents .row-hide:hover { color: var(--text); }
   #agents .row-unhide { background: var(--panel-2); color: var(--text-link); }
+  /* Pinned rows float first (server order); the mark is a glyph, not a
+     colour, so it survives every theme and needs no palette entry. */
+  #agents .agent-wrap.is-pinned .agent .name::before {
+    content: "📌 ";
+  }
   /* Hidden section: a disclosure row at the end of the list, iOS Hidden-album
      style. Collapsed by default; expanding shows the hidden rows with an
      Unhide action each. Unread hidden threads count into the disclosure. */
@@ -876,6 +881,7 @@ actually SERVE it.
   <div id="agent-menu-wrap">
     <div id="agent-menu" class="stx-app-context-menu" role="menu" aria-label="Conversation actions">
       <button class="stx-app-context-menu__item" id="am-hide" role="menuitem">Hide</button>
+      <button class="stx-app-context-menu__item" id="am-pin" role="menuitem">Pin</button>
     </div>
   </div>
 {% comment %}
