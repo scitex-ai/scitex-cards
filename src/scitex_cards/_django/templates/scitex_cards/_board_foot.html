@@ -3064,7 +3064,17 @@
           return;
         }
         if (e.key === "Escape" && document.activeElement === search) {
-          search.blur();
+          if (search.value) {
+            // Responsive clear first (DM parity): Esc empties a non-empty
+            // query and stays focused for the retype; Esc on the empty
+            // field blurs as before. The synthetic input event runs the
+            // same sync the keystroke path runs (details field, chips,
+            // suggest, render) — clearing must not leave those stale.
+            search.value = "";
+            search.dispatchEvent(new Event("input", { bubbles: true }));
+          } else {
+            search.blur();
+          }
         }
       });
     }

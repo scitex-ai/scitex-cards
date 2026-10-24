@@ -204,6 +204,17 @@ class TestP1SearchAsLauncher:
         # Assert
         assert 'e.key === "k"' in body and 'e.key === "/"' not in body
 
+    def test_search_escape_clears_before_blurring(self, board_js):
+        # Operator 2026-10-24: Esc is responsive — it empties a non-empty
+        # query first (DM parity, synthetic input event keeps chips/suggest
+        # in sync) and blurs the empty field as before.
+        # Arrange
+        start = board_js.find("function attachSearchKeyboardLauncher")
+        # Act
+        body = board_js[start : start + 1600]
+        # Assert
+        assert 'new Event("input"' in body and "search.blur()" in body
+
     def test_kbd_hint_in_search_placeholder_board_text_contains(self, board_text):
         # Operator 2026-10-24: the shortcut lives in a hub-style kbd marker
         # overlaid at the input's end — never inlined in the placeholder.

@@ -347,3 +347,16 @@ def test_destroy_unbinds_the_document_shortcut() -> None:
     unbound = 'doc.removeEventListener("keydown", onDocKeydown)' in source
     # Assert
     assert unbound
+
+
+def test_escape_on_an_empty_filter_blurs() -> None:
+    """Operator 2026-10-24: Esc clears a non-empty query, blurs an empty
+    one — the board launcher behaves the same, so the two filters act
+    as one. The event still bubbles when empty so the swipe-row closer
+    hears it (preventDefault rides the clear only)."""
+    # Arrange
+    source = JS_FILE.read_text(encoding="utf-8")
+    # Act
+    blurs = "input.blur()" in source
+    # Assert
+    assert blurs

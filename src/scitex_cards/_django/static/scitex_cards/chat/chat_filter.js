@@ -156,12 +156,18 @@
     }
     doc.addEventListener("keydown", onDocKeydown);
 
-    /* Escape clears rather than blurs: the query is the thing in the way. */
+    /* Escape clears a non-empty query, blurs an empty one (board parity:
+     * Esc on the board empties first, then blurs — the two filters behave
+     * as one. preventDefault only rides the clear: on an empty field the
+     * event still bubbles so the swipe-row closer hears it. */
     input.addEventListener("keydown", function (event) {
-      if (event.key === "Escape" && input.value) {
+      if (event.key !== "Escape") return;
+      if (input.value) {
         event.preventDefault();
         input.value = "";
         apply();
+      } else if (typeof input.blur === "function") {
+        input.blur();
       }
     });
 
