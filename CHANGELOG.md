@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.9] - 2026-10-24
+
+- Operator follow-ups 2026-10-24 (scitex-cards lane): agent list fits the
+  filter row (240px to 300px; phone drawer untouched); Hide/Pin live in
+  the right-click menu only — the menu renders hidden until opened and
+  the hover/focus reveal is removed (touch slide keeps its reveal).
+
 ## [0.56.8] - 2026-10-24
 
 - Operator batch 2026-10-24 (scitex-cards lane): short counted tab titles
