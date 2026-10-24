@@ -1657,6 +1657,11 @@
       // --ui-collapsed-pane-width and flips the header into the vertical
       // icon+label strip. We only toggle it — the behaviour is the shell's.
       const on = pane.classList.toggle("collapsed");
+      // Keyboard parity with the guarded rail onclick/_board_pane.html: the
+      // rail is a tab stop only while collapsed (the state where the 13px
+      // toggle may clip out of reach). Open, every inner control is
+      // reachable on its own, so the pane itself stays out of the tab order.
+      pane.tabIndex = on ? 0 : -1;
       const btn = document.getElementById("details-toggle");
       if (btn) {
         btn.setAttribute("aria-expanded", on ? "false" : "true");
@@ -1676,6 +1681,9 @@
       const pane = document.getElementById("details-panel");
       const btn = document.getElementById("details-toggle");
       if (pane) pane.classList.toggle("collapsed", collapsed);
+      // Same rail tab-stop contract as toggleDetailsPane above: focusable
+      // while collapsed, out of the tab order while open.
+      if (pane) pane.tabIndex = collapsed ? 0 : -1;
       if (btn) {
         btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
         btn.textContent = collapsed ? "‹" : "›";

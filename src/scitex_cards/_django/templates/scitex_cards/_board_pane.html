@@ -284,8 +284,14 @@
              an open pane never collapse it; the toggle button's own handler
              runs first on bubble and clears the class, so this is a no-op
              there rather than a double toggle.
+             Keyboard parity: the rail is focusable while collapsed
+             (tabindex, kept in sync by toggleDetailsPane/_syncDetailsPane)
+             and Enter/Space expand it under the same collapsed guard, so
+             pointer-free users are not limited to the 13px toggle.
            {% endcomment %}
-           onclick="if(this.classList.contains('collapsed'))toggleDetailsPane()">
+           tabindex="0"
+           onclick="if(this.classList.contains('collapsed'))toggleDetailsPane()"
+           onkeydown="if(this.classList.contains('collapsed')&&(event.key==='Enter'||event.key===' ')){event.preventDefault();toggleDetailsPane()}">
       {% comment %}
         The pane itself is the SDK's `.stx-shell-sidebar` — the SAME
         workspace-pane primitive Writer / Scholar / Console use (shell CSS
