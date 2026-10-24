@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The DM sidebar carries the project selector + hide wiring (no mocks).
+"""The DM sidebar + hide wiring (no mocks). The header carries the picker.
 
-Operator 2026-10-22: the project selector "must be placed there just like
-other applications" — there being the agent-list sidebar the element
-inspector captured (``div#agent-list`` in ``nav#agents``). Card
-cards-dm-spaces-crud-hide-20261022 adds hide/unhide beside it.
+Operator 2026-10-23: the project selector lives ONLY in the top-most
+application header (shared SDK element) — the DM sidebar copy is dropped.
+Card cards-dm-spaces-crud-hide-20261022 adds hide/unhide beside the list.
 
 What is pinned:
 
-  1. The sidebar renders the CANONICAL picker (``_project_picker.html``),
+  1. The HEADER renders the CANONICAL picker (``_project_picker.html``),
      guarded by the availability flag — never a second hand-rolled picker.
-  2. Exactly ONE picker per page: chat suppresses the header slot
-     (``header_picker=False``); the board does not pass the flag, so its
-     header slot is unaffected.
+  2. Exactly ONE picker per page: NEITHER page passes ``header_picker=False``;
+     the sidebar carries no picker markup.
   3. The list fetches ``?show=all`` (the client partitions) and mounts
      ``ChatHide`` for the row actions — asserted against the sources, the
      way ``test__dm_unread_in_page_title`` asserts wiring.
@@ -65,34 +63,24 @@ def _nav_agents_region(source: str) -> str:
 # --- ONE canonical picker, in the sidebar ----------------------------------
 
 
-def test_sidebar_includes_the_canonical_picker():
-    """The sidebar serves the SDK partial, not a hand-rolled dropdown."""
+def test_sidebar_carries_no_picker():
+    """The DM sidebar drops the picker; the header owns it."""
     # Arrange
     region = _nav_agents_region(_CHAT.read_text(encoding="utf-8"))
     # Act
-    serves = '_project_picker.html' in region
+    clean = '_project_picker.html' not in region and 'dm-project' not in region
     # Assert
-    assert serves
+    assert clean
 
 
-def test_sidebar_picker_is_availability_guarded():
-    """No provider → no picker chrome and no empty row costs."""
-    # Arrange
-    region = _nav_agents_region(_CHAT.read_text(encoding="utf-8"))
-    # Act
-    guarded = "cards_project_picker_available" in region
-    # Assert
-    assert guarded
-
-
-def test_chat_suppresses_the_header_picker_slot():
-    """Two pickers on one page is the defect; the flag is the fix."""
+def test_chat_uses_the_header_picker_slot():
+    """Two pickers on one page is the defect; header-only is the fix."""
     # Arrange
     source = _CHAT.read_text(encoding="utf-8")
     # Act
     suppressed = "header_picker=False" in source
     # Assert
-    assert suppressed
+    assert not suppressed
 
 
 def test_board_keeps_the_header_picker_slot():
@@ -130,6 +118,49 @@ def test_picker_partial_opts_user_scoped_leaves_in():
 
 
 # --- hide/unhide wiring ----------------------------------------------------
+
+
+def test_agent_rows_offer_a_context_menu():
+    """Right-click on an agent row must open a row menu (operator 2026-10-23:
+    CRUD ops as right-click on the agent list). The template serves the
+    menu markup; chat_menu.js mounts it. A menu with nothing behind it
+    would be a dead control — Hide/Unhide rides the existing visibility
+    endpoint, the only row action with a backend."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    script = (_STATIC / "chat" / "chat_menu.js").read_text(encoding="utf-8")
+    # Act
+    served = 'id="agent-menu"' in template
+    mounted = "mountAgentMenu" in script or "agentMenu" in script
+    # Assert
+    assert served and mounted
+
+
+def test_agent_menu_hides_and_unhides_through_the_visibility_endpoint():
+    """The row menu's Hide/Unhide posts to the visibility endpoint —
+    the same one the swipe action uses. No second write path."""
+    # Arrange
+    script = (_STATIC / "chat" / "chat_menu.js").read_text(encoding="utf-8")
+    hide = (_STATIC / "chat" / "chat_hide.js").read_text(encoding="utf-8")
+    # Act
+    path = "/dm/thread/"
+    menu_posts = path in script and "/hidden" in script
+    same_as_swipe = path in hide and "/hidden" in hide
+    # Assert
+    assert menu_posts and same_as_swipe
+
+
+def test_agent_menu_receives_the_list_and_refresh_seams():
+    """The row menu needs the agent list element (right-click target)
+    and the list refresh (post-Hide repaint). chat.js passes both —
+    a menu mounted without them silently never opens."""
+    # Arrange
+    script = (_STATIC / "chat" / "chat.js").read_text(encoding="utf-8")
+    # Act
+    seams = "agentsEl" in script and "refreshAgents" in script
+    mounted = "ChatMenu.mount" in script
+    # Assert
+    assert seams and mounted
 
 
 def test_list_fetches_every_row_including_hidden():

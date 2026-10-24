@@ -233,12 +233,6 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   #agents .agent .preview { color: var(--dim); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #agents .empty { color: var(--dim); font-size: 0.8rem; padding: 14px; }
-  /* Project selector row (operator 2026-10-22: at the top of the
-     conversation list, like other applications). The canonical SDK partial
-     renders inside; this only gives it the row's spacing so a missing
-     provider costs nothing and a present one aligns with the filter row. */
-  #dm-project { flex: 0 0 auto; padding: 8px 8px 0; }
-  #dm-project:empty { display: none; }
   /* ---- hide/unhide (card cards-dm-spaces-crud-hide-20261022) ----
      iOS pattern: the row slides left over a Hide action (touch swipe);
      on desktop the same action appears on hover/focus instead of a slide.
@@ -442,7 +436,13 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   #compose {
     display: flex; flex-direction: column; gap: 6px; padding: 6px 12px;
     border-top: 1px solid var(--line); background: var(--panel); flex: 0 0 auto;
-    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+  /* Phone home-indicator clearance: the safe-area inset exists ONLY where
+     the OS reports one (notched phones). Unconditional calc(6px + env(...))
+     leaves a permanent dead strip under the composer on desktop — the
+     operator 2026-10-23 bottom gap. Gate the extra inset behind support. */
+  @supports (padding-bottom: env(safe-area-inset-bottom)) {
+    #compose { padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
   }
   #compose-row {
     display: flex; align-items: flex-end; gap: 6px;
@@ -467,6 +467,14 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   #compose-row > button:disabled {
     background: var(--panel-2); color: var(--dim); border-color: var(--line); cursor: not-allowed;
+  }
+  /* Send is the one primary action: the shared brand CTA token (navy on
+     light, gold on dark — operator 2026-10-23). The generic link-blue it
+     wore read as inactive chrome next to the gray disabled state; the
+     brand fill (with the DWM --on state sharing the same token) reads
+     as the action. Disabled stays a flat muted fill, never faded brand. */
+  #compose-row > #compose-send {
+    background: var(--stx-brand, var(--text-link)); color: var(--bg, var(--text-inverse)); border-color: var(--stx-brand, var(--text-link));
   }
   /* Two ids, so this outranks the `#compose-row > button` rule above it —
      an id-plus-element selector is MORE specific than a bare id, so the
@@ -771,7 +779,7 @@ the tab row below it arrive via the shared partial, identical on both pages.
   messages with the agents", and the browser tab reads "DM — SciTeX Cards v…").
   The band above the switcher names the PRODUCT; the switcher names the page.
   {% endcomment %}
-  {% include "scitex_cards/_page_header.html" with page_title="Cards" header_picker=False %}
+  {% include "scitex_cards/_page_header.html" with page_title="SciTeX Cards" %}
 </header>
 {% include "scitex_cards/_page_tabs.html" with active="chat" %}
 <div id="dm-pane">
@@ -795,21 +803,8 @@ template). `#agents` keeps its id because the mobile drawer is mounted on it and
 every `#agents .agent` rule still matches through the new wrapper.
 {% endcomment %}
   <nav id="agents" aria-label="Agents">
-{% comment %}
-The project selector lives HERE — at the top of the conversation list —
-not in the header. Operator 2026-10-22: it "must be placed there just like
-other applications", and there is the agent-list sidebar they inspected.
-The canonical SDK partial renders it (same markup the header used to serve,
-so behaviour and styling are identical); this page passes
-`header_picker=False` above so the header slot stays empty and the page
-carries exactly ONE selector. Like the filter row, it CANNOT live inside
-`#agent-list` — `renderAgents` clears that element on every poll.
-{% endcomment %}
-    {% if cards_project_picker_available %}
-    <div id="dm-project">
-      {% include "scitex_cards/_project_picker.html" with current=cards_current_project_id picker_scope=app_scope %}
-    </div>
-    {% endif %}
+    {# Operator 2026-10-23: the project selector lives ONLY in the top-most #}
+    {# application header (shared SDK element) — the DM copy is dropped. #}
     <div id="agent-filter-row">
       <input id="agent-filter" type="search" autocomplete="off"
              placeholder="Filter agents (Ctrl+K)&hellip;" aria-label="Filter agents (Ctrl+K)"
@@ -864,6 +859,23 @@ emoji, not an icon font, so it cannot fail to resolve over the tunnel.
       <button class="stx-app-context-menu__item" id="mm-copy" role="menuitem">Copy</button>
       <button class="stx-app-context-menu__item" id="mm-forward" role="menuitem">Forward&hellip;</button>
       <button class="stx-app-context-menu__item" id="mm-select" role="menuitem">Select</button>
+    </div>
+  </div>
+{% comment %}
+AGENT-ROW menu (operator 2026-10-23: CRUD ops as right-click on the
+agent list). The message menu above owns message actions; this one
+owns ROW actions and lives beside it so the two never share items.
+Hide/Unhide rides the existing dm/visibility endpoint — the only row
+action with a backend. A menu needs a backing endpoint per item or it
+is a dead control: rename/delete/archive/mute have no DM endpoint
+(append-only store, no tombstone), so they are NOT offered — the menu
+is Hide/Unhide only, and grows only when a backend lands.
+Like mm-* above, the item lives here so the page can be asserted to
+actually SERVE it.
+{% endcomment %}
+  <div id="agent-menu-wrap">
+    <div id="agent-menu" class="stx-app-context-menu" role="menu" aria-label="Conversation actions">
+      <button class="stx-app-context-menu__item" id="am-hide" role="menuitem">Hide</button>
     </div>
   </div>
 {% comment %}

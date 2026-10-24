@@ -10,7 +10,7 @@
   their own stacked rows — never inside .fb-left, whose flex row would lay
   them out side by side instead of stacked.
   {% endcomment %}
-  {% include "scitex_cards/_page_header.html" with page_title="Cards" %}
+  {% include "scitex_cards/_page_header.html" with page_title="SciTeX Cards" %}
   {% include "scitex_cards/_page_tabs.html" with active="board" %}
   {% endif %}
   {% comment %}
@@ -367,7 +367,15 @@
             </div>
             <div class="details-row" data-details-board="live">
               <label>{% translate "Live" %}</label>
-              <span class="details-live" id="details-live"><span class="live-dot"></span>LIVE</span>
+              {% comment %}
+               LIVE badge ships DARK: "CONNECTING" until a read succeeds.
+               renderDetailsBoard() (_board_foot.html) is the single writer —
+               it flips to LIVE only when STATE.graph exists and reverts on
+               any failed read. Static markup claiming LIVE is the 2026-09-17
+               operator defect (badge true of the markup, not of the data), so
+               the shipped text matches the pre-read state exactly.
+             {% endcomment %}
+             <span class="details-live details-live--off" id="details-live" data-stx-live-gate><span class="live-dot"></span>CONNECTING</span>
             </div>
           </div>
         </div>
@@ -407,8 +415,11 @@
           </button>
           <div class="details-section-body">
             <div class="details-row details-row--filter">
-              <label for="f-project">{% translate "Project" %}</label>
-              <select class="filt" id="f-project"><option value="">{% translate "All projects" %}</option></select>
+              <label for="f-text">{% translate "Text" %}</label>
+              <input class="filt filt-text" id="f-text" type="search"
+                     placeholder="buzzword…"
+                     title="Free-text: substring, case-insensitive, across title / text / project / assignee / note"
+                     oninput="onDetailsTextInput(event)">
             </div>
             <div class="details-row details-row--filter">
               <label for="f-agent">{% translate "Assignee" %}</label>

@@ -130,11 +130,26 @@
   letter-spacing: 0.04em;
 }
 /* The six dropdowns are full-width here instead of squeezed into a header
- * popover — the "もっと使いやすい形でのフィルタ" the operator asked for. */
-.details-row--filter select {
+ * popover — the "もっと使いやすい形でのフィルタ" the operator asked for.
+ * Overlay-style 2026-10-23 (operator: dropdowns must never push the pane):
+ * the row is width-capped with hidden overflow and the select ellipsizes,
+ * so a long option value truncates instead of widening the pane. The
+ * native option list itself already paints as an OS overlay above the
+ * pane — only the inline ROW needed pinning. The free-text row (f-text,
+ * item 5) shares the same cap via the same rule. */
+.details-row--filter {
+  max-width: 100%;
+  overflow: hidden;
+}
+.details-row--filter select,
+.details-row--filter input.filt-text {
   flex: 1 1 auto;
   min-width: 0;
   max-width: 100%;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .details-check {
   display: flex;
@@ -164,12 +179,16 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* --- timescale (d / w / m) -------------------------------------------- */
+/* --- timescale (d / w / m) --------------------------------------------
+   Operator 2026-10-23: squared, non-toy. Was a 7px-radius segmented pill
+   with a purple fill -- both violate the no-curly rule. Now square 2px
+   with the brand accent for the active state. The group keeps
+   overflow:hidden so the inner button corners clip. */
 .details-scale {
   display: inline-flex;
   margin: 2px 0 10px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 2px;
   overflow: hidden;
 }
 .details-scale-btn {
@@ -191,8 +210,8 @@
   color: var(--text);
 }
 .details-scale-btn--on {
-  background: var(--purple);
-  color: #fff;
+  background: var(--stx-brand, var(--text));
+  color: var(--bg, #000);
 }
 
 /* --- stats bars -------------------------------------------------------
@@ -231,7 +250,7 @@
 .stat-bar-track {
   display: block;
   height: 9px;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   background: rgba(255, 255, 255, 0.06);
   overflow: hidden;
 }
@@ -239,7 +258,7 @@
   display: block;
   height: 100%;
   min-width: 2px;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   transition: width 160ms ease;
 }
 .stat-num {

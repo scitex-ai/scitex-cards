@@ -465,7 +465,81 @@
     }
 
     buildEmojiPanels();
+    mountAgentMenu(host);
     return { close: closeAll, renderReactions: renderReactions };
+  }
+
+  /* Agent-row menu (operator 2026-10-23: CRUD ops as right-click on the
+   * agent list). Separate popover from the message menu: different target
+   * (row, not .msg), different items (Hide/Unhide, not Reply/Copy/...).
+   * Hide/Unhide POSTs the same dm/visibility endpoint the swipe action
+   * uses — one write path. The peer name rides the row's own markup
+   * (chat.js builds it), so the menu addresses the record, not pixels.
+   * Items without a backend (rename/delete/archive/mute — append-only
+   * store, no tombstone) are NOT added: a dead menu item is worse than
+   * a missing one, and the menu grows only when a backend lands. */
+  function mountAgentMenu(host) {
+    var wrap = document.getElementById("agent-menu-wrap");
+    var menu = document.getElementById("agent-menu");
+    var hideBtn = document.getElementById("am-hide");
+    var list = host && host.agentsEl ? host.agentsEl : document.getElementById("agent-list");
+    if (!wrap || !menu || !hideBtn || !list) return null;
+    var peer = null; // the row's agent name the menu was opened on
+    function close() {
+      menu.classList.remove("open");
+      peer = null;
+    }
+    function postHidden(name, hidden) {
+      var base = (host && host.apiBase) || window.API_BASE || "";
+      return fetch(base + "/dm/thread/" + encodeURIComponent(name) + "/hidden", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hidden: hidden }),
+      }).then(function (r) {
+        if (!r.ok) throw new Error("visibility " + r.status);
+        return r.json();
+      });
+    }
+    hideBtn.addEventListener("click", function () {
+      var name = peer;
+      var hide = hideBtn.textContent !== "Unhide";
+      close();
+      if (!name) return;
+      postHidden(name, hide)
+        .then(function () {
+          if (host && host.refreshAgents) host.refreshAgents();
+        })
+        .catch(function (err) {
+          if (host && host.showError) host.showError(String((err && err.message) || err));
+        });
+    });
+    list.addEventListener("contextmenu", function (event) {
+      var row = event.target.closest ? event.target.closest(".agent") : null;
+      if (!row) return; // blank space keeps the browser menu
+      event.preventDefault();
+      var nameEl = row.querySelector(".name");
+      peer = nameEl ? nameEl.textContent.trim() : null;
+      if (!peer) return;
+      var hidden = row.classList.contains("is-hidden") ||
+        (row.parentElement && row.parentElement.classList.contains("is-hidden"));
+      hideBtn.textContent = hidden ? "Unhide" : "Hide";
+      menu.classList.add("open");
+      var rect = menu.getBoundingClientRect();
+      var pad = 8;
+      var maxX = window.innerWidth - rect.width - pad;
+      var maxY = window.innerHeight - rect.height - pad;
+      menu.style.left = Math.max(pad, Math.min(event.clientX, maxX)) + "px";
+      menu.style.top = Math.max(pad, Math.min(event.clientY, maxY)) + "px";
+    });
+    document.addEventListener("click", function (event) {
+      if (!menu.classList.contains("open")) return;
+      if (!menu.contains(event.target)) close();
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") close();
+    });
+    list.addEventListener("scroll", close);
+    return { close: close };
   }
 
   root.ChatMenu = { mount: mount };

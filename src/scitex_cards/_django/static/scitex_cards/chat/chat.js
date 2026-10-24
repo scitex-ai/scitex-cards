@@ -557,6 +557,8 @@
           count > 1 ? count + " messages forwarded to " : "Forwarded to ";
         showNotice(many + toPeer + ".");
       },
+      agentsEl: $agents,
+      refreshAgents: refreshAgents,
     });
   }
 

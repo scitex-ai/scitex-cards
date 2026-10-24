@@ -23,6 +23,7 @@ pytest.importorskip("django")
 from django.test import RequestFactory  # noqa: E402
 
 from scitex_cards._django import views  # noqa: E402
+from scitex_cards._django.views import _cards_version  # noqa: E402
 
 _ID_RE = re.compile(r'id="([a-zA-Z0-9_-]+)"')
 
@@ -71,11 +72,13 @@ def test_unified_page_runs_both_panes_scripts(unified_html):
 
 def test_unified_page_renders_exactly_one_shared_header_mount(unified_html):
     # Arrange — the leaf no longer hand-rolls the row (learn-from-stats):
-    # one SDK mount stub per page, identity as data attributes.
+    # one SDK mount stub per page, identity as data attributes. The version
+    # reads live from the same _cards_version() reader the view uses — a
+    # release bump must never require editing this pin.
     # Act
     mounts = re.findall(r"<div data-stx-app-header", unified_html)
-    titled = 'data-app-title="Cards"' in unified_html
-    versioned = 'data-app-version="0.56.4"' in unified_html
+    titled = 'data-app-title="SciTeX Cards"' in unified_html
+    versioned = f'data-app-version="{_cards_version()}"' in unified_html
     # Assert
     assert (len(mounts), titled, versioned) == (1, True, True)
 

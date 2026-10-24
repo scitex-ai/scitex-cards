@@ -1,7 +1,43 @@
 # Changelog
 
+## [0.56.7] - 2026-10-23
+
+- Board /graph fetch is bounded (operator 2026-10-24: "loading board ...
+  forever", PR #1148): fetch() has no deadline, so a never-settling /graph
+  left the server-painted skeleton on screen with no panel and no retry.
+  The fetch now aborts at 30 s (timer cleared on settle) so the worst case
+  degrades to the same loud error panel as every other failure. Pinned.
+
 ## Unreleased
 
+- Single project picker lives in the app header (operator 2026-10-23,
+  hard rule): the board's Details Filters project row is gone — the
+  shared SDK header slot is the one project control. The boot STATE
+  literal seeds filters.project from the server-resolved scope and the
+  SDK picker navigates (?project=) so a change reloads with the new
+  seed; populateFilters/attachFilters/combobox no longer reference the
+  removed select (a null lookup would kill the whole populate).
+- Operator batch 2026-10-23 (no curly objects; wider status spread;
+  overlay dropdowns; free-text filter): all chip/badge-class pills across
+  board_v3 CSS square to 2px (filt-chip, date/age/activity badges,
+  qhints, toggles, fleetstrip, stat bars; round avatar dots/swatches/
+  spinner untouched), the Stats D/W/M group clips at 2px, in_progress
+  moves sky-blue and deferred violet out of the amber wedge (STATUS_STYLE
+  SSOT + README Table 5; 7 categories kept — the store's RAW-status
+  filter and enum pins forbid a reduction), Details filter rows cap
+  width with ellipsis so the pane never shifts, and the Details Filters
+  section gains a free-text input two-way synced with the header search
+  (same fuzzy match, same debounce, cleared by both clear paths).
+- Board LIVE badge ships dark until a read succeeds (operator 2026-09-17):
+  Details > Board claimed LIVE as static markup with zero card nodes in the
+  DOM. It now ships CONNECTING + .details-live--off; the existing single
+  writer renderDetailsBoard() (keyed on STATE.graph) flips it to LIVE only
+  once a read succeeds and reverts on any failed refresh. Pinned by tests.
+- In-app product name reads "SciTeX Cards" everywhere (operator 2026-10-23):
+  shared header (board + DM), project-scoped leaf bands, both browser tabs
+  ("Board/DM — SciTeX Cards v…"), the exception-fallback page, and the
+  switcher landmark aria-label. /apps/ tile intentionally stays short
+  ("Cards"). Each surface pinned by tests.
 - Collapsed Details rail stays expandable (operator 2026-10-23: the
   column "cannot be expanded"). The SDK stacks title-then-toggle in a
   full-height column and the board's vertical title pushes the 13px
@@ -17,6 +53,35 @@
   the full tabs from the same timeline state (fail-loud pane-state
   shape assert + re-sync on every paint path; rendered inline-script
   parse pin).
+
+## [0.56.6] - 2026-10-23
+
+- Operator batch 2026-10-23 follow-up: Details PROJECT combobox trigger
+  advertises its free-text search (title affordance on every filter
+  trigger), so the closed row reads as searchable (#1144). The SDK
+  Combobox layer (overlay + autofocused input + fuzzy match) was
+  already bound — the gap was discoverability, pinned by 4 new tests.
+- Single project picker lives in the app header (operator 2026-10-23,
+  hard rule): the board's Details Filters project row is gone — the
+  shared SDK header slot is the one project control (#1140). The boot
+  STATE literal seeds filters.project from the server-resolved scope
+  and the SDK picker navigates (?project=) so a change reloads with
+  the new seed.
+- Operator batch 2026-10-23 (no curly objects; wider status spread;
+  overlay dropdowns; free-text filter) (#1142): all chip/badge-class
+  pills across board_v3 CSS square to 2px, the Stats D/W/M group
+  clips at 2px with the brand accent for the active state, in_progress
+  moves sky-blue and deferred violet out of the amber wedge
+  (STATUS_STYLE SSOT + README Table 5; 7 categories kept), Details
+  filter rows cap width with ellipsis so the pane never shifts, and
+  the Details Filters section gains a free-text input two-way synced
+  with the header search.
+- DM visibility dedup scoped by sequence (not action-second):
+  hide-then-unhide within the same second no longer swallows the
+  unhide (#1141). Migration helper wound back to the post-v16 rung.
+- Timeline simple-view fixture stamps the clock (no more hardcoded
+  date aging out of the 24h window) (#1139). Favicon absence pin
+  scoped away from the vite build outDir (#1143).
 
 ## [0.56.4] - 2026-10-20
 

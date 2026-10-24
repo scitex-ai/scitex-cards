@@ -326,4 +326,35 @@ def test_chat_js_hands_the_composer_that_seam():
     assert wired
 
 
+def test_send_uses_the_cta_color_token(css: str):
+    """Send is the CTA: the shared brand token, navy/gold per theme —
+    not the theme's link blue. Operator 2026-10-23: gray/generic blue
+    reads as inactive; the primary action must wear the brand."""
+    # Arrange
+    block = _rule(css, "#compose-send")
+
+    # Act
+    branded = "--stx-brand" in block
+
+    # Assert
+    assert branded, "compose-send lost the CTA token (navy/gold per theme)"
+
+
+def test_composer_carries_no_bottom_dead_space(css: str):
+    """The composer ends the thread pane: no margin/padding below the row
+    pushing dead space under it. Operator 2026-10-23: the bottom gap."""
+    # Arrange
+    row = _rule(css, "#compose-row")
+    form = _rule(css, "#compose")
+    pane = _rule(css, "#cards-dm-app")
+
+    # Act
+    dead = re.findall(r"margin-bottom:\s*[^0]", row + form)
+    bottom_pad = re.findall(r"padding-bottom:\s*([^;]+);", form)
+    anchored = "flex-end" in pane or "justify-content" in pane
+
+    # Assert
+    assert dead == [] and (bottom_pad == [] or anchored)
+
+
 # EOF
