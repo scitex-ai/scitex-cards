@@ -39,9 +39,13 @@
  * only one of them followed the theme, the header would be the hybrid surface
  * again, one file over. */
 [data-theme="light"] {
-  --bg: #ffffff;
-  --card-bg: #ffffff;
-  --col-bg: #f6f8fa;
+  /* Hub parity (operator 2026-10-24): the page background is the hub's,
+     not full white. The dark tiers above already equal the hub tokens
+     (--bg-page #0d1117, --bg-surface #161b22, --bg-muted #21262d), so the
+     light tiers map onto the same family — warm greys, never #ffffff. */
+  --bg: var(--bg-page, #faf9f7);
+  --card-bg: var(--bg-surface, #f8f7f5);
+  --col-bg: var(--bg-muted, #f3f2f0);
   --text: #1f2328;
   --text-muted: #57606a;
   --border: #d0d7de;
