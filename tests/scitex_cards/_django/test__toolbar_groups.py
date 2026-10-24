@@ -430,11 +430,10 @@ def test_template_header_view_group_retired_to_hidden_contract_mount() -> None:
         html,
         flags=re.DOTALL,
     )
-    # Assert
-    assert m, "could not locate VIEW group block in template"
-    assert 'hidden' in m.group(0).split(">")[0] or "hidden" in m.group(1)[:2000], (
-        "header VIEW group is visible again — Layout belongs in Details > Board"
-    )
+    # Assert — one compound assertion (PA-307).
+    assert m is not None and (
+        'hidden' in m.group(0).split(">")[0] or "hidden" in m.group(1)[:2000]
+    ), "header VIEW group is visible again — Layout belongs in Details > Board"
 
 
 def test_template_details_board_hosts_view_span_tabs_mount() -> None:
@@ -444,9 +443,8 @@ def test_template_details_board_hosts_view_span_tabs_mount() -> None:
     html = _read_board_family()
     # Act
     body = _details_board_body(html)
-    # Assert
-    assert 'id="details-board-timeline"' in body
-    assert "data-details-board" in body
+    # Assert — one compound assertion (PA-307).
+    assert 'id="details-board-timeline"' in body and "data-details-board" in body
 
 
 def test_template_details_board_hosts_live_chip() -> None:
@@ -455,9 +453,8 @@ def test_template_details_board_hosts_live_chip() -> None:
     html = _read_board_family()
     # Act
     body = _details_board_body(html)
-    # Assert
-    assert 'id="details-live"' in body
-    assert "live-dot" in body
+    # Assert — one compound assertion (PA-307).
+    assert 'id="details-live"' in body and "live-dot" in body
 
 
 def test_template_details_board_section_open_by_default() -> None:
@@ -485,9 +482,11 @@ def test_template_header_identity_band_carries_no_live_chip() -> None:
     m = re.search(
         r'<div class="fb-left">(.*?)</div>', html, flags=re.DOTALL
     )
-    # Assert
-    assert m, "could not locate .fb-left band in template"
-    assert "live-dot" not in m.group(1), ".fb-left still renders a LIVE chip"
+    # Assert — one compound assertion (PA-307).
+    assert m is not None and "live-dot" not in m.group(1), (
+        ".fb-left still renders a LIVE chip" if m else
+        "could not locate .fb-left band in template"
+    )
 
 
 def test_toolbar_css_kills_the_retired_header_layout_mount() -> None:
@@ -502,12 +501,11 @@ def test_toolbar_css_kills_the_retired_header_layout_mount() -> None:
         / "scitex_cards" / "board_v3" / "06-layout-and-recent.css"
     )
     css = css_path.read_text(encoding="utf-8")
-    # Assert
-    assert ".filt-layout[hidden]" in css, "missing .filt-layout[hidden] kill rule"
     m = re.search(r"\.filt-layout\[hidden\][^{]*\{([^}]*)\}", css)
-    assert m and "display" in m.group(1) and "none" in m.group(1), (
-        ".filt-layout[hidden] must set display:none"
-    )
+    # Assert — one compound assertion (PA-307).
+    assert ".filt-layout[hidden]" in css and m is not None and (
+        "display" in m.group(1) and "none" in m.group(1)
+    ), ".filt-layout[hidden] must set display:none"
 
 
 # ============================================================================
