@@ -52,15 +52,24 @@ def test_unresolved_sender_is_a_clean_error(env):
     assert result.exit_code == 1 and "SCITEX_CARDS_AGENT_ID" in result.output
 
 
-def test_hide_then_unhide_round_trip(postgres_dsn, env):
+def test_hide_marks_thread_hidden(postgres_dsn, env):
     # Arrange
     env.set("SCITEX_CARDS_AGENT_ID", "hide-cli")
     _invoke("send", "operator", "hello", "--sender", "hide-cli")
     # Act
     hid = _invoke("hide", "operator", "--sender", "hide-cli", "--json")
-    shown = _invoke("unhide", "operator", "--sender", "hide-cli", "--json")
     # Assert
     assert json.loads(hid.stdout)["hidden"] is True
+
+
+def test_unhide_marks_thread_shown(postgres_dsn, env):
+    # Arrange
+    env.set("SCITEX_CARDS_AGENT_ID", "hide-cli")
+    _invoke("send", "operator", "hello", "--sender", "hide-cli")
+    _invoke("hide", "operator", "--sender", "hide-cli", "--json")
+    # Act
+    shown = _invoke("unhide", "operator", "--sender", "hide-cli", "--json")
+    # Assert
     assert json.loads(shown.stdout)["hidden"] is False
 
 

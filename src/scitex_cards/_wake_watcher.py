@@ -20,8 +20,12 @@ emit the same shape::
       "task_id":      "<id>",
       "task_title":   "<title>",
       "summary":      "<short human-readable change description>",
-      "store_path":   "/scitex-cards/tasks.yaml"
+      "store_path":   "/scitex-cards/tasks.yaml",
+      "text":         "/goal [<id>] <title> (<kind>): <summary>"
     }
+
+``text`` is required: the receiving ``/v1/turn`` bridge answers 400
+without it, so the wake carries its own turn-driving line.
 
 The agent's harness (e.g. claude-code container) handles the rest:
 runs ``scitex-cards next --mine --json``, picks the top task, works it,
@@ -171,6 +175,10 @@ class WakeRecord:
     summary: str
 
     def to_payload(self, *, store_path: str) -> dict:
+        # The receiving /v1/turn bridge requires a non-empty "text" field
+        # (400 otherwise), so the wake must drive the turn itself: a /goal
+        # line carrying the card context the agent needs to act without a
+        # follow-up read. Every other field is unchanged.
         return {
             "trigger": "scitex-cards-watcher",
             "trigger_kind": self.trigger_kind,
@@ -178,6 +186,10 @@ class WakeRecord:
             "task_title": self.task_title,
             "summary": self.summary,
             "store_path": store_path,
+            "text": (
+                f"/goal [{self.task_id}] {self.task_title}"
+                f" ({self.trigger_kind}): {self.summary}"
+            ),
         }
 
 
