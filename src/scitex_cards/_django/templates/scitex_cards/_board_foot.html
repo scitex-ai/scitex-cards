@@ -672,8 +672,33 @@
     // before the deferred module loads.
     // Pinned by test_the_template_alias_is_a_function_declaration_not_an_assignment.
     // hook-bypass: line-limit (board_v3.html split in progress — this IS it)
+    //
+    // OPERATOR INCIDENT 2026-10-24: "Loading board..." forever with
+    // `Uncaught ReferenceError: STX is not defined` at
+    // escapeHtml <- renderActiveFilterChips <- attachFilters <- boot. The
+    // inline script runs during parsing; the module is `defer`, so at boot
+    // time NO STX global exists and the bare read throws, aborting
+    // attachFilters before loadGraph ever runs. So the delegation is
+    // GUARDED: the module stays the live SSOT whenever it is present, and
+    // a not-yet-loaded module falls back to the byte-identical local rule —
+    // escaping that works is always safer than a throw that kills the board.
+    // (The XSS boundary is unchanged: both branches escape the same five
+    // characters; the module file remains the tested SSOT.)
     function escapeHtml(s) {
-      return STX.cardHelpers.escapeHtml(s);
+      var helpers = (typeof globalThis !== "undefined" && globalThis.STX
+        && globalThis.STX.cardHelpers) || null;
+      if (helpers && typeof helpers.escapeHtml === "function") {
+        return helpers.escapeHtml(s);
+      }
+      return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+        return {
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        }[c];
+      });
     }
 
 

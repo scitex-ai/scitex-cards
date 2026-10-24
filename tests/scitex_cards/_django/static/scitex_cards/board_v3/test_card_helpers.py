@@ -316,11 +316,21 @@ def test_the_template_loads_the_module():
 def test_the_template_alias_delegates_rather_than_reimplementing():
     # A second copy of the escaping rule is the drift this extraction exists
     # to remove; the template must call through, not re-declare the table.
+    # OPERATOR INCIDENT 2026-10-24 QUALIFIES THIS: the delegation must be
+    # GUARDED (module present -> call through; absent -> identical local
+    # rule), because the inline script runs before the deferred module loads
+    # and a bare `STX.cardHelpers` read throws, killing the whole board at
+    # boot. The module file remains the tested SSOT; the fallback exists only
+    # for the not-yet-loaded window and must escape the same five characters.
     # Arrange
     template = _board_sources()
+    start = template.index("\n    function escapeHtml(s) {")
+    alias = template[start:].split("\n    }\n", 1)[0] + "\n    }\n"
     # Act
     # Assert
-    assert "return STX.cardHelpers.escapeHtml(s);" in template
+    assert "STX" in alias and "cardHelpers" in alias and "escapeHtml" in alias, (
+        "the template alias must still delegate to the module when present"
+    )
 
 
 def test_the_template_alias_is_a_function_declaration_not_an_assignment():
@@ -357,13 +367,23 @@ def test_the_template_no_longer_carries_its_own_escape_table():
     # Arrange — the block tags live in board_v3.html while the script lives
     # in _board_foot.html; the concatenation carries both, so the split
     # reads the real inline script in either layout.
+    #
+    # OPERATOR INCIDENT 2026-10-24 QUALIFIES THIS: the template alias carries
+    # a fallback escape rule for the window where the deferred module has not
+    # loaded yet (inline runs during parsing, module is `defer`); a bare
+    # module-only read threw and killed the whole board at boot. The fallback
+    # is scoped to the alias body and must stay byte-identical to the module
+    # rule — which the new survival pin verifies by EXECUTION, not substring.
     extra_js = _board_sources().split("{% block extra_js %}", 1)[1]
+    alias_start = extra_js.index("\n    function escapeHtml(s) {")
+    alias_body = extra_js[alias_start:].split("\n    }\n", 1)[0]
+    rest = extra_js[:alias_start] + extra_js[alias_start:].split("\n    }\n", 1)[1]
     # Act
     code_only = "\n".join(
-        line for line in extra_js.splitlines() if not line.lstrip().startswith("//")
+        line for line in rest.splitlines() if not line.lstrip().startswith("//")
     )
     # Assert
-    assert "&quot;" not in code_only
+    assert "&quot;" not in code_only and alias_body.count("&quot;") == 1
 
 
 def test_the_module_touches_no_dom_at_import_time():
@@ -376,3 +396,31 @@ def test_the_module_touches_no_dom_at_import_time():
     # Act
     # Assert
     assert "document" not in body
+
+
+def test_the_template_alias_survives_the_deferred_module_not_being_there_yet():
+    # OPERATOR INCIDENT 2026-10-24: #board stuck at "Loading board..." forever
+    # with `Uncaught ReferenceError: STX is not defined` at
+    # escapeHtml <- renderActiveFilterChips <- attachFilters <- boot. The
+    # inline foot script runs during parsing; 16-card-helpers.js is `defer`,
+    # so at boot time no STX global exists yet and the bare `STX.cardHelpers`
+    # read throws, aborting attachFilters before loadGraph ever runs.
+    # The alias must resolve the module at call time GUARDED, falling back
+    # to the identical local rule, so a not-yet-loaded module degrades to
+    # working escaping instead of a dead board.
+    # Arrange — the SHIPPED alias, executed with NO STX global defined,
+    # exactly the boot-time condition.
+    template = _board_sources()
+    start = template.index("\n    function escapeHtml(s) {")
+    alias = template[start:].split("\n    }\n", 1)[0] + "\n    }\n"
+    # Act
+    proc = subprocess.run(
+        [_node(), "--input-type=commonjs", "-e",
+         alias + "console.log(escapeHtml('<a>&\"\\''));"],
+        capture_output=True, text=True, timeout=10,
+    )
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert proc.returncode == 0 and proc.stdout.strip() == "&lt;a&gt;&amp;&quot;&#39;", (
+        "the shipped escapeHtml alias must escape without a pre-existing STX "
+        f"global; stderr: {proc.stderr[:500]}"
+    )
