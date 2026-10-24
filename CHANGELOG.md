@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.56.11] - 2026-10-24
+
+- Operator follow-ups 2026-10-24 (scitex-cards lane): Ctrl+K hint as
+  inline end-of-field text on both filters (never a boxed badge, never
+  inlined in the placeholder); filter chip de-bolded; Esc clears first,
+  then blurs, on both filters alike; agent menu hidden until opened and
+  hover no longer reveals row actions; agent list fits the filter row
+  (240px to 300px). All live-verified; pins green.
+
 ## [0.56.10] - 2026-10-24
 
 - Release repair: declare the pinned thread route in the mount-policy
