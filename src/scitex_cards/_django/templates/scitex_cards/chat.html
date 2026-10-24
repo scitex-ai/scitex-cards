@@ -20,9 +20,9 @@ MIGRATION, not a rename: every bookmark the operator has and every agent
 reference to /chat would break for a label change. See _page_switcher.html,
 which carries the same decision next to the href it does NOT rename.
 
-chat_title.js PREFIXES this string at runtime — "(3) DM — SciTeX Cards v…" —
-so the base title lives here, in one place, and that module spells neither the
-version nor the word DM.
+chat_title.js SUFFIXES this string at runtime — "Cards DM (3)" (operator
+2026-10-24) — so the base title lives here, in one place, and that module
+spells neither the version nor the wording.
 {% endcomment %}
 {% comment %}
 No favicon link here: the SDK's shell supplies the shared SciTeX brand mark
@@ -255,6 +255,11 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   #agents .row-hide { background: var(--panel-2); color: var(--dim); }
   #agents .row-hide:hover { color: var(--text); }
   #agents .row-unhide { background: var(--panel-2); color: var(--text-link); }
+  /* Pinned rows float first (server order); the mark is a glyph, not a
+     colour, so it survives every theme and needs no palette entry. */
+  #agents .agent-wrap.is-pinned .agent .name::before {
+    content: "📌 ";
+  }
   /* Hidden section: a disclosure row at the end of the list, iOS Hidden-album
      style. Collapsed by default; expanding shows the hidden rows with an
      Unhide action each. Unread hidden threads count into the disclosure. */
@@ -807,7 +812,7 @@ every `#agents .agent` rule still matches through the new wrapper.
     {# application header (shared SDK element) — the DM copy is dropped. #}
     <div id="agent-filter-row">
       <input id="agent-filter" type="search" autocomplete="off"
-             placeholder="Filter agents&hellip;" aria-label="Filter agents"
+             placeholder="Filter agents (Ctrl+K)&hellip;" aria-label="Filter agents (Ctrl+K)"
              aria-controls="agent-list">
       <button id="dm-new" type="button" aria-label="New conversation">New</button>
     </div>
@@ -876,6 +881,7 @@ actually SERVE it.
   <div id="agent-menu-wrap">
     <div id="agent-menu" class="stx-app-context-menu" role="menu" aria-label="Conversation actions">
       <button class="stx-app-context-menu__item" id="am-hide" role="menuitem">Hide</button>
+      <button class="stx-app-context-menu__item" id="am-pin" role="menuitem">Pin</button>
     </div>
   </div>
 {% comment %}

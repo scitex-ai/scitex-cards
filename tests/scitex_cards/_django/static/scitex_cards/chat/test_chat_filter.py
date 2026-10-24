@@ -249,3 +249,101 @@ def test_a_partial_sdk_without_fuzzy_match_falls_back() -> None:
     )
     # Assert
     assert kept == ["scitex-ui"]
+
+
+# === the focus shortcut — Ctrl+K / Cmd+K, never bare `/` ====================
+#
+# Operator 2026-10-24: focusing the filter is Ctrl+K. A bare `/` would fire
+# while the operator types a message and steal the keystroke, so the decision
+# below must stay False for it no matter what else changes.
+
+
+def _focus_key(ev: dict) -> bool:
+    """Run the real `isFocusFilterKey` under node against a plain object."""
+    return json.loads(
+        _run(
+            f"console.log(JSON.stringify(\n"
+            f"ChatFilter.isFocusFilterKey({json.dumps(ev)})));"
+        )
+    )
+
+
+def test_ctrl_k_focuses_the_filter() -> None:
+    # Arrange
+    # Act
+    out = _focus_key({"key": "k", "ctrlKey": True})
+    # Assert
+    assert out is True
+
+
+def test_cmd_k_focuses_the_filter() -> None:
+    # Arrange
+    # Act
+    out = _focus_key({"key": "k", "metaKey": True})
+    # Assert
+    assert out is True
+
+
+def test_shifted_k_still_focuses_the_filter() -> None:
+    # Arrange
+    # Act
+    out = _focus_key({"key": "K", "ctrlKey": True, "shiftKey": True})
+    # Assert
+    assert out is True
+
+
+def test_bare_slash_never_focuses_the_filter() -> None:
+    """`/` with no modifier must not steal a keystroke from the composer."""
+    # Arrange
+    # Act
+    out = _focus_key({"key": "/"})
+    # Assert
+    assert out is False
+
+
+def test_ctrl_slash_does_not_focus_the_filter() -> None:
+    # Arrange
+    # Act
+    out = _focus_key({"key": "/", "ctrlKey": True})
+    # Assert
+    assert out is False
+
+
+def test_a_plain_k_does_not_focus_the_filter() -> None:
+    """Typing `k` into the composer must not yank focus away."""
+    # Arrange
+    # Act
+    out = _focus_key({"key": "k"})
+    # Assert
+    assert out is False
+
+
+def test_alt_k_does_not_focus_the_filter() -> None:
+    # Arrange
+    # Act
+    out = _focus_key({"key": "k", "ctrlKey": True, "altKey": True})
+    # Assert
+    assert out is False
+
+
+def test_mount_binds_the_document_shortcut_and_focuses_the_input() -> None:
+    """The decision above is dead unless mount() wires it: a document-level
+    keydown that preventDefaults, focuses and selects the input."""
+    # Arrange
+    source = JS_FILE.read_text(encoding="utf-8")
+    # Act
+    bound = 'doc.addEventListener("keydown", onDocKeydown)' in source
+    focuses = "input.focus()" in source and "input.select()" in source
+    guarded = "isFocusFilterKey(event)" in source
+    # Assert
+    assert bound and focuses and guarded
+
+
+def test_destroy_unbinds_the_document_shortcut() -> None:
+    """A leaked document listener would focus a removed input after unmount."""
+    # Arrange
+    source = JS_FILE.read_text(encoding="utf-8")
+    # Act
+    unbound = 'doc.removeEventListener("keydown", onDocKeydown)' in source
+    # Assert
+    assert unbound

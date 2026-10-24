@@ -1732,6 +1732,11 @@
       // --ui-collapsed-pane-width and flips the header into the vertical
       // icon+label strip. We only toggle it — the behaviour is the shell's.
       const on = pane.classList.toggle("collapsed");
+      // Keyboard parity with the guarded rail onclick/_board_pane.html: the
+      // rail is a tab stop only while collapsed (the state where the 13px
+      // toggle may clip out of reach). Open, every inner control is
+      // reachable on its own, so the pane itself stays out of the tab order.
+      pane.tabIndex = on ? 0 : -1;
       const btn = document.getElementById("details-toggle");
       if (btn) {
         btn.setAttribute("aria-expanded", on ? "false" : "true");
@@ -1751,6 +1756,9 @@
       const pane = document.getElementById("details-panel");
       const btn = document.getElementById("details-toggle");
       if (pane) pane.classList.toggle("collapsed", collapsed);
+      // Same rail tab-stop contract as toggleDetailsPane above: focusable
+      // while collapsed, out of the tab order while open.
+      if (pane) pane.tabIndex = collapsed ? 0 : -1;
       if (btn) {
         btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
         btn.textContent = collapsed ? "‹" : "›";
@@ -1854,6 +1862,21 @@
     }
 
     const WINDOW_LABEL = { "1d": "24 h", "1w": "7 d", "1m": "30 d" };
+    // Browser tab (operator 2026-10-24): "Board (N in last 1h)" — N counts
+    // cards touched in the last hour, off the same _newestTs the stats
+    // below use. The base is captured once from the served title so a
+    // re-render never compounds "(3) Board (2 in last 1h)". Zero renders
+    // the bare base, the way the DM tab omits "(0)".
+    let _boardTabBase = null;
+    function renderBoardTabTitle(nodes) {
+      if (_boardTabBase === null) _boardTabBase = document.title || "Board";
+      const cutoff = Date.now() - 3600 * 1000;
+      const n = (nodes || []).filter((t) => {
+        const ts = _newestTs(t);
+        return ts && ts >= cutoff;
+      }).length;
+      document.title = n > 0 ? `${_boardTabBase} (${n} in last 1h)` : _boardTabBase;
+    }
     function renderStats() {
       const host = document.getElementById("details-stats");
       if (!host) return;
@@ -1917,6 +1940,7 @@
         <div class="stat-foot" id="recent-count-pill">
           <strong id="recent-count-value">${newCount}</strong> new / 24 h
         </div>`;
+      renderBoardTabTitle(all);
     }
 
     // === Recent-count pill — fleet-wide "N new in 24 h" indicator ───
@@ -3020,24 +3044,19 @@
       }
     });
 
-    // P1 Search-as-launcher (lead brief 2026-06-12) — RESTORED 2026-06-12.
-    // "/" anywhere focuses #f-search; Esc inside the search blurs it.
-    // Skip "/" when typing in another input/textarea/select/contenteditable
-    // OR when a modifier is held (so browser shortcuts like Cmd-/ stay
-    // available). Same muscle memory as Gmail / Jira / Linear. Pinned by
+    // P1 Search-as-launcher (lead brief 2026-06-12) — RESTORED 2026-06-12,
+    // RETARGETED 2026-10-24: Ctrl+K / Cmd+K focuses #f-search; the old "/"
+    // capture is gone because the hub shell owns "/" for its global search
+    // and a page-level capture starves it (operator: Ctrl+K instead of "/").
+    // Esc inside the search still blurs it. Pinned by
     // tests/scitex_cards/test__board_v3_signatures.py so a future squash
     // can't silently regress it again.
     function attachSearchKeyboardLauncher() {
       const search = document.getElementById("f-search");
       if (!search) return;
       document.addEventListener("keydown", (e) => {
-        if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-          const t = e.target;
-          const tag = (t && t.tagName) ? t.tagName.toLowerCase() : "";
-          const editable =
-            tag === "input" || tag === "textarea" || tag === "select" ||
-            (t && t.isContentEditable);
-          if (editable) return;
+        if ((e.ctrlKey || e.metaKey) && !e.altKey &&
+            (e.key === "k" || e.key === "K")) {
           e.preventDefault();
           search.focus();
           const v = search.value;

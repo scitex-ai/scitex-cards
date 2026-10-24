@@ -241,6 +241,49 @@ def hidden_for(
         conn.close()
 
 
+def pinned_for_conn(conn: StoreConnection, reader: str) -> set[str]:
+    """Thread ids ``reader`` currently pins. A fold, not a flag.
+
+    The pin mirror of :func:`hidden_for_conn`: the latest event per
+    ``(thread_id, reader)`` wins, ordered by ``(ts, seq, id)``. ``hide``
+    and ``unhide`` rows are not pin state and are ignored here, exactly
+    as ``pin`` rows are ignored there — the two folds share one table
+    but never read each other's actions. A missing table (a store that
+    predates v16) answers the empty set rather than raising: pinning did
+    not exist there, so nothing can be pinned.
+    """
+    from .._schema_probe import has_table
+
+    if not has_table(conn, "dm_visibility_events"):
+        return set()
+    rows = conn.execute(
+        "SELECT thread_id, reader, action, ts, seq, id FROM dm_visibility_events"
+        " WHERE reader = ?"
+        " ORDER BY ts, seq, id",
+        (reader,),
+    ).fetchall()
+    latest: dict[str, str] = {}
+    for row in rows:
+        thread_id = row["thread_id"] if isinstance(row, dict) else row[0]
+        action = row["action"] if isinstance(row, dict) else row[2]
+        latest[thread_id] = action
+    return {tid for tid, action in latest.items() if action == "pin"}
+
+
+def pinned_for(
+    reader: str,
+    *,
+    db: str | Path | None = None,
+    store: str | Path | None = None,
+) -> set[str]:
+    """Public read: the thread ids ``reader`` currently pins."""
+    conn = _open(db, store)
+    try:
+        return pinned_for_conn(conn, reader)
+    finally:
+        conn.close()
+
+
 def list_members(
     thread_id: str,
     *,
@@ -402,6 +445,8 @@ __all__ = [
     "message_count",
     "messages_in",
     "messages_in_conn",
+    "pinned_for",
+    "pinned_for_conn",
     "row_to_message",
     "thread_ids",
     "unread_for",
