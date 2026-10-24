@@ -296,6 +296,46 @@ def provide_jobs() -> list[JobSpec]:
             restart_policy="no",
             timeout_sec=300,
         ),
+        # forget (the forgetting sweep) — DAILY auto-close of stale
+        # blocked/deferred/goal cards by AGE ALONE.
+        #
+        # WHY --apply IS PRESENT HERE while reconcile-merged-prs above ships
+        # without it. Reconcile inferred "the work is done" from "a linked PR
+        # merged" — and a merge records that a change REFERENCED the card, not
+        # that the problem is solved — so it closed live cards on a timer
+        # (2026-08-20: closed a 9-minute-old card mid-investigation). Forgetting
+        # makes NO inference: age alone is the reason (operator doctrine
+        # 2026-10-22 — triage costs more than recreation, recreate on demand),
+        # and `in_progress` is STRUCTURALLY excluded, so live work cannot be
+        # hit whatever its age. The 2026-10-22 manual run closed 77 stale cards
+        # 77/77 with this exact predicate and zero live-work contact.
+        #
+        # WHY DAILY, not */15. Staleness matures over days (default horizon 3d),
+        # so a 15-minute cadence re-derives the same verdict 96 times a day for
+        # one effect — the duplicated-work class `_branch_hygiene` documents.
+        # kind=cron / restart_policy=no: a missed tick closes on the next one.
+        #
+        # THE OFF SWITCH IS THE HORIZON. The command carries no --days, so the
+        # horizon resolves env > config file > 3d default; `forgetting.days`
+        # `null` (or SCITEX_CARDS_FORGET_DAYS=none) disarms the sweep without
+        # touching this declaration. --yes: off-TTY the verb proceeds anyway,
+        # so the flag is documentation, not a gate.
+        JobSpec(
+            name="scitex-cards-forget",
+            kind="cron",
+            # 5-field cron (min hour dom mon dow): daily 03:00, off the
+            # hourly/half-hour stampedes above.
+            schedule="0 3 * * *",
+            command="scitex-cards forget --apply --yes",
+            description=(
+                "scitex-cards forget — the forgetting sweep. Daily auto-close "
+                "of stale blocked/deferred/goal cards by age alone (default "
+                "3d, `forgetting.days` in config, `none` disarms). "
+                "in_progress is never touched."
+            ),
+            restart_policy="no",
+            timeout_sec=300,
+        ),
     ]
 
 
