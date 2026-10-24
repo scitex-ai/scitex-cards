@@ -761,7 +761,7 @@
             )
             .join("") +
           `<button class="card-ctx-item card-ctx-item--sub"
-            style="color: var(--purple); font-weight: 600;"
+            style="color: var(--stx-brand, var(--text-link)); font-weight: 600;"
             onclick="closeCardCtx(); promptMoveToNewProject('${escapeHtml(cardId)}')">
             + New project…</button>`;
       const statusItems = statuses

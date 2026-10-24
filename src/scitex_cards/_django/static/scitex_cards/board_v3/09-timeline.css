@@ -69,12 +69,12 @@
 }
 .tl-window-tab--on,
 .tl-window-tab--on:hover {
-  border-bottom-color: var(--app-accent-todo, #7c5cbf);
+  border-bottom-color: var(--app-accent-todo, var(--text-muted));
   color: var(--text, #e0e6f0);
   font-weight: 700;
 }
 .tl-window-tab:focus-visible {
-  outline: 2px solid var(--app-accent-todo, #7c5cbf);
+  outline: 2px solid var(--app-accent-todo, var(--text-link));
   outline-offset: -2px;
 }
 .tl-count {
@@ -156,7 +156,7 @@
    rebuilt, so this stays smooth on a live-updating chart. `r` is an SVG
    geometry property, so CSS can animate it. */
 .tl-lane-bg--hover {
-  fill: var(--purple, #7c5cbf);
+  fill: var(--text-muted, #8a96a8);
   opacity: 0.16;
 }
 .tl-dot--lanehover {
@@ -289,19 +289,19 @@
    markers stand out from the live/done rings. Single click toggles this;
    double click / right-click → Open details opens the drawer. */
 .tl-dot--selected {
-  stroke: var(--purple, #8e6cff);
+  stroke: var(--text);
   stroke-width: 3;
   r: 9;
-  filter: drop-shadow(0 0 3px var(--purple, #8e6cff));
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.5));
 }
 
 /* ── marquee (rubber-band) selection rectangle — timelineMarquee.js ────
    A dashed accent box drawn while the operator drags across empty raster
    space; dots whose centres fall inside it get selected on mouseup. */
 .tl-marquee {
-  fill: var(--purple, #8e6cff);
+  fill: var(--text-muted, #8a96a8);
   fill-opacity: 0.12;
-  stroke: var(--purple, #8e6cff);
+  stroke: var(--text-muted, #8a96a8);
   stroke-width: 1;
   stroke-dasharray: 4 3;
   pointer-events: none;
@@ -330,7 +330,7 @@
  * Operator CCT4368: the highlight wears straight/square corners, not the
  * card's 8px rounding. */
 .tl-card--selected {
-  border-color: var(--purple, #8e6cff);
+  border-color: var(--text);
   box-shadow: none;
   border-radius: 0;
 }

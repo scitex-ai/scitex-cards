@@ -48,11 +48,11 @@
 /* Quadrants I and II are the ones the operator wants maximized — accent
  * their pills so the ratio reads at a glance. */
 .mx-occ__pill[data-quadrant="I"] {
-  border-color: var(--purple);
+  border-color: var(--text-muted);
 }
 
 .mx-occ__pill[data-quadrant="II"] {
-  border-color: var(--purple);
+  border-color: var(--text-muted);
 }
 
 /* ── Occupancy over time (ADR-0011 §8): a compact stacked-bar strip, one thin
@@ -99,7 +99,7 @@
 }
 
 .mx-trend__seg[data-quadrant="I"] {
-  background: var(--purple);
+  background: var(--text-muted);
 }
 
 .mx-trend__seg[data-quadrant="II"] {
@@ -212,7 +212,7 @@
 }
 
 .mx-card:hover {
-  border-color: var(--purple);
+  border-color: var(--text-muted);
 }
 
 /* ── Drag → re-score (PR 2). The card is draggable onto any grid cell; the
