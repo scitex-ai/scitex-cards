@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.56.15] - 2026-10-25
+
+- Release repair: the operator-batch width-cap pin asserted the exact
+  pre-combobox selector, failing the 0.56.14 publish run 1/3250. The pin
+  now follows the capped trigger selector; behavior unchanged.
+
 ## [0.56.14] - 2026-10-25
 
 - Operator batch 2026-10-25 (scitex-cards lane): board chrome goes
