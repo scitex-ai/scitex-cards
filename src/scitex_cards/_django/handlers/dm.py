@@ -76,6 +76,7 @@ import scitex_logging as slogging
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from psycopg.errors import InsufficientPrivilege, ReadOnlySqlTransaction
 
 from scitex_cards._dm import reactions as _reactions
 from scitex_cards._dm import threads as _threads
@@ -517,6 +518,9 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
         key = _threads.thread_key(reader, peer)
         # Poll-and-ack: the open pane passes mark_read=1 so viewing the
         # thread clears the operator-side unread counter.
+        # Nothing to ack unless the pane asked: the default travels with
+        # every response so the client can rely on the key existing.
+        ack = {"ok": True, "marked": 0}
         if request.GET.get("mark_read") in ("1", "true"):
             # mark_read DOES write (it records canonical receipts), but it is
             # part of opening the pane and must share the read's scope:
@@ -542,8 +546,20 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
                 m["id"]
                 for m in _dm_read.unread_for(reader, store=store, thread_id=key)
             ]
+            # Best effort on a read-only mount: hub's board mount reads the
+            # fleet store as a SELECT-only role, so this ack is refused there
+            # (operator 2026-10-24: HTTP 403 on mark_read=1 strands the pane
+            # on "Loading..." though the messages read fine). Refusing the
+            # whole pane for a receipt write is the wrong trade — serve the
+            # messages with the ack refusal stated, and the client renders
+            # them with receipts paused instead of failing.
             if unread_ids:
-                _dm_write.mark_read(unread_ids, reader, store=store)
+                try:
+                    ack["marked"] = _dm_write.mark_read(
+                        unread_ids, reader, store=store
+                    )
+                except (InsufficientPrivilege, ReadOnlySqlTransaction):
+                    ack = {"ok": False, "reason": STORE_READ_ONLY_REASON}
         # THE STORE, NOT THE SIDECAR — the other half of #776.
         #
         # #776 moved the thread LIST onto the database and left this PANE on
@@ -577,6 +593,7 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
                 "thread": key,
                 "peer": peer,
                 "messages": messages,
+                "ack": ack,
                 "reactions": _reactions.thread_reactions(key, store=store),
                 "receipts": _dm_receipt_state.receipt_state_for_thread(
                     key, store=store

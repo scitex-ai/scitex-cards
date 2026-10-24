@@ -384,6 +384,21 @@
         if (state.peer !== peer) return; // switched away mid-flight
         clearError();
         var msgs = data.messages || [];
+        // A read-only mount refuses the mark_read receipt write while the
+        // messages read fine (operator 2026-10-24: HTTP 403 strands the
+        // pane). The server says so in `ack`: render the messages and say
+        // receipts are paused — once per thread, not once per 5s poll.
+        if (
+          data.ack &&
+          !data.ack.ok &&
+          state.ackWarnedFor !== peer
+        ) {
+          state.ackWarnedFor = peer;
+          showNotice(
+            "Read receipts paused on this mount (read-only store) — " +
+              "messages are current.",
+          );
+        }
         // Reactions must be in place BEFORE the plan is computed: the plan's
         // fingerprints read them, and messageNode paints them.
         state.reactions = data.reactions || {};
@@ -412,6 +427,7 @@
 
   function openThread(peer) {
     state.peer = peer;
+    state.ackWarnedFor = null; // re-arm the read-only receipt notice
     // The pane is cleared just below, so the rendered set must be cleared
     // with it — the two describe one fact and must not drift apart.
     state.rendered = [];
