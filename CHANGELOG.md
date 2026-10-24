@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.56.15] - 2026-10-25
+
+- Release repair: the operator-batch width-cap pin asserted the exact
+  pre-combobox selector, failing the 0.56.14 publish run 1/3250. The pin
+  now follows the capped trigger selector; behavior unchanged.
+
+## [0.56.14] - 2026-10-25
+
+- Operator batch 2026-10-25 (scitex-cards lane): board chrome goes
+  monochrome except CTA and card-state colors (prompt-02 scitex-stats
+  parity); Details combobox trigger ellipsizes and its popover cannot
+  exceed the viewport (pane-shift fix). Sweep pin fails loud per file;
+  dark+light live-verified.
+
+## [0.56.13] - 2026-10-24
+
+- Operator follow-ups 2026-10-24 (scitex-cards lane): light page
+  background follows the hub warm-grey tokens instead of full white
+  (live-verified warm paper theme).
+
 ## [0.56.12] - 2026-10-24
 
 - Release repair: the 0.56.11 tag shipped the no-bold chip pin without

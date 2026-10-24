@@ -244,8 +244,8 @@
  * brighten the border so the user knows the context menu is
  * about to open. */
 .card.touch-pressing {
-  box-shadow: 0 0 0 2px var(--purple) inset;
-  background: rgba(109, 76, 173, 0.1);
+  box-shadow: 0 0 0 2px var(--text) inset;
+  background: rgba(128, 128, 128, 0.1);
 }
 
 .loading {

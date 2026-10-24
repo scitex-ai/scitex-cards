@@ -33,13 +33,13 @@
 }
 .filt-popover > summary:hover {
   color: var(--text);
-  border-color: var(--purple);
+  border-color: var(--text-muted);
 }
 .filt-popover[open] > summary,
 .filt-popover > summary.has-active {
-  background: var(--purple);
-  color: #fff;
-  border-color: var(--purple);
+  background: var(--col-bg);
+  color: var(--text);
+  border-color: var(--border);
 }
 .filt-popover-body {
   position: absolute;
@@ -92,7 +92,7 @@
   text-transform: none;
 }
 .filt-popover-toggle-label input[type="checkbox"] {
-  accent-color: var(--purple);
+  accent-color: var(--text-link);
   width: 14px;
   height: 14px;
   cursor: pointer;
@@ -357,11 +357,13 @@
   cursor: wait;
 }
 
-/* Edit + Delete buttons inside the detail modal. */
+/* Edit + Delete buttons inside the detail modal. Edit is an action, so it
+   wears the CTA link pairing (operator monochrome rule: CTA is exempt);
+   Delete keeps its danger red, untouched by this sweep. */
 .detail-edit {
   background: transparent;
-  color: var(--purple);
-  border: 1px solid var(--purple);
+  color: var(--text-link);
+  border: 1px solid var(--text-link);
   padding: 7px 14px;
   border-radius: 6px;
   cursor: pointer;
@@ -369,8 +371,9 @@
   font-weight: 700;
 }
 .detail-edit:hover {
-  background: var(--purple);
-  color: #fff;
+  background: var(--stx-brand, var(--text-link));
+  color: var(--bg, var(--text-inverse));
+  border-color: var(--stx-brand, var(--text-link));
 }
 .detail-delete {
   background: transparent;
@@ -418,9 +421,9 @@
   justify-content: flex-end;
 }
 .d-edit-save {
-  background: var(--purple);
-  color: #fff;
-  border: 1px solid var(--purple);
+  background: var(--stx-brand, var(--text-link));
+  color: var(--bg, var(--text-inverse));
+  border: 1px solid var(--stx-brand, var(--text-link));
   padding: 5px 14px;
   border-radius: 6px;
   cursor: pointer;

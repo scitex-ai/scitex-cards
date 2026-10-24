@@ -31,7 +31,7 @@
   flex-shrink: 0;
 }
 .card:hover {
-  border-color: var(--purple);
+  border-color: var(--text-muted);
 }
 .card::before {
   content: "";
@@ -196,8 +196,8 @@
 }
 .card-copy-btn:hover {
   color: var(--text);
-  border-color: var(--purple);
-  background: rgba(109, 76, 173, 0.12);
+  border-color: var(--text-muted);
+  background: rgba(128, 128, 128, 0.12);
 }
 
 /* Fuzzy-search input (operator TG 437/438) — narrow, lives in the
@@ -431,7 +431,7 @@
   overflow-y: auto;
   padding: 6px;
   background: var(--card-bg);
-  border: 1px solid var(--purple);
+  border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
   font-size: 0.84rem;
@@ -481,8 +481,7 @@
   font-size: 0.85rem;
 }
 .card-ctx-item:hover {
-  background: rgba(109, 76, 173, 0.18);
-  color: #fff;
+  background: rgba(128, 128, 128, 0.18);
 }
 .card-ctx-item--sub {
   padding: 5px 10px 5px 18px;

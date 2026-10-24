@@ -157,7 +157,7 @@
 }
 .graph-fit-btn:hover {
   color: var(--text);
-  border-color: var(--purple, #7c5cbf);
+  border-color: var(--text-muted);
 }
 /* The SVG host. mermaid emits the diagram at its NATURAL px size (plus a
  * viewBox) because it is rendered OFF-DOM, where no container width exists
