@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.10] - 2026-10-24
+
+- Release repair: declare the pinned thread route in the mount-policy
+  manifest (undeclared write routes 403 at the mount layer) and restore
+  the exact agent-filter aria-label its accessibility pin expects. The
+  0.56.8/0.56.9 publish runs failed on these two, not on the suite.
+
 ## [0.56.9] - 2026-10-24
 
 - Operator follow-ups 2026-10-24 (scitex-cards lane): agent list fits the
