@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.56.12] - 2026-10-24
+
+- Release repair: the 0.56.11 tag shipped the no-bold chip pin without
+  its stylesheet half — this release carries the de-bolded chip rules
+  themselves. No other change.
+
 ## [0.56.11] - 2026-10-24
 
 - Operator follow-ups 2026-10-24 (scitex-cards lane): Ctrl+K hint as
