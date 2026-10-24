@@ -1862,6 +1862,21 @@
     }
 
     const WINDOW_LABEL = { "1d": "24 h", "1w": "7 d", "1m": "30 d" };
+    // Browser tab (operator 2026-10-24): "Board (N in last 1h)" — N counts
+    // cards touched in the last hour, off the same _newestTs the stats
+    // below use. The base is captured once from the served title so a
+    // re-render never compounds "(3) Board (2 in last 1h)". Zero renders
+    // the bare base, the way the DM tab omits "(0)".
+    let _boardTabBase = null;
+    function renderBoardTabTitle(nodes) {
+      if (_boardTabBase === null) _boardTabBase = document.title || "Board";
+      const cutoff = Date.now() - 3600 * 1000;
+      const n = (nodes || []).filter((t) => {
+        const ts = _newestTs(t);
+        return ts && ts >= cutoff;
+      }).length;
+      document.title = n > 0 ? `${_boardTabBase} (${n} in last 1h)` : _boardTabBase;
+    }
     function renderStats() {
       const host = document.getElementById("details-stats");
       if (!host) return;
@@ -1925,6 +1940,7 @@
         <div class="stat-foot" id="recent-count-pill">
           <strong id="recent-count-value">${newCount}</strong> new / 24 h
         </div>`;
+      renderBoardTabTitle(all);
     }
 
     // === Recent-count pill — fleet-wide "N new in 24 h" indicator ───
