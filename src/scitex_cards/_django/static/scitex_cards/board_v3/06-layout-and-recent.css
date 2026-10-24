@@ -20,6 +20,16 @@
   gap: 6px;
   margin-right: 4px;
 }
+
+/* Retired header mount (operator 2026-10-22: Layout lives in Details >
+ * Board). The span carries `hidden`, but this sheet's own
+ * `.filt-layout{display:inline-flex}` beats the UA `[hidden]{display:none}`
+ * by specificity — without this rule the retired control renders anyway.
+ * display:none (not visibility) so the flex group collapses to zero. */
+.filt-layout[hidden],
+.stx-cards-filterbar__group--view > .filt-layout[hidden] {
+  display: none;
+}
 .filt-layout-label {
   font-size: 0.7rem;
   color: var(--text-muted);
@@ -99,7 +109,7 @@
   display: inline-flex;
   align-items: center;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   background: var(--gold);
   color: #000;
   font-size: 0.62rem;
@@ -140,7 +150,7 @@
   font-size: 0.72rem;
   font-style: normal;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   border: 1px solid var(--border);
   background: var(--card-bg);
   color: var(--text-muted);

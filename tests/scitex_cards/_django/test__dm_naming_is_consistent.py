@@ -66,6 +66,17 @@ def chat_html():
     return views.chat_page(request).content.decode("utf-8")
 
 
+@pytest.fixture
+def board_html():
+    """The standalone board page as the server serves it (root mount).
+
+    PG-free like the inline-script pin: the shell renders before any store
+    read (cards load client-side via /graph).
+    """
+    request = RequestFactory().get("/")
+    return views.board_v3_page(request).content.decode("utf-8")
+
+
 def _title_of(html: str) -> str:
     match = _TITLE_RE.search(html)
     return match.group(1).strip() if match else ""
@@ -79,13 +90,13 @@ def _switcher_labels(html: str) -> list[str]:
 
 
 def test_the_tab_title_says_dm(chat_html):
-    """The exact string in the operator's screenshot, corrected."""
+    """The DM wording survives the 2026-10-24 shortening: "Cards DM"."""
     # Arrange
     html = chat_html
     # Act
     title = _title_of(html)
     # Assert
-    assert title.startswith("DM ")
+    assert title == "Cards DM"
 
 
 def test_the_tab_title_no_longer_says_chat(chat_html):
@@ -98,15 +109,39 @@ def test_the_tab_title_no_longer_says_chat(chat_html):
     assert "Chat" not in title
 
 
-def test_the_tab_title_still_carries_the_version(chat_html):
-    """Renaming the surface must not cost the version the operator quotes when
-    reporting what they are looking at."""
+def test_the_tab_title_is_the_short_view_name(chat_html):
+    """Operator 2026-10-24: the tab reads "Cards DM" — the version the
+    operator quotes when reporting lives on the page (the data-app-version
+    mount attr), not in the tab."""
     # Arrange
     html = chat_html
     # Act
     title = _title_of(html)
     # Assert
-    assert "SciTeX Cards v" in title
+    assert title == "Cards DM"
+
+
+def test_the_tab_title_names_the_view(chat_html, board_html):
+    """Both browser tabs carry the short view title — operator 2026-10-24:
+    "Cards DM (N)" and "Board (N in last 1h)", the count suffixed at
+    runtime. The in-app header keeps the full product name; the tab keeps
+    the short view name both pages share as a scheme.
+
+    A tuple, so a failure says WHICH page regressed the tab title.
+    """
+    # Arrange
+    pages = (chat_html, board_html)
+    # Act
+    titles = tuple(_title_of(html) for html in pages)
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert titles == ("Cards DM", "Board")
+
+
+def _version_of(html: str) -> str:
+    """The version the page itself prints (data-app-version mount attr)."""
+    match = re.search(r'data-app-version="([^"]+)"', html)
+    assert match, "served page carries no data-app-version mount attr"
+    return match.group(1)
 
 
 # --- the switcher ----------------------------------------------------------
@@ -167,9 +202,26 @@ def test_the_switcher_landmark_is_announced_as_dm(chat_html):
     # Arrange
     html = chat_html
     # Act
-    announced = 'aria-label="Cards sections"' in html
+    announced = 'aria-label="SciTeX Cards sections"' in html
     # Assert
     assert announced
+
+
+def test_the_switcher_landmark_names_the_product(chat_html):
+    """The landmark announces the same product name the eye sees.
+
+    Operator 2026-10-23: the in-app header must read "SciTeX Cards". The
+    switcher nav's aria-label is read aloud by assistive tech — announcing
+    bare "Cards sections" next to a visible "SciTeX Cards" header names two
+    products. The landmark carries the full product name, same rule as the
+    visible band (pinned verbatim, like the landmark itself).
+    """
+    # Arrange
+    html = chat_html
+    # Act
+    announced = 'aria-label="Cards sections"' in html
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert announced is False
 
 
 def test_the_switcher_landmark_never_announces_chat(chat_html):
@@ -224,7 +276,8 @@ def test_the_page_heading_does_not_change_between_board_and_dm(chat_html):
     THE DM WORDING WAS NOT DROPPED, and the three tests around this one are why
     this change is safe: the switcher item still reads "DM" and is the element
     that highlights, its tooltip still reads "Direct messages with the agents",
-    and the browser tab still reads "DM — SciTeX Cards v…". Their 2026-07-29
+    and the browser tab reads the short view name ("Cards DM", suffixed
+    with the unread count at runtime). Their 2026-07-29
     request was "not chat, use DM wording"; this one is about the heading
     CHANGING. Both hold once the band names the product and the switcher names
     the page.

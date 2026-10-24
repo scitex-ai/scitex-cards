@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The DM sidebar carries the project selector + hide wiring (no mocks).
+"""The DM sidebar + hide wiring (no mocks). The header carries the picker.
 
-Operator 2026-10-22: the project selector "must be placed there just like
-other applications" — there being the agent-list sidebar the element
-inspector captured (``div#agent-list`` in ``nav#agents``). Card
-cards-dm-spaces-crud-hide-20261022 adds hide/unhide beside it.
+Operator 2026-10-23: the project selector lives ONLY in the top-most
+application header (shared SDK element) — the DM sidebar copy is dropped.
+Card cards-dm-spaces-crud-hide-20261022 adds hide/unhide beside the list.
 
 What is pinned:
 
-  1. The sidebar renders the CANONICAL picker (``_project_picker.html``),
+  1. The HEADER renders the CANONICAL picker (``_project_picker.html``),
      guarded by the availability flag — never a second hand-rolled picker.
-  2. Exactly ONE picker per page: chat suppresses the header slot
-     (``header_picker=False``); the board does not pass the flag, so its
-     header slot is unaffected.
+  2. Exactly ONE picker per page: NEITHER page passes ``header_picker=False``;
+     the sidebar carries no picker markup.
   3. The list fetches ``?show=all`` (the client partitions) and mounts
      ``ChatHide`` for the row actions — asserted against the sources, the
      way ``test__dm_unread_in_page_title`` asserts wiring.
@@ -65,34 +63,24 @@ def _nav_agents_region(source: str) -> str:
 # --- ONE canonical picker, in the sidebar ----------------------------------
 
 
-def test_sidebar_includes_the_canonical_picker():
-    """The sidebar serves the SDK partial, not a hand-rolled dropdown."""
+def test_sidebar_carries_no_picker():
+    """The DM sidebar drops the picker; the header owns it."""
     # Arrange
     region = _nav_agents_region(_CHAT.read_text(encoding="utf-8"))
     # Act
-    serves = '_project_picker.html' in region
+    clean = '_project_picker.html' not in region and 'dm-project' not in region
     # Assert
-    assert serves
+    assert clean
 
 
-def test_sidebar_picker_is_availability_guarded():
-    """No provider → no picker chrome and no empty row costs."""
-    # Arrange
-    region = _nav_agents_region(_CHAT.read_text(encoding="utf-8"))
-    # Act
-    guarded = "cards_project_picker_available" in region
-    # Assert
-    assert guarded
-
-
-def test_chat_suppresses_the_header_picker_slot():
-    """Two pickers on one page is the defect; the flag is the fix."""
+def test_chat_uses_the_header_picker_slot():
+    """Two pickers on one page is the defect; header-only is the fix."""
     # Arrange
     source = _CHAT.read_text(encoding="utf-8")
     # Act
     suppressed = "header_picker=False" in source
     # Assert
-    assert suppressed
+    assert not suppressed
 
 
 def test_board_keeps_the_header_picker_slot():
@@ -130,6 +118,150 @@ def test_picker_partial_opts_user_scoped_leaves_in():
 
 
 # --- hide/unhide wiring ----------------------------------------------------
+
+
+def test_agent_rows_offer_a_context_menu():
+    """Right-click on an agent row must open a row menu (operator 2026-10-23:
+    CRUD ops as right-click on the agent list). The template serves the
+    menu markup; chat_menu.js mounts it. A menu with nothing behind it
+    would be a dead control — Hide/Unhide rides the existing visibility
+    endpoint, the only row action with a backend."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    script = (_STATIC / "chat" / "chat_menu.js").read_text(encoding="utf-8")
+    # Act
+    served = 'id="agent-menu"' in template
+    mounted = "mountAgentMenu" in script or "agentMenu" in script
+    # Assert
+    assert served and mounted
+
+
+def test_agent_menu_hides_and_unhides_through_the_visibility_endpoint():
+    """The row menu's Hide/Unhide posts to the visibility endpoint —
+    the same one the swipe action uses. No second write path."""
+    # Arrange
+    script = (_STATIC / "chat" / "chat_menu.js").read_text(encoding="utf-8")
+    hide = (_STATIC / "chat" / "chat_hide.js").read_text(encoding="utf-8")
+    # Act
+    path = "/dm/thread/"
+    menu_posts = path in script and "/hidden" in script
+    same_as_swipe = path in hide and "/hidden" in hide
+    # Assert
+    assert menu_posts and same_as_swipe
+
+
+def test_agent_menu_receives_the_list_and_refresh_seams():
+    """The row menu needs the agent list element (right-click target)
+    and the list refresh (post-Hide repaint). chat.js passes both —
+    a menu mounted without them silently never opens."""
+    # Arrange
+    script = (_STATIC / "chat" / "chat.js").read_text(encoding="utf-8")
+    # Act
+    seams = "agentsEl" in script and "refreshAgents" in script
+    mounted = "ChatMenu.mount" in script
+    # Assert
+    assert seams and mounted
+
+
+def test_agent_menu_serves_a_pin_item():
+    """The row menu offers Pin beside Hide (operator 2026-10-24) — served
+    in the template, not built at runtime, so the page can be asserted
+    to actually serve it."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    served = 'id="am-pin"' in template
+    # Assert
+    assert served
+
+
+def test_agent_menu_is_hidden_until_opened():
+    """The Hide/Pin menu must not render on page load (operator 2026-10-24:
+    never show it by default) — it opens at the cursor on right-click."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    hidden = "#agent-menu { display: none; }" in template
+    shown = "#agent-menu.open { display: block; }" in template
+    # Assert
+    assert hidden and shown
+
+
+def test_hover_does_not_reveal_the_inline_row_action():
+    """Hide/Pin live in the right-click menu only (operator 2026-10-24) —
+    a hover-revealed action reads as a control showing by default. The
+    touch slide (.open) keeps its reveal: it is the touch path to Hide."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    no_hover = ":hover .row-act" not in template
+    no_focus_reveal = "focus-within" not in template
+    slide_kept = ".agent-wrap.open .row-act" in template
+    # Assert
+    assert no_hover and no_focus_reveal and slide_kept
+
+
+def test_agent_menu_pins_through_its_own_endpoint():
+    """Pin/Unpin posts to the pinned endpoint — the same one-write-path
+    rule as Hide, not a second shape."""
+    # Arrange
+    script = (_STATIC / "chat" / "chat_menu.js").read_text(encoding="utf-8")
+    # Act
+    posts = '"/pinned"' in script and "{ pinned: pinned }" in script
+    refreshed = "refreshAgents" in script
+    # Assert
+    assert posts and refreshed
+
+
+def test_agent_menu_labels_pin_from_row_state():
+    """The item reads Unpin on a pinned row, Pin elsewhere — decided off
+    the row's own markup, the way Hide reads its hidden state."""
+    # Arrange
+    script = (_STATIC / "chat" / "chat_menu.js").read_text(encoding="utf-8")
+    # Act
+    labelled = 'pinBtn.textContent = pinned ? "Unpin" : "Pin"' in script
+    # Assert
+    assert labelled
+
+
+def test_pinned_rows_carry_their_marker_class():
+    """The 📌 mark rides an `is-pinned` row class fed by the server flag —
+    chat.js must stamp it or pinned rows float first with no visible mark."""
+    # Arrange
+    script = _CHAT_JS.read_text(encoding="utf-8")
+    # Act
+    stamped = "is-pinned" in script and "a.pinned" in script
+    # Assert
+    assert stamped
+
+
+def test_agent_list_fits_the_filter_row():
+    """The 240px column truncated the filter placeholder mid-shortcut
+    ("Filter agents (Ctr…") and cramped Filter+New (operator 2026-10-24:
+    the filter must fill its width). The column must clear 280px."""
+    # Arrange
+    import re
+
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    match = re.search(r"#agents \{(.*?)\}", template, flags=re.DOTALL)
+    width = re.search(r"width:\s*(\d+)px", match.group(1)) if match else None
+    # Assert
+    assert width is not None and int(width.group(1)) >= 280
+
+
+def test_agent_filter_carries_a_kbd_shortcut_marker():
+    """Operator 2026-10-24: the shortcut lives in a hub-style kbd marker
+    at the input's end — the placeholder never inlines it. Served in the
+    template, aria-hidden, and pointed nowhere (pointer-events none lives
+    in CSS, not assertable here)."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    served = '<kbd class="agent-filter-kbd" aria-hidden="true">Ctrl+K</kbd>' in template
+    short = "Ctrl+K to focus" not in template and "(Ctrl+K)" not in template
+    # Assert
+    assert served and short
 
 
 def test_list_fetches_every_row_including_hidden():

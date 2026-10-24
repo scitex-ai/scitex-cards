@@ -131,6 +131,26 @@
     width: 88vw;
     max-width: 320px;
   }
+  /* Phone canvas floor (operator 2026-10-24: the board is not shown at
+   * mobile widths). In the mobile column layout the fixed-height stacked
+   * panels eat .main's whole height, and .board-area — flex:1 with a 0
+   * basis — settles at 0px (measured 390x16 on the live board, the 680px
+   * raster clipped to a 2px scroll container). The floor keeps the canvas;
+   * the .tl rules let the raster fill it with its own inner scroll, as on
+   * desktop. Two classes of specificity: 13-details-pane.css (linked later)
+   * sets `.board-area { min-height: 0 }`, so a bare `.board-area` floor
+   * would lose the cascade — `.main .board-area` wins without !important. */
+   .main .board-area {
+     min-height: 50vh;
+   }
+  .tl-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .tl-scroll {
+    flex: 1 1 auto;
+    min-height: 120px;
+  }
   .columns {
     scroll-snap-type: x mandatory;
     padding: 8px;

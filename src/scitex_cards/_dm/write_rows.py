@@ -277,12 +277,15 @@ def record_visibility_event(
     host: str | None = None,
     event_id: str | None = None,
 ) -> bool:
-    """Append one hide/unhide event. True iff it was new.
+    """Append one hide/unhide/pin/unpin event. True iff it was new.
 
-    ``action`` is ``'hide'`` or ``'unhide'``. Unhiding is a LATER ROW, never
-    a deleted one — the same rule ``record_member_event`` states for leave,
-    which is what keeps an old hide answerable after the fact and what the
-    ``dm_visibility_events_no_delete`` trigger enforces.
+    ``action`` is ``'hide'``, ``'unhide'``, ``'pin'`` or ``'unpin'``.
+    Unhiding is a LATER ROW, never a deleted one — the same rule
+    ``record_member_event`` states for leave, which is what keeps an old
+    hide answerable after the fact and what the
+    ``dm_visibility_events_no_delete`` trigger enforces. Pin/unpin ride
+    the same table because pinning is view state too: it only decides
+    whether this reader's list floats the row, never content.
 
     The ``seq`` counter is load-bearing, not decoration: timestamps here are
     second-resolution, so a hide and an unhide in the same second (a double
@@ -290,23 +293,29 @@ def record_visibility_event(
     would then fall through to the content-hash id — the exact coin flip
     ``record_member_event``'s docstring records for membership.
     """
-    if action not in ("hide", "unhide"):
+    if action not in ("hide", "unhide", "pin", "unpin"):
         raise ValueError(
-            f"visibility action must be 'hide' or 'unhide', got {action!r}"
+            "visibility action must be 'hide', 'unhide', 'pin' or 'unpin', "
+            f"got {action!r}"
         )
     stamp = ts or utc_now_iso()
+    # The seq is assigned FIRST so it can join the derived id: the id must
+    # be unique per event (not per action-second), or ON CONFLICT swallows
+    # same-second retoggles (release gate 2026-10-23). Read inside the
+    # caller's BEGIN IMMEDIATE, so two writers cannot observe the same max.
+    seq = next_visibility_seq(conn, thread_id, reader)
     cur = conn.execute(
         "INSERT INTO dm_visibility_events"
         "(id, thread_id, reader, action, ts, seq, actor, origin_host,"
         " record_json) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)"
         " ON CONFLICT DO NOTHING",
         (
-            event_id or derived_visibility_event_id(thread_id, reader, action, stamp),
+            event_id or derived_visibility_event_id(thread_id, reader, stamp, seq),
             thread_id,
             reader,
             action,
             stamp,
-            next_visibility_seq(conn, thread_id, reader),
+            seq,
             actor,
             host or origin_host(),
             _dumps({}),

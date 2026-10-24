@@ -97,6 +97,24 @@ def test_filterbar_title_and_column_names_follow_the_theme(selector: str):
     assert not re.search(r"color:\s*#fff\s*;", body, re.IGNORECASE)
 
 
+def test_light_page_background_is_the_hub_token_not_white():
+    """Operator 2026-10-24: the light page background is the hub's warm
+    grey, never full white. The dark tiers already equal the hub tokens,
+    so the light tiers map onto the same family."""
+    # Arrange
+    css = _without_comments(_FILTERBAR.read_text(encoding="utf-8"))
+    # Act
+    block = re.search(r'\[data-theme="light"\] \{(.*?)\}', css, flags=re.DOTALL)
+    body = block.group(1) if block else ""
+    # Assert — one compound assertion (PA-307).
+    assert (
+        block is not None
+        and "#ffffff" not in body.lower()
+        and "var(--bg-page" in body
+        and "var(--bg-surface" in body
+    )
+
+
 # ── (2) JA board chrome ─────────────────────────────────────────────────────
 
 

@@ -26,6 +26,14 @@
   border-radius: 50%;
   border: 3px solid var(--border);
   border-top-color: var(--stx-brand, var(--text-muted));
+  /* Operator 2026-10-23: the spinner must visibly spin while /graph is in
+   * flight — a static ring reads as a stuck page. Rotation only; the
+   * reduced-motion block below still stands it down. */
+  animation: board-skeleton-spin 0.9s linear infinite;
+}
+
+@keyframes board-skeleton-spin {
+  to { transform: rotate(360deg); }
 }
 
 .board-skeleton__msg {

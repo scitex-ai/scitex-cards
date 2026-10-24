@@ -345,6 +345,50 @@ def set_thread_visibility(
     }
 
 
+def set_thread_pinned(
+    thread_id: str,
+    reader: str,
+    pinned: bool,
+    *,
+    db: str | Path | None = None,
+    store: str | Path | None = None,
+    actor: str | None = None,
+) -> dict:
+    """Pin (or unpin) ``thread_id`` for ``reader``. View state, not content.
+
+    The mirror of :func:`set_thread_visibility`: pinning appends a ``pin``
+    event, unpinning a later ``unpin`` event — never a deletion. A pinned
+    thread floats to the top of its reader's list; hidden still hides.
+    """
+    from .read import pinned_for_conn as _currently_pinned
+
+    action = "pin" if pinned else "unpin"
+    conn = _open(db, store)
+    try:
+        begin_write_transaction(conn)
+        if not conn.execute(
+            "SELECT 1 FROM dm_threads WHERE id = ?", (thread_id,)
+        ).fetchone():
+            raise KeyError(f"unknown thread {thread_id!r}")
+        was_pinned = thread_id in _currently_pinned(conn, reader)
+        changed = pinned != was_pinned
+        record_visibility_event(
+            conn, thread_id, reader, action, actor=actor
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {
+        "thread_id": thread_id,
+        "reader": reader,
+        "pinned": pinned,
+        "changed": changed,
+    }
+
+
 def _known_messages(conn: StoreConnection, message_ids: list[str]) -> list[str]:
     """Those of ``message_ids`` the store actually holds, order preserved."""
     placeholders = ", ".join("?" for _ in message_ids)
@@ -440,6 +484,7 @@ __all__ = [
     "record_member_event",
     "record_visibility_event",
     "remove_member",
+    "set_thread_pinned",
     "set_thread_visibility",
     "tombstone",
 ]

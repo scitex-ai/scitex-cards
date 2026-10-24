@@ -86,15 +86,16 @@
 
   /* The title the tab should carry for `count` unread.
    *
-   * The count goes in FRONT: a tab strip truncates from the right, so a suffix
-   * is the first thing to disappear on the narrow tab this page will actually
-   * be one of. Zero renders the base title unchanged — no "(0)", which would
-   * make "nothing new" look like a state that needs attention.
+   * Operator 2026-10-24: the count goes LAST — "Cards DM (3)". (The
+   * previous prefix form survived tab-strip truncation better, but the
+   * operator's format is the contract.) Zero renders the base title
+   * unchanged — no "(0)", which would make "nothing new" look like a
+   * state that needs attention.
    */
   function titleFor(base, count) {
     var plain = String(base === undefined || base === null ? "" : base);
     if (!count || count <= 0) return plain;
-    return "(" + badgeFor(count) + ") " + plain;
+    return plain + " (" + badgeFor(count) + ")";
   }
 
   /* How much alternation a count change earns. Pure, so the two rules that make
