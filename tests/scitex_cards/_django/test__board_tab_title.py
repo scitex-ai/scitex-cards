@@ -42,10 +42,9 @@ def test_tab_title_counts_the_last_hour_off_newest_ts() -> None:
     source = _source()
     # Act
     idx = source.rfind("in last 1h")
-    assert idx != -1
     window = source[max(0, idx - 600) : idx]
     # Assert
-    assert "_newestTs" in window and "3600" in window
+    assert idx != -1 and "_newestTs" in window and "3600" in window
 
 
 def test_tab_title_base_is_captured_once() -> None:
@@ -64,10 +63,9 @@ def test_tab_title_omits_the_count_at_zero() -> None:
     source = _source()
     # Act
     idx = source.rfind("in last 1h")
-    assert idx != -1
     window = source[max(0, idx - 900) : idx + 200]
     # Assert
-    assert "n > 0" in window
+    assert idx != -1 and "n > 0" in window
 
 
 def test_tab_title_updates_on_every_stats_render() -> None:

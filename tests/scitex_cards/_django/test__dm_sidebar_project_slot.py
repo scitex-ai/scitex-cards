@@ -101,7 +101,7 @@ def test_header_slot_honours_the_suppression_flag():
     # Act
     honoured = "header_picker != False" in source
     # Assert
-    honoured
+    assert honoured
 
 
 def test_picker_partial_opts_user_scoped_leaves_in():
