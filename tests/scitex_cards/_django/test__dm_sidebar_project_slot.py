@@ -250,6 +250,20 @@ def test_agent_list_fits_the_filter_row():
     assert width is not None and int(width.group(1)) >= 280
 
 
+def test_agent_filter_carries_a_kbd_shortcut_marker():
+    """Operator 2026-10-24: the shortcut lives in a hub-style kbd marker
+    at the input's end — the placeholder never inlines it. Served in the
+    template, aria-hidden, and pointed nowhere (pointer-events none lives
+    in CSS, not assertable here)."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    served = '<kbd class="agent-filter-kbd" aria-hidden="true">Ctrl+K</kbd>' in template
+    short = "Ctrl+K to focus" not in template and "(Ctrl+K)" not in template
+    # Assert
+    assert served and short
+
+
 def test_list_fetches_every_row_including_hidden():
     """The client partitions (visible + Hidden disclosure), so it must fetch
     ``?show=all`` — the default would hide hidden rows from the client that

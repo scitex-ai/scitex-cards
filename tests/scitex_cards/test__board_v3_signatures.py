@@ -205,16 +205,16 @@ class TestP1SearchAsLauncher:
         assert 'e.key === "k"' in body and 'e.key === "/"' not in body
 
     def test_kbd_hint_in_search_placeholder_board_text_contains(self, board_text):
-        # Operator 2026-10-24: Ctrl+K focuses the search (the old "/" capture
-        # starved the hub shell's global search). The pin now asserts the
-        # hint is INSIDE the placeholder text on `#f-search`, so the
-        # affordance is still discoverable but without the extra DOM chrome.
+        # Operator 2026-10-24: the shortcut lives in a hub-style kbd marker
+        # overlaid at the input's end — never inlined in the placeholder.
+        # The pin asserts the marker is SERVED and the placeholder carries
+        # no shortcut prose, so the affordance stays discoverable without
+        # eating the query space.
         # Arrange
         # Act
         # Assert
-        assert "Ctrl+K to focus" in board_text, (
-            "search input must hint at the 'Ctrl+K' keyboard shortcut in "
-            "its placeholder (operator UX)"
+        assert '<kbd>Ctrl+K</kbd>' in board_text, (
+            "board search must serve the Ctrl+K kbd marker (operator UX)"
         )
 
     def test_kbd_hint_in_search_placeholder_board_text_contains_2(self, board_text):
