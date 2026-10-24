@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.56.8] - 2026-10-24
+
+- Operator batch 2026-10-24 (scitex-cards lane): short counted tab titles
+  ("Cards DM (N)", "Board (N in last 1h)"); search/filter focus moves to
+  Ctrl+K with the board's "/" capture released to the hub global search;
+  DM thread pane survives a refused read-receipt ack (403 on mark_read=1
+  serves messages with receipts paused); pin/unpin threads end to end
+  (append-only events, endpoint, menu, sort); phone canvas keeps a 50vh
+  floor so the board shows at mobile widths; filter chip and header
+  search lose the purple wash (brand CTA pairing). Collapsed Details
+  rail is keyboard-expandable. Each slice pinned and live-verified.
+
 ## [0.56.7] - 2026-10-23
 
 - Board /graph fetch is bounded (operator 2026-10-24: "loading board ...
