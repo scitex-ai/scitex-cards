@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.56.8] - 2026-10-24
+
+- Board boots past the deferred-module race (operator incident 2026-10-24,
+  PR #1152): #board stuck at "Loading board..." with `Uncaught
+  ReferenceError: STX is not defined` at escapeHtml <- renderActiveFilterChips
+  <- attachFilters <- boot. The inline foot script runs during parsing while
+  16-card-helpers.js is `defer`, so at boot no STX global exists and the bare
+  read threw, aborting attachFilters before loadGraph ever ran. The template
+  alias now delegates guarded (module present stays the live SSOT; absent
+  falls back to the byte-identical local rule). XSS boundary unchanged.
+  Pinned by a survival test that executes the shipped alias with no STX
+  global (RED pre-fix, GREEN post-fix) plus an e2e harness proving the
+  shipped boot path throws the exact operator error pre-fix and renders
+  chips post-fix.
+
 ## [0.56.7] - 2026-10-23
 
 - Board /graph fetch is bounded (operator 2026-10-24: "loading board ...
