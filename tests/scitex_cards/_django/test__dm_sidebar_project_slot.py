@@ -175,6 +175,32 @@ def test_agent_menu_serves_a_pin_item():
     assert served
 
 
+def test_agent_menu_is_hidden_until_opened():
+    """The Hide/Pin menu must not render on page load (operator 2026-10-24:
+    never show it by default) — it opens at the cursor on right-click."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    hidden = "#agent-menu { display: none; }" in template
+    shown = "#agent-menu.open { display: block; }" in template
+    # Assert
+    assert hidden and shown
+
+
+def test_hover_does_not_reveal_the_inline_row_action():
+    """Hide/Pin live in the right-click menu only (operator 2026-10-24) —
+    a hover-revealed action reads as a control showing by default. The
+    touch slide (.open) keeps its reveal: it is the touch path to Hide."""
+    # Arrange
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    no_hover = ":hover .row-act" not in template
+    no_focus_reveal = "focus-within" not in template
+    slide_kept = ".agent-wrap.open .row-act" in template
+    # Assert
+    assert no_hover and no_focus_reveal and slide_kept
+
+
 def test_agent_menu_pins_through_its_own_endpoint():
     """Pin/Unpin posts to the pinned endpoint — the same one-write-path
     rule as Hide, not a second shape."""
@@ -207,6 +233,21 @@ def test_pinned_rows_carry_their_marker_class():
     stamped = "is-pinned" in script and "a.pinned" in script
     # Assert
     assert stamped
+
+
+def test_agent_list_fits_the_filter_row():
+    """The 240px column truncated the filter placeholder mid-shortcut
+    ("Filter agents (Ctr…") and cramped Filter+New (operator 2026-10-24:
+    the filter must fill its width). The column must clear 280px."""
+    # Arrange
+    import re
+
+    template = _CHAT.read_text(encoding="utf-8")
+    # Act
+    match = re.search(r"#agents \{(.*?)\}", template, flags=re.DOTALL)
+    width = re.search(r"width:\s*(\d+)px", match.group(1)) if match else None
+    # Assert
+    assert width is not None and int(width.group(1)) >= 280
 
 
 def test_list_fetches_every_row_including_hidden():

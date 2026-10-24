@@ -173,7 +173,11 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
      for that reason: left on the nav, the filter scrolls away exactly when a
      list long enough to need filtering is being scrolled. */
   #agents {
-    width: 240px; flex: 0 0 auto; background: var(--panel);
+    /* 300px: the 240px column truncated the filter placeholder
+       ("Filter agents (Ctr…") and cramped Filter+New side by side
+       (operator 2026-10-24: the filter must fill its width). Phone
+       keeps the full-width drawer (chat_panes.css), untouched. */
+    width: 300px; flex: 0 0 auto; background: var(--panel);
     border-right: 1px solid var(--line);
     display: flex; flex-direction: column; min-height: 0;
   }
@@ -247,11 +251,12 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     font-size: 0.75rem; font-weight: 600; font-family: inherit;
     opacity: 0; pointer-events: none;
   }
-  /* Touch: the slide reveals the action sitting BENEATH the row (iOS).
-     Desktop: no slide — the action overlays the row's end on hover/focus,
-     so the row never shifts under a mouse that is about to click it. */
+  /* Touch: the slide reveals the action sitting BENEATH the row (iOS) —
+     the only place the inline action still appears. Desktop hover/focus
+     no longer reveals it (operator 2026-10-24): Hide/Pin live in the
+     right-click menu, and an action that appears on hover reads as a
+     control showing by default. */
   #agents .agent-wrap.open .row-act { opacity: 1; pointer-events: auto; }
-  #agents .agent-wrap:not(.open):hover .row-act, #agents .agent-wrap:not(.open):focus-within .row-act { opacity: 1; pointer-events: auto; z-index: 2; }
   #agents .row-hide { background: var(--panel-2); color: var(--dim); }
   #agents .row-hide:hover { color: var(--text); }
   #agents .row-unhide { background: var(--panel-2); color: var(--text-link); }
@@ -653,6 +658,12 @@ identical URLs, and the duplication is what keeps the board's load ORDER
 <style>
   /* Positioning only — every visual rule comes from base. */
   #msg-menu-wrap, #react-bar, #forward-menu { position: fixed; display: none; z-index: 40; }
+  /* Agent-row menu: hidden until opened, like the message menu above.
+     (Without this the Hide/Pin menu renders in flow on page load —
+     operator 2026-10-24: never show it by default.) The JS toggles
+     .open on #agent-menu itself and positions it inline at the cursor. */
+  #agent-menu { display: none; }
+  #agent-menu.open { display: block; }
   #forward-menu.open { display: block; }
   /* The wrap is the operator's sketch made literal: the quick reaction ROW,
      then the action LIST beneath it, opening and closing as one thing. Only
