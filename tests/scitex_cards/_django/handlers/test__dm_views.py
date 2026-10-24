@@ -342,6 +342,48 @@ def test_thread_view_mark_read_acks_operator_messages(store):
     ) == (200, "dm:agent-x::operator", [message["id"]], ["operator"], [])
 
 
+def test_thread_view_mark_read_refusal_still_serves_messages(store):
+    """A read-only mount refuses the receipt ack but must not strand the pane.
+
+    Operator 2026-10-24: hub's SELECT-only role answers mark_read=1 with
+    HTTP 403 and the thread sits on "Loading..." though the messages read
+    fine. The ack is best effort now: 200 + messages + ``ack.ok == False``.
+    """
+    from scitex_cards._django.handlers.dm import STORE_READ_ONLY_REASON
+
+    # Arrange
+    message = append_message("agent-x", "operator", "unread ping", store=store)
+    read_only = _read_only_session_dsn(store)
+    request = _get(f"/dm/thread/agent-x?{_q(read_only, mark_read='1')}")
+    # Act
+    response = dm_thread_view(request, "agent-x")
+    data = json.loads(response.content)
+    # Assert
+    assert (
+        response.status_code,
+        [m["id"] for m in data["messages"]],
+        data["ack"]["ok"],
+        data["ack"]["reason"],
+    ) == (200, [message["id"]], False, STORE_READ_ONLY_REASON)
+
+
+def test_thread_view_mark_read_success_reports_the_ack(store):
+    """The happy path carries the same ``ack`` key so the client can rely
+    on it existing rather than branching on its absence."""
+    # Arrange
+    message = append_message("agent-x", "operator", "unread ping", store=store)
+    request = _get(f"/dm/thread/agent-x?{_q(store, mark_read='1')}")
+    # Act
+    response = dm_thread_view(request, "agent-x")
+    data = json.loads(response.content)
+    # Assert
+    assert (
+        response.status_code,
+        [m["id"] for m in data["messages"]],
+        data["ack"],
+    ) == (200, [message["id"]], {"ok": True, "marked": 1})
+
+
 # === POST /dm/thread/<peer> ================================================
 
 

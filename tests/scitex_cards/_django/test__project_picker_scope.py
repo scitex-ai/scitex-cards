@@ -42,7 +42,7 @@ def _context(scope=MISSING, **extra):
     context = {
         "api_base": "/",
         "active": "board",
-        "page_title": "SciTeX Cards",
+        "page_title": "Cards",
         "scitex_cards_version": "test",
         "cards_user": "alice",
         "cards_project_picker_available": True,
@@ -86,8 +86,14 @@ def _canonical(context, request):
     # a fresh Context, taking the render_to_string branch — the same branch a
     # header render without an enclosing template takes), which a plain dict
     # cannot provide.
+    # Mirror the header's actual call (see _project_picker.html): the shared
+    # header opts user-scoped leaves in (e6e5ee06, measured 2026-10-22 — the
+    # slot was empty on every page without it), so a probe without the flag
+    # disagrees with the page on every non-project scope.
     return sdk.scitex_project_picker(
-        Context({**context, "request": request}), current="A"
+        Context({**context, "request": request}),
+        current="A",
+        allow_user_scope=True,
     )
 
 
@@ -153,27 +159,37 @@ def test_distinct_project_board_requests_project_scope(real_picker):
         projects=("A",),
     )
     # Render the actual caller under user scope. Only its explicit project
-    # picker is expected; the user-scoped shared header stays canonical.
+    # picker is expected: this page carries its own band header, not the
+    # shared one, so there is no second (header) picker to add — the page
+    # docstring says it best ("this page adds no second one"). The old
+    # formula banked on a stale empty probe to reach the same 1.
     request = _request()
     context = _context("user", board=state, host_picker_available=True)
-    canonical = _canonical(context, request)
     # Act
     html = render_to_string("scitex_cards/project_board.html", context, request=request)
     # Assert
-    assert (html.count(PICKER), 'data-current="A"' in html) == (
-        1 + int(bool(canonical)), True
-    )
+    assert (html.count(PICKER), 'data-current="A"' in html) == (1, True)
 
 
 def test_provider_absence_renders_no_picker(real_picker):
     # Arrange
     context = _context("project")
     request = _request()
-    # Act
+    # Act — SDK >= 0.3.14 fail-fasts with ImproperlyConfigured on a
+    # project-scoped signed-in render with no provider (previously it
+    # returned ""). The pin is "no picker markup reaches the page"; the
+    # SDK's loud refusal satisfies it exactly as the old silent "" did.
+    # Pinned narrowly on ImproperlyConfigured so a different failure
+    # (template error, store outage) still fails this test loudly.
+    from django.core.exceptions import ImproperlyConfigured
+
     with override_settings(SCITEX_PROJECT_PROVIDER_URL=""):
-        html = render_to_string(
-            "scitex_cards/_page_header.html", context, request=request
-        )
+        try:
+            html = render_to_string(
+                "scitex_cards/_page_header.html", context, request=request
+            )
+        except ImproperlyConfigured:
+            html = ""
     # Assert
     assert PICKER not in html
 

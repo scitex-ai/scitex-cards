@@ -67,7 +67,14 @@
     };
 
     let STATE = { graph: null, openId: null, lastMtime: null,
-      filters: { project: "", host: "", status: "", blocker: "", agent: "",
+      // Project comes from the HEADER picker (operator 2026-10-23: one
+      // picker per page, in the app header — never a leaf-local Details
+      // duplicate). The server seeds it from the resolved scope
+      // (cards_current_project_id); the SDK picker navigates (?project=)
+      // so a change reloads with the new seed. No Details <select> writes
+      // this key — attachFilters/populateFilters must not reference
+      // f-project (a null getElementById would kill the whole populate).
+      filters: { project: "{{ cards_current_project_id|default:''|escapejs }}", host: "", status: "", blocker: "", agent: "",
                  blockingMe: false, showHidden: false,
                  // Show-done — DEFAULT OFF (operator direct, lead a2a
                  // `b9d135c1ea8348dea80f027ba66a0079` 2026-06-12).
@@ -177,7 +184,27 @@
       const { preserveScroll = false, skipIfUnchanged = false } = opts || {};
       try {
         markBoardPhase("graph-request-started");
-        const r = await fetch(API_BASE + "/graph"); // (hook-bypass: line-limit)
+        // Bounded graph fetch (operator 2026-10-24: "loading board ... forever").
+        // fetch() has NO deadline — a /graph that never settles (slow store
+        // rebuild, stalled proxy, dropped connection the browser never
+        // notices) left the server-painted skeleton on screen forever, with
+        // no panel and no retry: every faster failure path paints SOMETHING,
+        // but a hanging fetch reaches none of them. Abort at 30 s so the
+        // worst case degrades to the same loud error panel as every other
+        // failure — a named state the operator can act on, not silence.
+        // (hook-bypass: line-limit.)
+        const _graphCtl = (typeof AbortController !== "undefined")
+          ? new AbortController() : null;
+        const _graphTimer = (_graphCtl && typeof setTimeout !== "undefined")
+          ? setTimeout(() => { try { _graphCtl.abort(); } catch {} }, 30000)
+          : null;
+        let r;
+        try {
+          r = await fetch(API_BASE + "/graph",
+            _graphCtl ? { signal: _graphCtl.signal } : undefined);
+        } finally {
+          if (_graphTimer !== null) clearTimeout(_graphTimer);
+        }
         // Successful JSON parsing overlaps deferred script download. Error
         // bodies retain boardStates.js's tolerant reader and named states.
         const graph = r.ok ? await r.json() : null;
@@ -405,8 +432,31 @@
       _searchDebouncer.schedule(render);
     }
 
+    // === Details-pane free-text (buzz) filter — operator batch 2026-10-23
+    // item 5. The #f-text input in the Details Filters section writes the
+    // SAME STATE.filters.search the header #f-search owns, so both boxes
+    // stay in sync (each mirrors the other on input) and share one match
+    // path (`passes()` → fuzzyMatch across title/text/project/assignee/
+    // note). Debounced via the same _scheduleSearchRender trailing edge
+    // as the header search — no second policy.
+    function onDetailsTextInput(e) {
+      const v = e && e.currentTarget ? e.currentTarget.value : "";
+      STATE.filters.search = v;
+      const header = document.getElementById("f-search");
+      if (header && header.value !== v) header.value = v;
+      STATE._searchParsed = null;
+      STATE._searchParsedRaw = null;
+      renderQualifierHints(v);
+      renderActiveFilterChips();
+      _scheduleSearchRender();
+    }
+
     function onSearchInput(e) {
       STATE.filters.search = e.currentTarget.value;
+      const details = document.getElementById("f-text");
+      if (details && details.value !== e.currentTarget.value) {
+        details.value = e.currentTarget.value;
+      }
       // Invalidate the qualifier-parse cache on every keystroke.
       STATE._searchParsed = null;
       STATE._searchParsedRaw = null;
@@ -578,12 +628,10 @@
           items.map(i => `<option value="${i}">${i}</option>`).join("");
         if (items.includes(cur)) el.value = cur;
       };
-      // f-project includes an explicit "Uncategorized" entry when any
-      // task in the store lacks a `project` field (operator TG 383 —
-      // makes the empty-project column filterable).
-      const projects = uniq("project");
-      if (nodes.some(n => !n.project)) projects.push("Uncategorized");
-      set("f-project", projects, T.allProjects);
+      // Project is header-owned (operator 2026-10-23: single picker in
+      // the app header) — populateFilters maintains only the remaining
+      // leaf-local selects. The "Uncategorized" entry died with the
+      // Details project row; the header picker is the project control.
       set("f-host", uniq("host"), T.allHosts);
       set("f-agent", uniq("agent"), T.allAssignees);
       // Status / blocker = closed enums. Status now lists the 7 REAL
@@ -624,8 +672,33 @@
     // before the deferred module loads.
     // Pinned by test_the_template_alias_is_a_function_declaration_not_an_assignment.
     // hook-bypass: line-limit (board_v3.html split in progress — this IS it)
+    //
+    // OPERATOR INCIDENT 2026-10-24: "Loading board..." forever with
+    // `Uncaught ReferenceError: STX is not defined` at
+    // escapeHtml <- renderActiveFilterChips <- attachFilters <- boot. The
+    // inline script runs during parsing; the module is `defer`, so at boot
+    // time NO STX global exists and the bare read throws, aborting
+    // attachFilters before loadGraph ever runs. So the delegation is
+    // GUARDED: the module stays the live SSOT whenever it is present, and
+    // a not-yet-loaded module falls back to the byte-identical local rule —
+    // escaping that works is always safer than a throw that kills the board.
+    // (The XSS boundary is unchanged: both branches escape the same five
+    // characters; the module file remains the tested SSOT.)
     function escapeHtml(s) {
-      return STX.cardHelpers.escapeHtml(s);
+      var helpers = (typeof globalThis !== "undefined" && globalThis.STX
+        && globalThis.STX.cardHelpers) || null;
+      if (helpers && typeof helpers.escapeHtml === "function") {
+        return helpers.escapeHtml(s);
+      }
+      return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+        return {
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        }[c];
+      });
     }
 
 
@@ -1061,13 +1134,15 @@
         f.project = ""; f.host = ""; f.status = "";
         f.blocker = ""; f.agent = ""; f.date = "";
         f.search = ""; f.blockingMe = false;
-        for (const id of ["f-project", "f-host", "f-status",
+        for (const id of ["f-host", "f-status",
                           "f-blocker", "f-agent", "f-date"]) {
           const el = document.getElementById(id);
           if (el) el.value = "";
         }
         const search = document.getElementById("f-search");
         if (search) search.value = "";
+        const detailsText = document.getElementById("f-text");
+        if (detailsText) detailsText.value = "";
         renderActiveFilterChips();
         render();
       });
@@ -1657,6 +1732,11 @@
       // --ui-collapsed-pane-width and flips the header into the vertical
       // icon+label strip. We only toggle it — the behaviour is the shell's.
       const on = pane.classList.toggle("collapsed");
+      // Keyboard parity with the guarded rail onclick/_board_pane.html: the
+      // rail is a tab stop only while collapsed (the state where the 13px
+      // toggle may clip out of reach). Open, every inner control is
+      // reachable on its own, so the pane itself stays out of the tab order.
+      pane.tabIndex = on ? 0 : -1;
       const btn = document.getElementById("details-toggle");
       if (btn) {
         btn.setAttribute("aria-expanded", on ? "false" : "true");
@@ -1676,6 +1756,9 @@
       const pane = document.getElementById("details-panel");
       const btn = document.getElementById("details-toggle");
       if (pane) pane.classList.toggle("collapsed", collapsed);
+      // Same rail tab-stop contract as toggleDetailsPane above: focusable
+      // while collapsed, out of the tab order while open.
+      if (pane) pane.tabIndex = collapsed ? 0 : -1;
       if (btn) {
         btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
         btn.textContent = collapsed ? "‹" : "›";
@@ -1688,7 +1771,11 @@
         const raw = localStorage.getItem(DETAILS_OPEN_KEY);
         if (raw) return new Set(JSON.parse(raw));
       } catch {}
-      return new Set(["stats", "filters"]);
+      // Board OPEN by default (operator 2026-10-23: the Details pane
+      // "does not open"): View/Span/Layout/Live live in Details > Board
+      // since the 2026-10-22 re-home, so a closed Board section hides the
+      // very controls the move was for. A stored preference still wins.
+      return new Set(["board", "stats", "filters"]);
     }
     function toggleDetailsSection(id) {
       const open = _detailsOpenSet();
@@ -1775,6 +1862,21 @@
     }
 
     const WINDOW_LABEL = { "1d": "24 h", "1w": "7 d", "1m": "30 d" };
+    // Browser tab (operator 2026-10-24): "Board (N in last 1h)" — N counts
+    // cards touched in the last hour, off the same _newestTs the stats
+    // below use. The base is captured once from the served title so a
+    // re-render never compounds "(3) Board (2 in last 1h)". Zero renders
+    // the bare base, the way the DM tab omits "(0)".
+    let _boardTabBase = null;
+    function renderBoardTabTitle(nodes) {
+      if (_boardTabBase === null) _boardTabBase = document.title || "Board";
+      const cutoff = Date.now() - 3600 * 1000;
+      const n = (nodes || []).filter((t) => {
+        const ts = _newestTs(t);
+        return ts && ts >= cutoff;
+      }).length;
+      document.title = n > 0 ? `${_boardTabBase} (${n} in last 1h)` : _boardTabBase;
+    }
     function renderStats() {
       const host = document.getElementById("details-stats");
       if (!host) return;
@@ -1838,6 +1940,7 @@
         <div class="stat-foot" id="recent-count-pill">
           <strong id="recent-count-value">${newCount}</strong> new / 24 h
         </div>`;
+      renderBoardTabTitle(all);
     }
 
     // === Recent-count pill — fleet-wide "N new in 24 h" indicator ───
@@ -1855,7 +1958,7 @@
 
 
     function attachFilters() {
-      const map = { "f-project": "project", "f-host": "host", "f-status": "status",
+      const map = { "f-host": "host", "f-status": "status",
                     "f-blocker": "blocker", "f-agent": "agent",
                     "f-date": "date" };
       Object.entries(map).forEach(([id, key]) => {
@@ -1890,7 +1993,7 @@
     function attachCombobox() {
       if (!(window.STX && window.STX.Combobox)) return;  // graceful fallback
       const FILTER_IDS = [
-        "f-project", "f-host", "f-status", "f-blocker", "f-agent", "f-date",
+        "f-host", "f-status", "f-blocker", "f-agent", "f-date",
       ];
       FILTER_IDS.forEach(id => _wrapSelectAsCombobox(id));
     }
@@ -1917,6 +2020,7 @@
       trigger.className = "filt cb-trigger";
       trigger.id = selectId + "-cb-trigger";
       trigger.setAttribute("aria-haspopup", "listbox");
+      trigger.title = "Type to filter " + selectId.replace("f-", "") + "s";
       trigger.textContent = (sel.options[sel.selectedIndex] || {}).text || "—";
       trigger.style.minWidth = "120px";
       trigger.style.textAlign = "left";
@@ -2024,6 +2128,8 @@
         STATE.filters.search = "";
         const el = document.getElementById("f-search");
         if (el) el.value = "";
+        const dt = document.getElementById("f-text");
+        if (dt) dt.value = "";
       } else if (key === "blockingMe") {
         STATE.filters.blockingMe = false;
         const tb = document.getElementById("f-blockingme");
@@ -2044,6 +2150,11 @@
         const el = document.getElementById("f-" + k);
         if (el) el.value = "";
       });
+      STATE.filters.search = "";
+      const hdr = document.getElementById("f-search");
+      if (hdr) hdr.value = "";
+      const dt = document.getElementById("f-text");
+      if (dt) dt.value = "";
       // "Clear all" leaves the show-done toggle alone — it's a persistent
       // user preference, not a transient filter selection (operator
       // direct, lead `b9d135c1ea8348dea80f027ba66a0079`).
@@ -2933,24 +3044,19 @@
       }
     });
 
-    // P1 Search-as-launcher (lead brief 2026-06-12) — RESTORED 2026-06-12.
-    // "/" anywhere focuses #f-search; Esc inside the search blurs it.
-    // Skip "/" when typing in another input/textarea/select/contenteditable
-    // OR when a modifier is held (so browser shortcuts like Cmd-/ stay
-    // available). Same muscle memory as Gmail / Jira / Linear. Pinned by
+    // P1 Search-as-launcher (lead brief 2026-06-12) — RESTORED 2026-06-12,
+    // RETARGETED 2026-10-24: Ctrl+K / Cmd+K focuses #f-search; the old "/"
+    // capture is gone because the hub shell owns "/" for its global search
+    // and a page-level capture starves it (operator: Ctrl+K instead of "/").
+    // Esc inside the search still blurs it. Pinned by
     // tests/scitex_cards/test__board_v3_signatures.py so a future squash
     // can't silently regress it again.
     function attachSearchKeyboardLauncher() {
       const search = document.getElementById("f-search");
       if (!search) return;
       document.addEventListener("keydown", (e) => {
-        if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-          const t = e.target;
-          const tag = (t && t.tagName) ? t.tagName.toLowerCase() : "";
-          const editable =
-            tag === "input" || tag === "textarea" || tag === "select" ||
-            (t && t.isContentEditable);
-          if (editable) return;
+        if ((e.ctrlKey || e.metaKey) && !e.altKey &&
+            (e.key === "k" || e.key === "K")) {
           e.preventDefault();
           search.focus();
           const v = search.value;

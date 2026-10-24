@@ -136,7 +136,7 @@ def _render_header() -> str:
         {
             "api_base": "/",
             "active": "board",
-            "page_title": "SciTeX Cards",
+            "page_title": "Cards",
             "scitex_cards_version": "0.0.0",
             "cards_user": "alice",
             "cards_project_picker_available": True,
@@ -311,10 +311,9 @@ def test_the_shared_header_reaches_the_picker_through_a_guarded_include():
     took the operator's fleet board and DM down with it, not just the
     project-scoped page.
 
-    The guard also honours the per-page suppression flag: the DM page renders
-    the canonical picker in its sidebar (card cards-dm-spaces-crud-hide-20261022)
-    and passes ``header_picker=False``, so the header slot must stay empty
-    there or the page carries two selectors.
+    The guard also honours the per-page suppression flag (kept for pages
+    that render their own picker; the DM no longer does — operator
+    2026-10-23: header-only).
     """
     # Arrange
     source = (_TEMPLATES / "_page_header.html").read_text("utf-8")
@@ -395,7 +394,7 @@ def test_the_shared_header_renders_unchanged_when_the_picker_is_unavailable():
         {
             "api_base": "/",
             "active": "board",
-            "page_title": "SciTeX Cards",
+            "page_title": "Cards",
             "scitex_cards_version": "0.0.0",
             "cards_user": "alice",
             "cards_project_picker_available": False,
@@ -424,7 +423,7 @@ def test_the_picker_appears_exactly_when_the_views_own_flag_says_it_can():
         "scitex_cards/_page_header.html",
         {
             "api_base": "/",
-            "page_title": "SciTeX Cards",
+            "page_title": "Cards",
             "scitex_cards_version": "0.0.0",
             "cards_user": "alice",
             "cards_project_picker_available": flag,

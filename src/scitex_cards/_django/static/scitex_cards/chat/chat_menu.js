@@ -465,7 +465,113 @@
     }
 
     buildEmojiPanels();
+    mountAgentMenu(host);
     return { close: closeAll, renderReactions: renderReactions };
+  }
+
+  /* Agent-row menu (operator 2026-10-23: CRUD ops as right-click on the
+   * agent list). Separate popover from the message menu: different target
+   * (row, not .msg), different items (Hide/Unhide, not Reply/Copy/...).
+   * Hide/Unhide POSTs the same dm/visibility endpoint the swipe action
+   * uses — one write path. The peer name rides the row's own markup
+   * (chat.js builds it), so the menu addresses the record, not pixels.
+   * Items without a backend (rename/delete/archive/mute — append-only
+   * store, no tombstone) are NOT added: a dead menu item is worse than
+   * a missing one, and the menu grows only when a backend lands. */
+  function mountAgentMenu(host) {
+    var wrap = document.getElementById("agent-menu-wrap");
+    var menu = document.getElementById("agent-menu");
+    var hideBtn = document.getElementById("am-hide");
+    var pinBtn = document.getElementById("am-pin");
+    var list = host && host.agentsEl ? host.agentsEl : document.getElementById("agent-list");
+    if (!wrap || !menu || !hideBtn || !list) return null;
+    var peer = null; // the row's agent name the menu was opened on
+    function close() {
+      menu.classList.remove("open");
+      peer = null;
+    }
+    /* One write path per flag: Hide/Unhide and Pin/Unpin POST their own
+     * leaf with the same shape, so a second fetch copy would be a second
+     * place to get the error handling wrong. */
+    function postThreadFlag(name, leaf, body) {
+      var base = (host && host.apiBase) || window.API_BASE || "";
+      return fetch(base + "/dm/thread/" + encodeURIComponent(name) + leaf, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then(function (r) {
+        if (!r.ok) throw new Error(leaf.slice(1) + " " + r.status);
+        return r.json();
+      });
+    }
+    function postHidden(name, hidden) {
+      return postThreadFlag(name, "/hidden", { hidden: hidden });
+    }
+    function postPinned(name, pinned) {
+      return postThreadFlag(name, "/pinned", { pinned: pinned });
+    }
+    hideBtn.addEventListener("click", function () {
+      var name = peer;
+      var hide = hideBtn.textContent !== "Unhide";
+      close();
+      if (!name) return;
+      postHidden(name, hide)
+        .then(function () {
+          if (host && host.refreshAgents) host.refreshAgents();
+        })
+        .catch(function (err) {
+          if (host && host.showError) host.showError(String((err && err.message) || err));
+        });
+    });
+    /* Pin rides beside Hide (operator 2026-10-24: CRUD ops as right-click).
+     * The button is optional in older markup: without it the menu is
+     * Hide-only and nothing breaks — a menu entry that cannot work is
+     * worse than one that is not there. */
+    if (pinBtn) {
+      pinBtn.addEventListener("click", function () {
+        var name = peer;
+        var pin = pinBtn.textContent !== "Unpin";
+        close();
+        if (!name) return;
+        postPinned(name, pin)
+          .then(function () {
+            if (host && host.refreshAgents) host.refreshAgents();
+          })
+          .catch(function (err) {
+            if (host && host.showError) host.showError(String((err && err.message) || err));
+          });
+      });
+    }
+    list.addEventListener("contextmenu", function (event) {
+      var row = event.target.closest ? event.target.closest(".agent") : null;
+      if (!row) return; // blank space keeps the browser menu
+      event.preventDefault();
+      var nameEl = row.querySelector(".name");
+      peer = nameEl ? nameEl.textContent.trim() : null;
+      if (!peer) return;
+      var hidden = row.classList.contains("is-hidden") ||
+        (row.parentElement && row.parentElement.classList.contains("is-hidden"));
+      hideBtn.textContent = hidden ? "Unhide" : "Hide";
+      var pinned = row.classList.contains("is-pinned") ||
+        (row.parentElement && row.parentElement.classList.contains("is-pinned"));
+      if (pinBtn) pinBtn.textContent = pinned ? "Unpin" : "Pin";
+      menu.classList.add("open");
+      var rect = menu.getBoundingClientRect();
+      var pad = 8;
+      var maxX = window.innerWidth - rect.width - pad;
+      var maxY = window.innerHeight - rect.height - pad;
+      menu.style.left = Math.max(pad, Math.min(event.clientX, maxX)) + "px";
+      menu.style.top = Math.max(pad, Math.min(event.clientY, maxY)) + "px";
+    });
+    document.addEventListener("click", function (event) {
+      if (!menu.classList.contains("open")) return;
+      if (!menu.contains(event.target)) close();
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") close();
+    });
+    list.addEventListener("scroll", close);
+    return { close: close };
   }
 
   root.ChatMenu = { mount: mount };

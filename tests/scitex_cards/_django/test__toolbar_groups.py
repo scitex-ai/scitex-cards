@@ -460,6 +460,22 @@ def test_template_details_board_hosts_live_chip() -> None:
     assert "live-dot" in body
 
 
+def test_template_details_board_section_open_by_default() -> None:
+    """Details > Board is OPEN for a fresh profile (operator 2026-10-23:
+    the pane 'does not open'). View/Span/Layout/Live live there since the
+    2026-10-22 re-home — a closed Board section hides the very controls
+    the move was for. A stored localStorage preference still wins."""
+    # Arrange
+    html = _read_board_family()
+    # Act
+    m = re.search(r"return new Set\(\[([^\]]*)\]\);", html)
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert m is not None and '"board"' in m.group(1), (
+        "Details > Board section is closed by default — "
+        "View/Span/Layout/Live hide behind a shut accordion"
+    )
+
+
 def test_template_header_identity_band_carries_no_live_chip() -> None:
     """Fail-loud the other direction: .fb-left must NOT render its own LIVE
     chip any more — one live indicator, in Details > Board."""

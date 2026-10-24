@@ -141,10 +141,22 @@ def derived_member_event_id(thread_id: str, member: str, action: str, ts: str) -
 
 
 def derived_visibility_event_id(
-    thread_id: str, reader: str, action: str, ts: str
+    thread_id: str, reader: str, ts: str, seq: int
 ) -> str:
-    """Deterministic id for a hide/unhide event. Same shape as membership's."""
-    return VISIBILITY_EVENT_PREFIX + _digest(thread_id, reader, action, ts)
+    """Deterministic id for a hide/unhide event, seq-scoped.
+
+    The digest covers ``(thread, reader, ts, seq)`` — deliberately NOT
+    ``action``. Second-resolution timestamps make same-second retoggles
+    common (a hide→unhide→hide burst lands three rows in one second);
+    digesting ``action`` instead of ``seq`` gave the second hide the
+    FIRST hide's id, and ``ON CONFLICT DO NOTHING`` swallowed it, so the
+    fold answered visible (release gate 2026-10-23, PR #1139, all three
+    legs). The per-(thread,reader) counter is the order — it is assigned
+    inside the writer's transaction — so it belongs in the identity.
+    Same ``(thread, reader, ts, seq)`` still derives the same id, so a
+    genuine retry of one event keeps deduplicating.
+    """
+    return VISIBILITY_EVENT_PREFIX + _digest(thread_id, reader, ts, str(seq))
 
 
 def origin_host() -> str:

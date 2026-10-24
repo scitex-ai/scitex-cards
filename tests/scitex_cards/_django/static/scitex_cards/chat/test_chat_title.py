@@ -21,7 +21,7 @@ What is pinned:
 
   1. ``totalUnread(agents)`` — the count comes from the SAME per-peer
      ``unread`` field the drawer badges render. One fact, two renderings.
-  2. ``titleFor(base, count)`` — "(3) DM — …" when unread, the bare title at
+  2. ``titleFor(base, count)`` — "Cards DM (3)" when unread, the bare title at
      zero (no "(0)", which would make "nothing new" look like a state).
   3. ``flashPlan(prev, next, reducedMotion)`` — the two rules that keep the
      blink from being hostile: it fires only on an INCREASE, and it is
@@ -116,7 +116,7 @@ _PEERS = [
     {"name": "worker-telegrammer", "unread": 2},
 ]
 
-_BASE = "DM — SciTeX Cards v0.17.10"
+_BASE = "Cards DM"
 
 
 # === the count comes from the existing per-peer unread field ===============
@@ -176,7 +176,7 @@ def test_title_shows_the_count_when_unread_is_positive() -> None:
     # Act
     title = _title_for(base, 3)
     # Assert
-    assert title == "(3) DM — SciTeX Cards v0.17.10"
+    assert title == "Cards DM (3)"
 
 
 def test_title_has_no_count_at_zero_unread() -> None:
@@ -190,15 +190,14 @@ def test_title_has_no_count_at_zero_unread() -> None:
     assert title == _BASE
 
 
-def test_title_puts_the_count_in_front_of_the_base() -> None:
-    """A tab strip truncates from the RIGHT, so a suffix is the first thing to
-    disappear on the narrow tab this page will actually be."""
+def test_title_puts_the_count_after_the_base() -> None:
+    """Operator 2026-10-24: the tab reads "Cards DM (N)"."""
     # Arrange
     base = _BASE
     # Act
     title = _title_for(base, 7)
     # Assert
-    assert title.startswith("(7) ")
+    assert title == "Cards DM (7)"
 
 
 def test_title_caps_a_very_large_count() -> None:
@@ -208,18 +207,18 @@ def test_title_caps_a_very_large_count() -> None:
     # Act
     title = _title_for(base, 1234)
     # Assert
-    assert title.startswith("(99+) ")
+    assert title == "Cards DM (99+)"
 
 
-def test_title_keeps_the_version_string_from_the_template() -> None:
-    """The module never spells the version or the word DM — it prefixes
-    whatever chat.html rendered, so those live in exactly one place."""
+def test_title_keeps_the_base_string_from_the_template() -> None:
+    """The module never spells the base — it suffixes whatever chat.html
+    rendered, so that string lives in exactly one place."""
     # Arrange
     base = _BASE
     # Act
     title = _title_for(base, 2)
     # Assert
-    assert title.endswith(_BASE)
+    assert title.startswith(_BASE)
 
 
 # === the flash: bounded, and silent under reduced motion ===================
@@ -245,7 +244,7 @@ def test_count_still_appears_under_reduced_motion() -> None:
     # Act
     title = _title_for(base, 3)
     # Assert
-    assert title == "(3) DM — SciTeX Cards v0.17.10"
+    assert title == "Cards DM (3)"
 
 
 def test_flash_runs_when_the_unread_count_rises() -> None:

@@ -109,7 +109,7 @@
   display: inline-flex;
   align-items: center;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   background: var(--gold);
   color: #000;
   font-size: 0.62rem;
@@ -150,7 +150,7 @@
   font-size: 0.72rem;
   font-style: normal;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: 2px; /* squared 2026-10-23: operator taste, no curly chip/badge objects */
   border: 1px solid var(--border);
   background: var(--card-bg);
   color: var(--text-muted);

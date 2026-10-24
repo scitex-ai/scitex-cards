@@ -120,3 +120,11 @@ src/scitex_cards/_sphinx_html/
 # left one behind. Verified before adding that no tracked path matches `_out/`,
 # so this shadows nothing that exists today.
 *_out/
+
+# Vite public-dir fallout: `npm run build` copies frontend/public/*
+# verbatim into the outDir (static/scitex_cards/assets/), so every local
+# build drops an untracked assets/favicon.svg beside the COMMITTED
+# index.{css,html,js} bundles. The Django absence pin
+# (test_no_leaf_local_favicon_files_ship) already scopes the build dir out;
+# this keeps the fallout from polluting `git status` too.
+src/scitex_cards/_django/static/scitex_cards/assets/favicon.svg

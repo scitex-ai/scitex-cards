@@ -42,10 +42,10 @@
            Search-as-launcher (P1, lead brief 2026-06-12) — the PRIMARY
            filterbar entry point. -->
       <span class="filt-search-wrap" id="f-search-wrap">
-        {% translate 'Search… ( / to focus, Esc to blur) — try project:paper-scitex-clew, status:blocked, kind:compute, …' as search_ph %}
+        {% translate 'Search… (Ctrl+K to focus, Esc to blur) — try project:paper-scitex-clew, status:blocked, kind:compute, …' as search_ph %}
         <input class="filt filt-search" id="f-search" type="search"
                placeholder="{{ search_ph }}"
-               title="Fuzzy match + GitHub-style qualifiers (project: / agent: / status: / kind: / parent: / scope: / id: / priority: / host:). Press / to focus, Esc to blur. Tab to autocomplete the qualifier or value under the cursor."
+               title="Fuzzy match + GitHub-style qualifiers (project: / agent: / status: / kind: / parent: / scope: / id: / priority: / host:). Press Ctrl+K to focus, Esc to blur. Tab to autocomplete the qualifier or value under the cursor."
                oninput="onSearchInput(event)" onkeydown="onSearchKeyDown(event)"
                onfocus="onSearchFocus(event)" onblur="onSearchBlur(event)"
                role="combobox" aria-autocomplete="list"
@@ -276,7 +276,22 @@
       ordinary filter rows) and HIDDEN cards.
     {% endcomment %}
     <aside class="details-pane stx-shell-sidebar" id="details-panel"
-           aria-label="{% translate 'Details' %}">
+           aria-label="{% translate 'Details' %}"
+           {% comment %}
+             Collapsed rail expands on ANY rail click (operator 2026-10-23:
+             the toggle alone is a 13px target that clips out of reach on
+             short viewports). Guarded to the collapsed state so clicks in
+             an open pane never collapse it; the toggle button's own handler
+             runs first on bubble and clears the class, so this is a no-op
+             there rather than a double toggle.
+             Keyboard parity: the rail is focusable while collapsed
+             (tabindex, kept in sync by toggleDetailsPane/_syncDetailsPane)
+             and Enter/Space expand it under the same collapsed guard, so
+             pointer-free users are not limited to the 13px toggle.
+           {% endcomment %}
+           tabindex="0"
+           onclick="if(this.classList.contains('collapsed'))toggleDetailsPane()"
+           onkeydown="if(this.classList.contains('collapsed')&&(event.key==='Enter'||event.key===' ')){event.preventDefault();toggleDetailsPane()}">
       {% comment %}
         The pane itself is the SDK's `.stx-shell-sidebar` — the SAME
         workspace-pane primitive Writer / Scholar / Console use (shell CSS
@@ -352,7 +367,15 @@
             </div>
             <div class="details-row" data-details-board="live">
               <label>{% translate "Live" %}</label>
-              <span class="details-live" id="details-live"><span class="live-dot"></span>LIVE</span>
+              {% comment %}
+               LIVE badge ships DARK: "CONNECTING" until a read succeeds.
+               renderDetailsBoard() (_board_foot.html) is the single writer —
+               it flips to LIVE only when STATE.graph exists and reverts on
+               any failed read. Static markup claiming LIVE is the 2026-09-17
+               operator defect (badge true of the markup, not of the data), so
+               the shipped text matches the pre-read state exactly.
+             {% endcomment %}
+             <span class="details-live details-live--off" id="details-live" data-stx-live-gate><span class="live-dot"></span>CONNECTING</span>
             </div>
           </div>
         </div>
@@ -392,8 +415,11 @@
           </button>
           <div class="details-section-body">
             <div class="details-row details-row--filter">
-              <label for="f-project">{% translate "Project" %}</label>
-              <select class="filt" id="f-project"><option value="">{% translate "All projects" %}</option></select>
+              <label for="f-text">{% translate "Text" %}</label>
+              <input class="filt filt-text" id="f-text" type="search"
+                     placeholder="buzzword…"
+                     title="Free-text: substring, case-insensitive, across title / text / project / assignee / note"
+                     oninput="onDetailsTextInput(event)">
             </div>
             <div class="details-row details-row--filter">
               <label for="f-agent">{% translate "Assignee" %}</label>
