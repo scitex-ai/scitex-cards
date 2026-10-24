@@ -142,7 +142,8 @@
   gap: 6px;
   padding: 3px 4px 3px 9px;
   font-size: 0.78rem;
-  font-weight: 600;
+  /* No bold (operator 2026-10-24) — the chip reads as a label, not a call. */
+  font-weight: 400;
   /* Brand CTA fill, not purple (operator 2026-10-24: the white-on-purple
      chip read as foreign chrome). Same pairing as the Send rule and the
      DWM --on state: --stx-brand flips navy/gold across themes while the
@@ -154,10 +155,10 @@
 }
 .filt-chip-key {
   opacity: 0.78;
-  font-weight: 500;
+  font-weight: 400;
 }
 .filt-chip-val {
-  font-weight: 700;
+  font-weight: 500;
 }
 .filt-chip-clear {
   appearance: none;
@@ -174,7 +175,7 @@
   border-radius: 50%;
   cursor: pointer;
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 400;
 }
 .filt-chip-clear:hover {
   opacity: 1;
