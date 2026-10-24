@@ -193,21 +193,28 @@ class TestP1SearchAsLauncher:
         # Assert
         assert "attachSearchKeyboardLauncher()" in board_js
 
+    def test_search_launcher_uses_ctrl_k_not_slash(self, board_js):
+        # Operator 2026-10-24: the hub shell owns "/" for its global
+        # search — a page-level "/" capture starves it. The launcher
+        # answers Ctrl+K / Cmd+K and must not contain the old capture.
+        # Arrange
+        start = board_js.find("function attachSearchKeyboardLauncher")
+        # Act
+        body = board_js[start : start + 1200]
+        # Assert
+        assert 'e.key === "k"' in body and 'e.key === "/"' not in body
+
     def test_kbd_hint_in_search_placeholder_board_text_contains(self, board_text):
-        # Lead `032e41545fcf4ab4b98d864ec1770249` 2026-06-12: the
-        # standalone `.filt-search-kbd` pill was operator-judged
-        # noise and folded into the search input's placeholder per
-        # operator "just write the kbd in the search box". The pin
-        # now asserts the hint is INSIDE the placeholder text on
-        # `#f-search`, so the affordance is still discoverable but
-        # without the extra DOM chrome.
+        # Operator 2026-10-24: Ctrl+K focuses the search (the old "/" capture
+        # starved the hub shell's global search). The pin now asserts the
+        # hint is INSIDE the placeholder text on `#f-search`, so the
+        # affordance is still discoverable but without the extra DOM chrome.
         # Arrange
         # Act
         # Assert
-        assert "/ to focus" in board_text, (
-            "search input must hint at the '/' keyboard shortcut in "
-            "its placeholder (operator UX, lead a2a "
-            "`032e41545fcf4ab4b98d864ec1770249`)"
+        assert "Ctrl+K to focus" in board_text, (
+            "search input must hint at the 'Ctrl+K' keyboard shortcut in "
+            "its placeholder (operator UX)"
         )
 
     def test_kbd_hint_in_search_placeholder_board_text_contains_2(self, board_text):

@@ -3044,24 +3044,19 @@
       }
     });
 
-    // P1 Search-as-launcher (lead brief 2026-06-12) — RESTORED 2026-06-12.
-    // "/" anywhere focuses #f-search; Esc inside the search blurs it.
-    // Skip "/" when typing in another input/textarea/select/contenteditable
-    // OR when a modifier is held (so browser shortcuts like Cmd-/ stay
-    // available). Same muscle memory as Gmail / Jira / Linear. Pinned by
+    // P1 Search-as-launcher (lead brief 2026-06-12) — RESTORED 2026-06-12,
+    // RETARGETED 2026-10-24: Ctrl+K / Cmd+K focuses #f-search; the old "/"
+    // capture is gone because the hub shell owns "/" for its global search
+    // and a page-level capture starves it (operator: Ctrl+K instead of "/").
+    // Esc inside the search still blurs it. Pinned by
     // tests/scitex_cards/test__board_v3_signatures.py so a future squash
     // can't silently regress it again.
     function attachSearchKeyboardLauncher() {
       const search = document.getElementById("f-search");
       if (!search) return;
       document.addEventListener("keydown", (e) => {
-        if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-          const t = e.target;
-          const tag = (t && t.tagName) ? t.tagName.toLowerCase() : "";
-          const editable =
-            tag === "input" || tag === "textarea" || tag === "select" ||
-            (t && t.isContentEditable);
-          if (editable) return;
+        if ((e.ctrlKey || e.metaKey) && !e.altKey &&
+            (e.key === "k" || e.key === "K")) {
           e.preventDefault();
           search.focus();
           const v = search.value;
