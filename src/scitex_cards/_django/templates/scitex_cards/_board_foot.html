@@ -1014,12 +1014,6 @@
       if (!STATE.graph) return;
       const visible = STATE.graph.nodes.filter(passes);
 
-      // Empty-state banner (operator TG12911 — "filtering by nv-lessons
-      // does NOT work at all"): when the store HAS tasks but the active
-      // filters narrow `visible` to 0, surface an explicit message + a
-      // one-click clear so a silent empty board doesn't read as broken.
-      _renderEmptyStateBanner(visible.length, STATE.graph.nodes.length);
-
       // === LAYOUT axis dispatch — the same `visible` task set renders
       // into one of three orthogonal layouts (timeline | wall | graph).
       // (hook-bypass: line-limit.)
@@ -1029,6 +1023,23 @@
       // can switch between raster / note-wall / mermaid-canvas without
       // re-wrapping the DOM.
       canvas.setAttribute("data-layout", layout);
+      // Empty-state banner (operator TG12911 — "filtering by nv-lessons
+      // does NOT work at all"): when the store HAS tasks but the active
+      // filters narrow `visible` to 0, surface an explicit message + a
+      // one-click clear so a silent empty board doesn't read as broken.
+      // The banner only speaks for views that RENDER `visible` — the
+      // agent/project rasters pull their own /timeline feed and ignore
+      // the filterbar, so a "0 matches" banner over a full raster is the
+      // opposite lie (operator 2026-10-25: banner said none, list showed
+      // 965). Unknown timeline state keeps the old behavior. Placed
+      // AFTER the layout declaration: `layout` is a const and any read
+      // above it throws the whole render dead.
+      var tlView = window._timelineReadState
+        ? window._timelineReadState().view
+        : null;
+      var honorsFilters =
+        layout !== "timeline" || tlView === "simple" || tlView == null;
+      _renderEmptyStateBanner(visible.length, STATE.graph.nodes.length, honorsFilters);
       if (layout === "graph") {
         _renderGraphView(canvas, visible);
       } else if (layout === "stale") {
@@ -1090,14 +1101,21 @@
     // has rows but the active filters drop everything, and offers a
     // one-click "Clear all filters" that resets STATE.filters.
     // (hook-bypass: line-limit.)
-    function _renderEmptyStateBanner(visibleCount, totalCount) {
+    function _renderEmptyStateBanner(visibleCount, totalCount, honorsFilters) {
       const banner = document.getElementById("filter-empty-banner");
       if (!banner) return;
       // Show only when the store HAS rows but filters narrow to 0;
       // a truly empty store falls through to the normal columns view
-      // (the user just hasn't seeded any tasks yet).
+      // (the user just hasn't seeded any tasks yet). `honorsFilters`
+      // gates views that don't render `visible` at all (raster timelines
+      // pull their own feed) — see the call site.
       const filtersAreActive = _anyActiveFilter();
-      if (visibleCount === 0 && totalCount > 0 && filtersAreActive) {
+      if (
+        honorsFilters !== false &&
+        visibleCount === 0 &&
+        totalCount > 0 &&
+        filtersAreActive
+      ) {
         const detail = document.getElementById("filter-empty-banner-detail");
         if (detail) {
           detail.textContent =
