@@ -1,6 +1,13 @@
 # Changelog
 
-## [0.56.15] - 2026-10-25
+## [0.56.16] - 2026-10-25
+
+- Operator 2026-10-25: the empty-state banner and the rendered list
+  agree — the Simple list honors the shared filter predicate (it listed
+  by time only under a "0 matches" banner), and the banner stays silent
+  for raster views that pull their own feed. Live-verified agreement.
+
+## [0.56.15] - 2026-10-24
 
 - Release repair: the operator-batch width-cap pin asserted the exact
   pre-combobox selector, failing the 0.56.14 publish run 1/3250. The pin
