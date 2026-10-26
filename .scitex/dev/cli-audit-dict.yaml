@@ -64,6 +64,10 @@ intransitive_verbs:
                # implicitly resolved store. The source is deliberately
                # implicit under the existing one-store contract, so this verb
                # takes options rather than a positional object.
+  - forget     # why: `scitex-cards forget` — to forget is the verb this leaf
+               # performs: the sweep forgets stale cards (closes by age
+               # alone). Moby carries only the adjective; the verb reading
+               # ("forget this stale card") is the command's meaning.
 
 # §1d vocabulary the Moby POS classifier does not carry. Each is a real name
 # in THIS CLI, not a token that would read better renamed — which is the test
