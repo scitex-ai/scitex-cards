@@ -198,16 +198,17 @@
         const _graphTimer = (_graphCtl && typeof setTimeout !== "undefined")
           ? setTimeout(() => { try { _graphCtl.abort(); } catch {} }, 30000)
           : null;
-        let r;
+        let r, graph;
         try {
           r = await fetch(API_BASE + "/graph",
             _graphCtl ? { signal: _graphCtl.signal } : undefined);
+          // Keep the deadline active until the complete body is consumed.
+          graph = r.ok ? await r.json() : null;
         } finally {
           if (_graphTimer !== null) clearTimeout(_graphTimer);
         }
         // Successful JSON parsing overlaps deferred script download. Error
         // bodies retain boardStates.js's tolerant reader and named states.
-        const graph = r.ok ? await r.json() : null;
         if (r.ok) markBoardPhase("graph-data-ready");
         await BOARD_MODULES_READY;
         if (!r.ok) {

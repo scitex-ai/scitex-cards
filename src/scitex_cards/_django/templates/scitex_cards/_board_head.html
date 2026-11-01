@@ -45,13 +45,10 @@
 {% endcomment %}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/18-skeleton.css' %}">
 {% comment %}
-  Prefetch the board JSON this page is about to request anyway. Mount-aware
-  via graph_prefetch_url (the view strips api_base exactly like the API_BASE
-  const does: "" + "/graph" at a root mount, "/apps/cards/graph" on the
-  hub). Low-priority and cache-deduped against loadGraph()'s own call, so
-  revisits and Back/forward navigations start warm.
+  The inline boot starts the graph fetch while scripts download. Do not
+  prefetch the same large response: concurrent prefetch/fetch cache writers
+  can fail with ERR_CACHE_WRITE_FAILURE and leave Stats without data.
 {% endcomment %}
-<link rel="prefetch" href="{{ graph_prefetch_url }}" as="fetch" crossorigin="anonymous">
 {# combobox.css (loaded below the page-CSS so its specificity sits ON TOP if needed) #}
 <link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/combobox.css' %}">
 <script defer src="{% static 'scitex_sdk/ui/js/app/combobox.js' %}"></script>

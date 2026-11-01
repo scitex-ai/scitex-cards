@@ -2,6 +2,7 @@
 
 ## 0.56.21 — 2026-11-01
 
+- Avoid duplicate graph prefetch/cache writers and bound the complete JSON read.
 - Remove outer header spacing around the shared SDK app header and let it fill the row.
 - Keep selected Details tab content visible with cached accordion CSS and
   version the Details stylesheet URL for ordinary browser reloads.
