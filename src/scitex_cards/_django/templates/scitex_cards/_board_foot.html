@@ -360,8 +360,14 @@
         }
         return SQ.matchesSearchQuery(t, STATE._searchParsed);
       }
-      // Legacy fast path — no qualifiers, just the PR #80 fzf-style match.
-      const q = raw.toLowerCase().trim();
+      // Legacy fast path — no qualifiers. Prompt-02 (operator 2026-10-22:
+      // placeholder "keyword1 keyword2 ..."): whitespace separates
+      // INDEPENDENT keywords, EVERY one must match (AND), each as its own
+      // fzf-style subsequence over the haystack — same rule searchQuery.js
+      // `_freeTextMatch` applies, so the two paths never disagree about a
+      // bare multi-word query. Order never decides a keyword search.
+      const tokens = raw.toLowerCase().trim().split(/\s+/);
+      if (tokens.length === 1 && tokens[0] === "") return true;
       const hay = (
         (t.title || "") + " " +
         (t.task || "") + " " +
@@ -370,14 +376,15 @@
         (t.note || "") + " " +
         (t.id || "")
       ).toLowerCase();
-      let i = 0;
-      for (const c of q) {
-        if (c === " ") continue;  // whitespace tolerant
-        const found = hay.indexOf(c, i);
-        if (found < 0) return false;
-        i = found + 1;
-      }
-      return true;
+      return tokens.every((tok) => {
+        let i = 0;
+        for (const c of tok) {
+          const found = hay.indexOf(c, i);
+          if (found < 0) return false;
+          i = found + 1;
+        }
+        return true;
+      });
     }
 
     // === Qualifier hint pills (operator TG 12315/12316) ====================
@@ -1882,18 +1889,32 @@
     const WINDOW_LABEL = { "1d": "24 h", "1w": "7 d", "1m": "30 d" };
     // Browser tab (operator 2026-10-24): "Board (N in last 1h)" — N counts
     // cards touched in the last hour, off the same _newestTs the stats
-    // below use. The base is captured once from the served title so a
-    // re-render never compounds "(3) Board (2 in last 1h)". Zero renders
-    // the bare base, the way the DM tab omits "(0)".
-    let _boardTabBase = null;
+    // below use. The base is the literal "Board" — deliberately NOT captured
+    // from document.title. On the unified page the DM side rewrites the
+    // title on every poll ("Cards DM (3)"), so a capture-once read the DM
+    // title and the board tab compounded it ("Cards DM (3) (22 in last 1h)",
+    // 2026-10-31 screenshot). Zero renders the bare base, the way the DM
+    // tab omits "(0)".
+    const _boardTabBase = "Board";
     function renderBoardTabTitle(nodes) {
-      if (_boardTabBase === null) _boardTabBase = document.title || "Board";
       const cutoff = Date.now() - 3600 * 1000;
       const n = (nodes || []).filter((t) => {
         const ts = _newestTs(t);
         return ts && ts >= cutoff;
       }).length;
       document.title = n > 0 ? `${_boardTabBase} (${n} in last 1h)` : _boardTabBase;
+    }
+    // The unified router repaints the VISIBLE pane's title on every #dm/#board
+    // switch (app_router.js): reuse the last rendered graph nodes, never a
+    // new request — the tab and the stats stay one fact rendered twice.
+    if (typeof window !== "undefined") {
+      window.STX = window.STX || {};
+      window.STX.paneTitle = window.STX.paneTitle || {};
+      window.STX.paneTitle.board = function () {
+        renderBoardTabTitle(
+          (typeof STATE !== "undefined" && STATE.graph && STATE.graph.nodes) || []
+        );
+      };
     }
     function renderStats() {
       const host = document.getElementById("details-stats");
@@ -1958,7 +1979,20 @@
         <div class="stat-foot" id="recent-count-pill">
           <strong id="recent-count-value">${newCount}</strong> new / 24 h
         </div>`;
-      renderBoardTabTitle(all);
+      /* Title ownership (operator 2026-11-01: the tab compounded the DM
+       * title and the board suffix together): on the unified page only the
+       * VISIBLE pane may write document.title — this render runs on every
+       * board poll even while #dm is showing. visiblePane() null
+       * (standalone board page, no router) means no contention: write. */
+      const _router =
+        typeof window !== "undefined" && window.STX && window.STX.appRouter
+          ? window.STX.appRouter
+          : null;
+      const _vis =
+        _router && typeof _router.visiblePane === "function"
+          ? _router.visiblePane()
+          : null;
+      if (_vis !== "dm") renderBoardTabTitle(all);
     }
 
     // === Recent-count pill — fleet-wide "N new in 24 h" indicator ───

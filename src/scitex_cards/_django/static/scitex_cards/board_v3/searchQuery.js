@@ -364,14 +364,23 @@ const MATCHERS = {
 /* === Free-text (bare tokens) ==============================================
  * Re-uses the existing fzf-style subsequence behaviour from board_v3.html's
  * `fuzzyMatch` so PR #80's UX is preserved when no qualifier is present.
- * Whitespace-tolerant; case-insensitive. The free-text haystack covers
+ * Case-insensitive. The free-text haystack covers
  * title + task + project + agent + note + id — same shape as the page's
- * existing `fuzzyMatch` so nothing regresses. */
+ * existing `fuzzyMatch` so nothing regresses.
+ *
+ * Prompt-02 (operator 2026-10-22: placeholder "keyword1 keyword2 ..."):
+ * whitespace separates INDEPENDENT keywords and EVERY keyword must match
+ * (AND) — each as its own subsequence over the haystack. The old single
+ * subsequence skipped spaces, so "blocked paper" matched only cards whose
+ * text held b…l…o…c…k…e…d…p…a…p…e…r in that order and missed the same two
+ * words reversed. Order must never decide a keyword search. */
 function _freeTextMatch(task, freeText) {
-  const q = String(freeText || "")
+  const tokens = String(freeText || "")
     .toLowerCase()
-    .trim();
-  if (!q) return true;
+    .trim()
+    .split(/\s+/);
+  if (tokens.length === 0 || (tokens.length === 1 && tokens[0] === ""))
+    return true;
   const hay = (
     (task.title || "") +
     " " +
@@ -385,9 +394,14 @@ function _freeTextMatch(task, freeText) {
     " " +
     (task.id || "")
   ).toLowerCase();
+  return tokens.every(function (tok) {
+    return _subsequenceMatch(hay, tok);
+  });
+}
+
+function _subsequenceMatch(hay, token) {
   let i = 0;
-  for (const c of q) {
-    if (c === " ") continue;
+  for (const c of token) {
     const found = hay.indexOf(c, i);
     if (found < 0) return false;
     i = found + 1;

@@ -52,6 +52,7 @@
 
   function show(root, which) {
     var state = applyPane(root, which);
+    repaintTitle(which);
     // A pane shown after being hidden may have measured zero-size containers
     // (timeline raster). Nudge listeners; board + DM renderers that poll
     // repaint on their own tick regardless.
@@ -59,6 +60,45 @@
       window.dispatchEvent(new Event("resize"));
     }
     return state;
+  }
+
+  /* The chrome title belongs to the VISIBLE pane. Each pane repaints its
+   * own title on its own poll tick, but a tick can be up to ~10s away — so
+   * the router repaints on every switch instead of leaving the other pane's
+   * title stale (2026-10-31: #board showing "Cards DM (3)"). Panes opt in by
+   * registering window.STX.paneTitle[which]; absent hooks (standalone pages,
+   * tests) are a no-op, never a throw — a title must not break a switch. */
+  function repaintTitle(which) {
+    try {
+      var NS = typeof window !== "undefined" ? window.STX : null;
+      var hooks = NS && NS.paneTitle;
+      var fn = hooks && hooks[which];
+      if (typeof fn === "function") fn();
+    } catch (e) {
+      /* title is decoration; ignore */
+    }
+  }
+
+  /* Which pane owns document.title RIGHT NOW. Poll ticks in BOTH panes fire
+   * every ~10s whether or not their pane is visible, so each tick must ask
+   * this before writing: the hidden pane's write would flap (or compound)
+   * the visible pane's title between switches (2026-11-01: the switch-time
+   * repaint alone did not hold). Returns 'dm' / 'board' on the unified page,
+   * null everywhere else (standalone pages, node) — null means "no
+   * contention", so callers write unconditionally. Never throws. */
+  function visiblePane() {
+    try {
+      if (typeof document === "undefined" || typeof window === "undefined")
+        return null;
+      var unified =
+        document.getElementById &&
+        document.getElementById("board-pane") &&
+        document.getElementById("dm-pane");
+      if (!unified) return null;
+      return paneForHash(window.location ? window.location.hash : "");
+    } catch (e) {
+      return null;
+    }
   }
 
   function mount(doc) {
@@ -99,7 +139,7 @@
     return { show: function (w) { return show(doc, w); } };
   }
 
-  var _api = { paneForHash: paneForHash, applyPane: applyPane, mount: mount };
+  var _api = { paneForHash: paneForHash, applyPane: applyPane, mount: mount, repaintTitle: repaintTitle, visiblePane: visiblePane };
   if (typeof globalThis !== "undefined") {
     globalThis.STX = globalThis.STX || {};
     globalThis.STX.appRouter = _api;

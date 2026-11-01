@@ -334,6 +334,13 @@ def test_standalone_pages_keep_the_switcher_at_the_true_left_edge(
 
 
 def test_mounted_clearance_is_horizontal_on_desktop_and_stacked_on_phone():
+    """Mounted pages reserve NOTHING (operator 2026-10-31, stats pattern).
+
+    The shell's launcher link is a fixed overlay that reserves no
+    viewport, so the tab row stays flush at the true left edge on every
+    mount — desktop and phone. A 126px/48px clearance here is the
+    reported "app header has margins" fault.
+    """
     # Arrange
     css = (_DJANGO_DIR / "static" / "scitex_cards" / "page-header.css").read_text(
         encoding="utf-8"
@@ -342,10 +349,9 @@ def test_mounted_clearance_is_horizontal_on_desktop_and_stacked_on_phone():
     # Assert
     assert (
         ".stx-cards-header--mounted" in css,
-        "margin-inline-start: 126px" in css,
-        "@media (max-width: 768px)" in css,
-        "margin-block-start: 48px" in css,
-    ) == (True, True, True, True)
+        "margin-inline-start: 126px" not in css,
+        "margin-block-start: 48px" not in css,
+    ) == (True, True, True)
 
 
 # --- lint: the partial may never hardcode a root-absolute href -------------
