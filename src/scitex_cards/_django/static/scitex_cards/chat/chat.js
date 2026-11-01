@@ -239,6 +239,16 @@
   // Giving the title its own request would be a second answer to "how many
   // unread?" — do not.
   var pageTitle = window.ChatTitle ? window.ChatTitle.mount({}) : null;
+  // The unified router repaints the VISIBLE pane's title on every #dm/#board
+  // switch (app_router.js): reuse the last poll's agent list, never a new
+  // request — the title and the badges stay one fact rendered twice.
+  if (typeof window !== "undefined") {
+    window.STX = window.STX || {};
+    window.STX.paneTitle = window.STX.paneTitle || {};
+    window.STX.paneTitle.dm = function () {
+      if (pageTitle) pageTitle.update(state.agents || []);
+    };
+  }
 
   function refreshAgents() {
     getJSON(API_BASE + "/dm/threads?show=all")
@@ -246,7 +256,16 @@
         clearError();
         state.agents = data.agents || [];
         renderAgents(state.agents);
-        if (pageTitle) pageTitle.update(state.agents);
+        /* Title ownership (operator 2026-11-01: the tab compounded to
+         * "Cards DM (3) (6 in last 1h)"): on the unified page only the
+         * VISIBLE pane may write document.title — this poll fires every
+         * ~10s even while #board is showing. visiblePane() null
+         * (standalone page, no router) means no contention: write. */
+        var vis =
+          window.STX && window.STX.appRouter && window.STX.appRouter.visiblePane
+            ? window.STX.appRouter.visiblePane()
+            : null;
+        if (pageTitle && vis !== "board") pageTitle.update(state.agents);
       })
       .catch(function (err) {
         showError("Agent list failed: " + err.message);

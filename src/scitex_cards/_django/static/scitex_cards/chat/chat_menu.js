@@ -471,18 +471,23 @@
 
   /* Agent-row menu (operator 2026-10-23: CRUD ops as right-click on the
    * agent list). Separate popover from the message menu: different target
-   * (row, not .msg), different items (Hide/Unhide, not Reply/Copy/...).
+   * (row, not .msg), different items (Hide/Unhide, Pin/Unpin, Mark as
+   * read, Copy name — not Reply/Copy/...).
    * Hide/Unhide POSTs the same dm/visibility endpoint the swipe action
    * uses — one write path. The peer name rides the row's own markup
    * (chat.js builds it), so the menu addresses the record, not pixels.
    * Items without a backend (rename/delete/archive/mute — append-only
    * store, no tombstone) are NOT added: a dead menu item is worse than
-   * a missing one, and the menu grows only when a backend lands. */
+   * a missing one, and the menu grows only when a backend lands.
+   * Mark-as-read reuses the thread route's GET ?mark_read=1 (the same ack
+   * opening the thread sends); Copy name is client-side clipboard. */
   function mountAgentMenu(host) {
     var wrap = document.getElementById("agent-menu-wrap");
     var menu = document.getElementById("agent-menu");
     var hideBtn = document.getElementById("am-hide");
     var pinBtn = document.getElementById("am-pin");
+    var readBtn = document.getElementById("am-read");
+    var copyBtn = document.getElementById("am-copy");
     var list = host && host.agentsEl ? host.agentsEl : document.getElementById("agent-list");
     if (!wrap || !menu || !hideBtn || !list) return null;
     var peer = null; // the row's agent name the menu was opened on
@@ -500,7 +505,19 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then(function (r) {
-        if (!r.ok) throw new Error(leaf.slice(1) + " " + r.status);
+        if (!r.ok) {
+          /* A refused hide/pin answers with its reason, not a bare status:
+           * read the typed body and append refusal.error || refusal.reason,
+           * falling back to leaf + status when the body is not JSON
+           * (proxies, empty bodies) so a refusal never becomes a parse crash. */
+          return r.text().then(function (t) {
+            var refusal = null;
+            try { refusal = JSON.parse(t); } catch (e) { refusal = null; }
+            var reason = refusal && (refusal.error || refusal.reason);
+            var base = leaf.slice(1) + " " + r.status;
+            throw new Error(reason ? base + ": " + reason : base);
+          });
+        }
         return r.json();
       });
     }
@@ -540,6 +557,79 @@
           .catch(function (err) {
             if (host && host.showError) host.showError(String((err && err.message) || err));
           });
+      });
+    }
+    /* Mark-as-read sends the same ack opening the thread sends (GET
+     * ?mark_read=1 on the thread route) without switching threads, then
+     * repolls so the badge clears. A refused ack (SELECT-only mount,
+     * 403) reads the typed reason like a refused flag — the bar names
+     * the cause, never a bare status. */
+    function getMarkRead(name) {
+      var base = (host && host.apiBase) || window.API_BASE || "";
+      return fetch(base + "/dm/thread/" + encodeURIComponent(name) + "?mark_read=1", {
+        method: "GET",
+      }).then(function (r) {
+        if (!r.ok) {
+          return r.text().then(function (t) {
+            var refusal = null;
+            try { refusal = JSON.parse(t); } catch (e) { refusal = null; }
+            var reason = refusal && (refusal.error || refusal.reason);
+            var baseMsg = "read " + r.status;
+            throw new Error(reason ? baseMsg + ": " + reason : baseMsg);
+          });
+        }
+        return r.json();
+      });
+    }
+    if (readBtn) {
+      readBtn.addEventListener("click", function () {
+        var name = peer;
+        close();
+        if (!name) return;
+        getMarkRead(name)
+          .then(function () {
+            if (host && host.refreshAgents) host.refreshAgents();
+          })
+          .catch(function (err) {
+            if (host && host.showError) host.showError(String((err && err.message) || err));
+          });
+      });
+    }
+    /* Copy name needs no endpoint — clipboard only. The async clipboard
+     * API may be absent (permissions, insecure context); the execCommand
+     * fallback covers those, and a total failure names itself in the bar
+     * rather than closing silently as if it had worked. */
+    function copyText(text) {
+      if (typeof navigator !== "undefined" && navigator.clipboard &&
+          typeof navigator.clipboard.writeText === "function") {
+        return navigator.clipboard.writeText(text);
+      }
+      return new Promise(function (resolve, reject) {
+        try {
+          var ta = document.createElement("textarea");
+          ta.value = text;
+          ta.setAttribute("readonly", "");
+          ta.style.position = "absolute";
+          ta.style.left = "-9999px";
+          document.body.appendChild(ta);
+          ta.select();
+          var ok = document.execCommand("copy");
+          document.body.removeChild(ta);
+          if (ok) resolve();
+          else reject(new Error("copy unavailable"));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }
+    if (copyBtn) {
+      copyBtn.addEventListener("click", function () {
+        var name = peer;
+        close();
+        if (!name) return;
+        copyText(name).catch(function (err) {
+          if (host && host.showError) host.showError("Copy failed: " + String((err && err.message) || err));
+        });
       });
     }
     list.addEventListener("contextmenu", function (event) {

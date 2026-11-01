@@ -22,9 +22,9 @@ in :mod:`scitex_cards._delivery._systemd`.
 
 from __future__ import annotations
 
-import logging
-
 import click
+
+import scitex_logging as slogging
 
 from ._mutating import DRY_RUN_PREFIX, confirm_or_abort, mutating_options
 
@@ -95,11 +95,11 @@ def notifyd_group(
         # `scitex-cards notifyd install-unit` — let Click route to the verb.
         return
 
-    # Foreground run (or a single pass with --once).
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    # Foreground run (or a single pass with --once). Package-owned logging
+    # (PS-220): importing scitex_logging installs the stderr handler, so no
+    # stdlib basicConfig here — verbosity follows the package-wide log
+    # level ($SCITEX_LOGGING_LEVEL) like every other _cli module.
+    slogging.getLogger(__name__)
 
     if run_once:
         from .._delivery import deliver_pending

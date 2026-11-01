@@ -75,4 +75,24 @@ def test_board_sheets_use_no_purple() -> None:
     )
 
 
+def test_cta_and_card_state_colors_survive_the_sweep() -> None:
+    """The sweep removes purple, never the CTA / card-state exceptions.
+
+    Prompt-02 keeps CTA colors (--text-link, --stx-brand) and the card-state
+    palette (--status-* STATUS_STYLE SSOT) chromatic on purpose. This pin
+    fails if a future sweep neutralizes the exceptions along with the
+    chrome — the reverse fault of the sweep pin above.
+    """
+    # Arrange
+    bodies = {
+        name: _without_comments((_STATIC / name).read_text(encoding="utf-8"))
+        for name in _sheet_names()
+    }
+    # Act
+    cta = sum(b.count("--text-link") + b.count("--stx-brand") for b in bodies.values())
+    states = sum(b.count("--status-fill-") for b in bodies.values())
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert cta > 0 and states > 0
+
+
 # EOF

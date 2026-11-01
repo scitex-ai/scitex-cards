@@ -105,3 +105,73 @@ test("mount: returns null without a document (node has none)", () => {
   assert.equal(mount(null), null);
   assert.equal(mount({}), null);
 });
+
+test("repaintTitle: calls the registered hook for the shown pane", () => {
+  const calls = [];
+  globalThis.window = {
+    STX: { paneTitle: { board: () => calls.push("board") } },
+  };
+  try {
+    MOD.repaintTitle("board");
+    assert.deepEqual(calls, ["board"]);
+  } finally {
+    delete globalThis.window;
+  }
+});
+
+test("repaintTitle: absent hooks and throwing hooks never break a switch", () => {
+  globalThis.window = {};
+  try {
+    assert.doesNotThrow(() => MOD.repaintTitle("dm"));
+    assert.doesNotThrow(() => MOD.repaintTitle("board"));
+    globalThis.window = {
+      STX: {
+        paneTitle: {
+          dm: () => {
+            throw new Error("title boom");
+          },
+        },
+      },
+    };
+    assert.doesNotThrow(() => MOD.repaintTitle("dm"));
+  } finally {
+    delete globalThis.window;
+  }
+  assert.doesNotThrow(() => MOD.repaintTitle("dm"));
+});
+
+test("visiblePane: null without a DOM (node) — no contention, callers write", () => {
+  assert.equal(MOD.visiblePane(), null);
+});
+
+test("visiblePane: exposed on the router API for poll-tick guards", () => {
+  assert.equal(typeof MOD.visiblePane, "function");
+  assert.ok("visiblePane" in MOD);
+});
+
+test("visiblePane: reads the hash on the unified page", () => {
+  const els = { "board-pane": {}, "dm-pane": {} };
+  globalThis.document = { getElementById: (id) => els[id] || null };
+  globalThis.window = { location: { hash: "#board" } };
+  try {
+    assert.equal(MOD.visiblePane(), "board");
+    globalThis.window.location.hash = "#dm";
+    assert.equal(MOD.visiblePane(), "dm");
+    globalThis.window.location.hash = "";
+    assert.equal(MOD.visiblePane(), "dm");
+  } finally {
+    delete globalThis.document;
+    delete globalThis.window;
+  }
+});
+
+test("visiblePane: null on standalone pages (no contention, callers write)", () => {
+  globalThis.document = { getElementById: () => null };
+  globalThis.window = { location: { hash: "#board" } };
+  try {
+    assert.equal(MOD.visiblePane(), null);
+  } finally {
+    delete globalThis.document;
+    delete globalThis.window;
+  }
+});
