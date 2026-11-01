@@ -140,9 +140,8 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
      _page_switcher.html partial, reached through _page_tabs.html's tab
      row below the shared title row). It REPLACED the old "← board" link: the operator could reach the
      board from here, but not the reverse, which is what made /chat/ a hidden
-     URL. The component reads six --sw-* variables; this page has its own
-     fixed-dark palette (the :root above shadows the SDK theme tokens), so
-     feed that palette in here.
+     URL. The shared switcher inherits the SDK theme's semantic navigation
+     accent, so light and dark mode use the same contract as content tabs.
 
      THERE IS NO `margin-left: auto` HERE ANY MORE, and adding one back is the
      regression. It is what put this page's switcher on the RIGHT while the
