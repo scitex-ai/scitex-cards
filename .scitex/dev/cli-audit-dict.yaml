@@ -64,6 +64,12 @@ intransitive_verbs:
                # implicitly resolved store. The source is deliberately
                # implicit under the existing one-store contract, so this verb
                # takes options rather than a positional object.
+  - unhide     # why: `scitex-cards dm unhide` is the reverse verb of the
+               # established `dm hide` — one toggle, two verbs, zero drift
+               # (shared hide/unhide body in _dm.py). The UI menu, MCP tool,
+               # and HTTP route all share the hide/unhide pair, so renaming
+               # to please the wordlist would split a triple-surface
+               # contract. Moby simply lacks the word.
 
 # §1d vocabulary the Moby POS classifier does not carry. Each is a real name
 # in THIS CLI, not a token that would read better renamed — which is the test
