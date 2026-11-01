@@ -258,14 +258,9 @@
       "Legend と対応させて Details の方に Stats を用意して、可視化してください。
       タイムスケールも分けられるようにして … (d/w/m)").
 
-      Convention borrowed from scitex-writer's Details pane (aside +
-      accordion sections + localStorage open-set) so the two products look
-      like one system rather than two bespoke boards.
-
-      The three sections are exactly the things that used to shout from the
-      header: STATS (incl. the "N new/24h" counter), FILTERS (the six
-      dropdowns from the old popover, plus show-done + blocking-me as
-      ordinary filter rows) and HIDDEN cards.
+      Shared SDK sidebar chrome contains four SDK content tabs: Board,
+      Stats, Filters, and Hidden cards. One panel is visible at a time;
+      inactive controls remain mounted so population and live updates work.
     {% endcomment %}
     <aside class="details-pane stx-shell-sidebar" id="details-panel"
            aria-label="{% translate 'Details' %}"

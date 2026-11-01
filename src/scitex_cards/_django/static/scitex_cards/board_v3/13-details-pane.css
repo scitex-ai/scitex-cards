@@ -86,6 +86,19 @@
   color: var(--text-muted);
 }
 
+/* The hidden list lives inside a panel, rather than its former popover. */
+.details-section .hidden-list-panel {
+  position: static;
+  min-width: 0;
+  max-width: none;
+  max-height: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
 /* --- filter rows ------------------------------------------------------- */
 .details-row {
   display: flex;

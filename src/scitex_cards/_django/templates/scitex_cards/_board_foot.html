@@ -1693,9 +1693,7 @@
     }
 
     // === Details column (right) ══════════════════════════════════════
-    // Accordion behaviour lifted from scitex-writer's details-panel.ts: an
-    // open-set persisted in localStorage, sections closed by default except
-    // the ones we open here. (hook-bypass: line-limit.)
+    // The SDK sidebar owns collapse; content tabs keep their own selection.
     const DETAILS_PANE_KEY = "scitex-cards:details-collapsed";
     function toggleDetailsPane() {
       const pane = document.getElementById("details-panel");
@@ -2975,10 +2973,10 @@
     document.addEventListener("touchend", _cancelLongPress, { passive: true });
     document.addEventListener("touchcancel", _cancelLongPress, { passive: true });
 
-    // ── Hidden-cards dropdown (operator TG 381) ────────────────────────
+    // ── Hidden-cards tab (original operator TG 381) ────────────────────────
     // Walks STATE.graph.nodes for everything in hiddenSet() and paints
     // a row per hidden card (title + project + un-hide button). Also
-    // updates the "👁 hidden (N)" count in the dropdown summary.
+    // updates the count in the Hidden cards tab.
     function rebuildHiddenList() {
       const hidden = hiddenSet();
       const panel = document.getElementById("hidden-list-panel");
