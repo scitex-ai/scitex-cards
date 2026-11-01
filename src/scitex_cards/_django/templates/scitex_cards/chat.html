@@ -656,11 +656,11 @@ page-header.css is the same idea one level up: the SAME stylesheet the board
 links, holding the header bar's height/padding/gap so the two headers line up
 structurally instead of by two hand-synced numbers.
 {% endcomment %}
-<link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_marquee.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_marquee.css' %}?v={{ scitex_cards_version|urlencode }}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}?v={{ scitex_cards_version|urlencode }}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}?v={{ scitex_cards_version|urlencode }}">
 <link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/app-header.css' %}">{# CCT 3878: SDK header grammar for the shared .stx-app-header row. #}
-<link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_panes.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_panes.css' %}?v={{ scitex_cards_version|urlencode }}">
 {% comment %}
 Board assets for the unified page: the board pane below is the SAME partial
 the standalone board serves, so it needs the SAME stylesheets + scripts.
@@ -1041,36 +1041,36 @@ if the symbol is missing, so an old SDK costs behaviour, not the page.
 `defer` scripts execute in document order, so this list IS the order.
 {% endcomment %}
 <script defer src="{% static 'scitex_sdk/ui/js/app/combobox.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_request.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_diff.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_request.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_diff.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
 {% comment %}
   chat_window.js — which messages render, and where scroll lands after older
   ones load. Pure (no DOM of its own; the scrolling element is passed in).
   MUST load before the controller that consumes it, like chat_diff.js.
   chat_avatar.js — the per-agent initials/hue, pure, same reason.
 {% endcomment %}
-<script defer src="{% static 'scitex_cards/chat/chat_window.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_avatar.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_title.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_actions.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_marquee.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_select.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_longpress.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_menu.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_attach.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_drawer.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_filter.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_visibility.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_hide.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_new.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_markdown.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_longtext.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_compose.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_receipts.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_exchange.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_send.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat.js' %}"></script>
-<script defer src="{% static 'scitex_cards/chat/chat_panes.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_window.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_avatar.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_title.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_actions.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_marquee.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_select.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_longpress.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_menu.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_attach.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_drawer.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_filter.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_visibility.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_hide.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_new.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_markdown.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_longtext.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_compose.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_receipts.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_exchange.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_send.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_panes.js' %}?v={{ scitex_cards_version|urlencode }}"></script>
 {% comment %}
 Board runtime for the unified page: the SAME inline script the standalone
 board runs (one source, _board_foot.html), then the hash router. Classic
