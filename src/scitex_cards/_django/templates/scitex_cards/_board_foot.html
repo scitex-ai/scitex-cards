@@ -1961,7 +1961,20 @@
         <div class="stat-foot" id="recent-count-pill">
           <strong id="recent-count-value">${newCount}</strong> new / 24 h
         </div>`;
-      renderBoardTabTitle(all);
+      /* Title ownership (operator 2026-11-01: the tab compounded the DM
+       * title and the board suffix together): on the unified page only the
+       * VISIBLE pane may write document.title — this render runs on every
+       * board poll even while #dm is showing. visiblePane() null
+       * (standalone board page, no router) means no contention: write. */
+      const _router =
+        typeof window !== "undefined" && window.STX && window.STX.appRouter
+          ? window.STX.appRouter
+          : null;
+      const _vis =
+        _router && typeof _router.visiblePane === "function"
+          ? _router.visiblePane()
+          : null;
+      if (_vis !== "dm") renderBoardTabTitle(all);
     }
 
     // === Recent-count pill — fleet-wide "N new in 24 h" indicator ───

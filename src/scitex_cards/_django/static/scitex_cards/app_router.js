@@ -79,6 +79,28 @@
     }
   }
 
+  /* Which pane owns document.title RIGHT NOW. Poll ticks in BOTH panes fire
+   * every ~10s whether or not their pane is visible, so each tick must ask
+   * this before writing: the hidden pane's write would flap (or compound)
+   * the visible pane's title between switches (2026-11-01: the switch-time
+   * repaint alone did not hold). Returns 'dm' / 'board' on the unified page,
+   * null everywhere else (standalone pages, node) — null means "no
+   * contention", so callers write unconditionally. Never throws. */
+  function visiblePane() {
+    try {
+      if (typeof document === "undefined" || typeof window === "undefined")
+        return null;
+      var unified =
+        document.getElementById &&
+        document.getElementById("board-pane") &&
+        document.getElementById("dm-pane");
+      if (!unified) return null;
+      return paneForHash(window.location ? window.location.hash : "");
+    } catch (e) {
+      return null;
+    }
+  }
+
   function mount(doc) {
     if (!doc || typeof doc.addEventListener !== "function") return null;
     var hasBoard = !!doc.getElementById("board-pane");
@@ -117,7 +139,7 @@
     return { show: function (w) { return show(doc, w); } };
   }
 
-  var _api = { paneForHash: paneForHash, applyPane: applyPane, mount: mount, repaintTitle: repaintTitle };
+  var _api = { paneForHash: paneForHash, applyPane: applyPane, mount: mount, repaintTitle: repaintTitle, visiblePane: visiblePane };
   if (typeof globalThis !== "undefined") {
     globalThis.STX = globalThis.STX || {};
     globalThis.STX.appRouter = _api;

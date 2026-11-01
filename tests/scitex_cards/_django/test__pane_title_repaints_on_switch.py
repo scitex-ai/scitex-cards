@@ -85,4 +85,34 @@ def test_board_registers_its_title_hook_off_the_cached_nodes() -> None:
     assert hook
 
 
+def test_router_exposes_visible_pane_for_tick_guards() -> None:
+    """Poll ticks ask visiblePane() before writing — the switch repaint alone did not hold."""
+    # Arrange
+    source = _read(_STATIC / "app_router.js")
+    # Act
+    exposed = "function visiblePane" in source and "visiblePane: visiblePane" in source
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert exposed and "paneForHash(window.location" in source
+
+
+def test_dm_poll_skips_the_title_write_while_board_is_visible() -> None:
+    """The ~10s DM poll must not flap the board's title (2026-11-01 compound tab)."""
+    # Arrange
+    source = _read(_STATIC / "chat" / "chat.js")
+    # Act
+    guarded = "visiblePane()" in source and 'vis !== "board"' in source
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert guarded and "pageTitle.update(state.agents)" in source
+
+
+def test_board_render_skips_the_title_write_while_dm_is_visible() -> None:
+    """The board render must not flap the DM title — symmetric guard."""
+    # Arrange
+    source = _read(_TEMPLATES / "_board_foot.html")
+    # Act
+    guarded = "visiblePane()" in source and 'if (_vis !== "dm") renderBoardTabTitle(all)' in source
+    # Assert
+    assert guarded
+
+
 # EOF

@@ -139,3 +139,12 @@ test("repaintTitle: absent hooks and throwing hooks never break a switch", () =>
   }
   assert.doesNotThrow(() => MOD.repaintTitle("dm"));
 });
+
+test("visiblePane: null without a DOM (node) — no contention, callers write", () => {
+  assert.equal(MOD.visiblePane(), null);
+});
+
+test("visiblePane: exposed on the router API for poll-tick guards", () => {
+  assert.equal(typeof MOD.visiblePane, "function");
+  assert.ok("visiblePane" in MOD);
+});

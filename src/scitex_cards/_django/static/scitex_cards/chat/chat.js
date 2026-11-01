@@ -256,7 +256,16 @@
         clearError();
         state.agents = data.agents || [];
         renderAgents(state.agents);
-        if (pageTitle) pageTitle.update(state.agents);
+        /* Title ownership (operator 2026-11-01: the tab compounded to
+         * "Cards DM (3) (6 in last 1h)"): on the unified page only the
+         * VISIBLE pane may write document.title — this poll fires every
+         * ~10s even while #board is showing. visiblePane() null
+         * (standalone page, no router) means no contention: write. */
+        var vis =
+          window.STX && window.STX.appRouter && window.STX.appRouter.visiblePane
+            ? window.STX.appRouter.visiblePane()
+            : null;
+        if (pageTitle && vis !== "board") pageTitle.update(state.agents);
       })
       .catch(function (err) {
         showError("Agent list failed: " + err.message);
