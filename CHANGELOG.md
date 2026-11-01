@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.56.17] - 2026-11-01
+
+- Declare the board's SDK AppConfig inheritance explicitly, allowing the host
+  to certify installed plugin identities before importing application code.
+  Remove the unsupported plain-Django fallback for a missing required SDK.
+
 ## [0.56.16] - 2026-10-25
 
 - Operator 2026-10-25: the empty-state banner and the rendered list

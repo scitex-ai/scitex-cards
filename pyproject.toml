@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scitex-cards"
-version = "0.56.16"
+version = "0.56.17"
 description = "Canonical task-card store with pluggable adapters (mermaid dependency graphs)"
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -94,10 +94,8 @@ dependencies = [
     # Below the floor the pages degrade to the static-graph fallback
     # and the rich-board rendering tests fail — the silent wrong-board shape
     # the migration gate (test__board_shell_migration.py) exists to surface.
-    # NOTE the public-root ``scitex_sdk.app.ScitexAppConfig`` re-export only
-    # lands after 0.3.0 (absent from the 0.3.0 wheel, present in installed
-    # 0.3.5): below it ``_django/apps.py`` falls back to plain AppConfig by
-    # design, which is a degraded-install guard, not a supported config.
+    # AppConfig inherits through the explicit SDK embed module so the host
+    # can certify its identity without importing the lazy public re-export.
     "scitex-sdk>=0.3.9",
     # scitex-app/scitex-ui retired: every remaining consumer (i18n settings,
     # project_scope, context_processors, tag libraries, app shells) resolves

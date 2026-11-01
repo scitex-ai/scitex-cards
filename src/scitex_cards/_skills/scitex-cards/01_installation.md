@@ -28,6 +28,11 @@ System requirements: Python ≥ 3.10.
 | `dev`   | pytest, pytest-cov, scitex-dev (test + audit toolchain)     |
 | `all`   | everything above                                            |
 
+The board's AppConfig declares its required SDK base explicitly. Host plugin
+discovery can certify its literal `name` and `label` before importing the app;
+do not replace the declaration with a lazy class import or a plain-Django
+fallback. A missing required SDK installation must fail clearly.
+
 ## Rendering backends (for `render-graph`)
 
 PNG output needs **one** of:
