@@ -87,14 +87,16 @@ def test_hide_answers_the_resulting_state(store):
     key = _seed_thread(store)
     # Act
     response = _hide(store, "agent-x", True)
-    # Assert
-    assert response.status_code == 200
-    assert json.loads(response.content) == {
-        "thread": key,
-        "peer": "agent-x",
-        "hidden": True,
-        "changed": True,
-    }
+    # Assert — one compound assertion (PA-307).
+    assert (response.status_code, json.loads(response.content)) == (
+        200,
+        {
+            "thread": key,
+            "peer": "agent-x",
+            "hidden": True,
+            "changed": True,
+        },
+    )
 
 
 def test_repeated_hide_reports_no_change(store):
@@ -121,9 +123,11 @@ def test_hide_rejects_an_unknown_thread(store):
     # Arrange — no thread with agent-ghost exists.
     # Act
     response = _hide(store, "agent-ghost", True)
-    # Assert
-    assert response.status_code == 400
-    assert json.loads(response.content)["error"] == "unknown-thread"
+    # Assert — one compound assertion (PA-307).
+    assert (response.status_code, json.loads(response.content)["error"]) == (
+        400,
+        "unknown-thread",
+    )
 
 
 def test_hide_rejects_a_non_boolean_body(store):
@@ -244,6 +248,7 @@ def test_visibility_is_per_reader(store):
 def test_unknown_thread_raises_key_error(store):
     # Arrange — no thread row exists for this id.
     # Act
+    # Assert — the call raises instead of returning a row.
     with pytest.raises(KeyError):
         dm_write.set_thread_visibility(
             "dm:operator::agent-ghost", "operator", True, store=store

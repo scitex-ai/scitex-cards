@@ -67,10 +67,9 @@ def test_pane_uses_the_notice_bar_not_the_error_bar() -> None:
     source = _source()
     # Act
     idx = source.find("state.ackWarnedFor = peer")
-    assert idx != -1
-    window = source[idx : idx + 400]
+    window = source[idx : idx + 400] if idx != -1 else ""
     # Assert
-    assert "showNotice(" in window and "Read receipts paused" in window
+    assert idx != -1 and "showNotice(" in window and "Read receipts paused" in window
 
 
 # EOF

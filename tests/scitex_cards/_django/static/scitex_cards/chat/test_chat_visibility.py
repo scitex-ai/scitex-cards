@@ -119,6 +119,7 @@ def test_hidden_unread_sums_the_badge_field():
 
 
 def test_swipe_opens_left_past_half_the_action():
+    # Arrange — threshold cases only; no fixture state.
     # Act
     out = _run(
         "console.log(JSON.stringify(["
@@ -133,6 +134,7 @@ def test_swipe_opens_left_past_half_the_action():
 
 
 def test_disclosure_label_hides_a_zero_unread():
+    # Arrange — label pairs only; no fixture state.
     # Act
     out = _run(
         "console.log(JSON.stringify(["

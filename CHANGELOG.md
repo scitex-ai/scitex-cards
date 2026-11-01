@@ -1,5 +1,73 @@
 # Changelog
 
+## [0.56.16] - 2026-10-25
+
+- Operator 2026-10-25: the empty-state banner and the rendered list
+  agree — the Simple list honors the shared filter predicate (it listed
+  by time only under a "0 matches" banner), and the banner stays silent
+  for raster views that pull their own feed. Live-verified agreement.
+
+## [0.56.15] - 2026-10-24
+
+- Release repair: the operator-batch width-cap pin asserted the exact
+  pre-combobox selector, failing the 0.56.14 publish run 1/3250. The pin
+  now follows the capped trigger selector; behavior unchanged.
+
+## [0.56.14] - 2026-10-25
+
+- Operator batch 2026-10-25 (scitex-cards lane): board chrome goes
+  monochrome except CTA and card-state colors (prompt-02 scitex-stats
+  parity); Details combobox trigger ellipsizes and its popover cannot
+  exceed the viewport (pane-shift fix). Sweep pin fails loud per file;
+  dark+light live-verified.
+
+## [0.56.13] - 2026-10-24
+
+- Operator follow-ups 2026-10-24 (scitex-cards lane): light page
+  background follows the hub warm-grey tokens instead of full white
+  (live-verified warm paper theme).
+
+## [0.56.12] - 2026-10-24
+
+- Release repair: the 0.56.11 tag shipped the no-bold chip pin without
+  its stylesheet half — this release carries the de-bolded chip rules
+  themselves. No other change.
+
+## [0.56.11] - 2026-10-24
+
+- Operator follow-ups 2026-10-24 (scitex-cards lane): Ctrl+K hint as
+  inline end-of-field text on both filters (never a boxed badge, never
+  inlined in the placeholder); filter chip de-bolded; Esc clears first,
+  then blurs, on both filters alike; agent menu hidden until opened and
+  hover no longer reveals row actions; agent list fits the filter row
+  (240px to 300px). All live-verified; pins green.
+
+## [0.56.10] - 2026-10-24
+
+- Release repair: declare the pinned thread route in the mount-policy
+  manifest (undeclared write routes 403 at the mount layer) and restore
+  the exact agent-filter aria-label its accessibility pin expects. The
+  0.56.8/0.56.9 publish runs failed on these two, not on the suite.
+
+## [0.56.9] - 2026-10-24
+
+- Operator follow-ups 2026-10-24 (scitex-cards lane): agent list fits the
+  filter row (240px to 300px; phone drawer untouched); Hide/Pin live in
+  the right-click menu only — the menu renders hidden until opened and
+  the hover/focus reveal is removed (touch slide keeps its reveal).
+
+## [0.56.8] - 2026-10-24
+
+- Operator batch 2026-10-24 (scitex-cards lane): short counted tab titles
+  ("Cards DM (N)", "Board (N in last 1h)"); search/filter focus moves to
+  Ctrl+K with the board's "/" capture released to the hub global search;
+  DM thread pane survives a refused read-receipt ack (403 on mark_read=1
+  serves messages with receipts paused); pin/unpin threads end to end
+  (append-only events, endpoint, menu, sort); phone canvas keeps a 50vh
+  floor so the board shows at mobile widths; filter chip and header
+  search lose the purple wash (brand CTA pairing). Collapsed Details
+  rail is keyboard-expandable. Each slice pinned and live-verified.
+
 ## [0.56.7] - 2026-10-23
 
 - Board /graph fetch is bounded (operator 2026-10-24: "loading board ...

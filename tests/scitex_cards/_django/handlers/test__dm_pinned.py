@@ -84,13 +84,15 @@ def test_pin_answers_the_resulting_state(store):
     # Act
     response = _pin(store, "agent-x", True)
     # Assert
-    assert response.status_code == 200
-    assert json.loads(response.content) == {
-        "thread": key,
-        "peer": "agent-x",
-        "pinned": True,
-        "changed": True,
-    }
+    assert (response.status_code, json.loads(response.content)) == (
+        200,
+        {
+            "thread": key,
+            "peer": "agent-x",
+            "pinned": True,
+            "changed": True,
+        },
+    )
 
 
 def test_repeated_pin_reports_no_change(store):
@@ -118,8 +120,10 @@ def test_pin_rejects_an_unknown_thread(store):
     # Act
     response = _pin(store, "agent-ghost", True)
     # Assert
-    assert response.status_code == 400
-    assert json.loads(response.content)["error"] == "unknown-thread"
+    assert (response.status_code, json.loads(response.content)["error"]) == (
+        400,
+        "unknown-thread",
+    )
 
 
 def test_pin_rejects_a_non_boolean_body(store):
@@ -256,6 +260,7 @@ def test_pin_events_are_not_hide_state(store):
 def test_unknown_pinned_thread_raises_key_error(store):
     # Arrange — no thread row exists for this id.
     # Act
+    # Assert — the call raises instead of returning a row.
     with pytest.raises(KeyError):
         dm_write.set_thread_pinned(
             "dm:operator::agent-ghost", "operator", True, store=store

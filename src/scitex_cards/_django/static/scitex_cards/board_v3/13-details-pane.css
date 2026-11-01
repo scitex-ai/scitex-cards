@@ -142,7 +142,8 @@
   overflow: hidden;
 }
 .details-row--filter select,
-.details-row--filter input.filt-text {
+.details-row--filter input.filt-text,
+.details-row--filter .cb-trigger {
   flex: 1 1 auto;
   min-width: 0;
   max-width: 100%;
@@ -150,6 +151,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* The SDK combobox scaffolding is OURS (built in _board_foot.html around
+ * each <select.filt>): the wrap must not force width, and the popover
+ * container must never exceed the viewport — an uncapped trigger label
+ * ("agent:scitex-infrastructure-lead") widened the row and shifted the
+ * pane (operator 2026-10-25), and an uncapped popover scrolls the page,
+ * which reads as clipped board content. */
+.details-row--filter .cb-wrap {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.details-row--filter .cb-container {
+  max-width: calc(100vw - 24px);
 }
 .details-check {
   display: flex;

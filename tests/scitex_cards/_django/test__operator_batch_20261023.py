@@ -96,7 +96,7 @@ def test_details_filter_rows_cannot_push_the_pane() -> None:
     # Assert
     row = re.search(r"\.details-row--filter\s*\{([^}]*)\}", css)
     sel = re.search(
-        r"\.details-row--filter select,\s*\.details-row--filter input\.filt-text\s*\{([^}]*)\}",
+        r"\.details-row--filter select,\s*\.details-row--filter input\.filt-text,\s*\.details-row--filter \.cb-trigger\s*\{([^}]*)\}",
         css,
     )
     assert row is not None and "overflow" in row.group(1) and "hidden" in row.group(1) and sel is not None and "ellipsis" in sel.group(1), (

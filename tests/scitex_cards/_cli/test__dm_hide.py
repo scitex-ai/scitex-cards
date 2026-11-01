@@ -59,9 +59,11 @@ def test_hide_then_unhide_round_trip(postgres_dsn, env):
     # Act
     hid = _invoke("hide", "operator", "--sender", "hide-cli", "--json")
     shown = _invoke("unhide", "operator", "--sender", "hide-cli", "--json")
-    # Assert
-    assert json.loads(hid.stdout)["hidden"] is True
-    assert json.loads(shown.stdout)["hidden"] is False
+    # Assert — one compound assertion (PA-307).
+    assert (json.loads(hid.stdout)["hidden"], json.loads(shown.stdout)["hidden"]) == (
+        True,
+        False,
+    )
 
 
 def test_hide_unknown_peer_is_a_clean_error(postgres_dsn, env):

@@ -122,4 +122,20 @@ def test_the_search_input_matches_the_filt_fill() -> None:
     assert themed
 
 
+def test_the_filter_chip_uses_no_bold() -> None:
+    """Operator 2026-10-24: the chip reads as a label, not a call — no
+    600+ weights anywhere in its rules."""
+    # Arrange
+    selectors = (
+        ".filt-chip",
+        ".filt-chip-key",
+        ".filt-chip-val",
+        ".filt-chip-clear",
+    )
+    # Act
+    bodies = " ".join(_rule_body(selector) for selector in selectors)
+    # Assert
+    assert "font-weight: 600" not in bodies and "font-weight: 700" not in bodies
+
+
 # EOF

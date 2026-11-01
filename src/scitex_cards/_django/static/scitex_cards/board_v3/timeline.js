@@ -415,7 +415,12 @@
         return { t: t, act: act };
       })
       .filter(function (r) {
-        return r.act != null && r.act >= cutoff;
+        if (r.act == null || r.act < cutoff) return false;
+        // Honor the filterbar: the empty-state banner counts the SAME
+        // `visible` set, so an unfiltered list beside a "0 matches"
+        // banner is a lie (operator 2026-10-25). `passes` lives in the
+        // inline board script; absent (unit context), keep the row.
+        return typeof passes === "function" ? passes(r.t) : true;
       })
       .sort(function (a, b) {
         return b.act - a.act;

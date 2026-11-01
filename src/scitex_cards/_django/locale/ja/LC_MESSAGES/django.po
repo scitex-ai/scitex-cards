@@ -168,8 +168,8 @@ msgid "no date in title"
 msgstr "タイトルに日付なし"
 
 #: templates/scitex_cards/board_v3.html:296
-msgid "Search… (Ctrl+K to focus, Esc to blur) — try project:paper-scitex-clew, status:blocked, kind:compute, …"
-msgstr "検索…（Ctrl+K でフォーカス、Esc で解除） — 例: project:paper-scitex-clew, status:blocked, kind:compute, …"
+msgid "Search… — try project:paper-scitex-clew, status:blocked, kind:compute, …"
+msgstr "検索… — 例: project:paper-scitex-clew, status:blocked, kind:compute, …"
 
 #: templates/scitex_cards/board_v3.html (search autocomplete dropdown)
 msgid "Search suggestions"

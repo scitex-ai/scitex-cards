@@ -73,20 +73,18 @@ def test_details_rail_expands_on_enter_or_space_when_collapsed() -> None:
     aside = _aside_tag(_read(_BOARD_PANE_TEMPLATE))
     # Assert
     m = re.search(r'onkeydown="([^"]*)"', aside)
-    assert m is not None, "details aside lost its keydown expand handler"
-    handler = m.group(1)
-    assert "classList.contains('collapsed')" in handler, (
-        "rail keydown must be guarded to the collapsed state, like onclick"
-    )
-    assert "Enter" in handler and "' '" in handler, (
-        "rail keydown must accept both Enter and Space"
-    )
-    assert "preventDefault" in handler, (
-        "rail Space handling must preventDefault so the page does not scroll"
-    )
-    assert "toggleDetailsPane()" in handler, (
-        "rail keydown must expand via toggleDetailsPane()"
-    )
+    handler = m.group(1) if m else ""
+    # Assert — one compound assertion (PA-307): the handler must exist,
+    # stay guarded to collapsed, take Enter+Space, not scroll on Space,
+    # and expand through toggleDetailsPane().
+    assert (
+        m is not None
+        and "classList.contains('collapsed')" in handler
+        and "Enter" in handler
+        and "' '" in handler
+        and "preventDefault" in handler
+        and "toggleDetailsPane()" in handler
+    ), "details aside lost its guarded Enter/Space expand handler"
 
 
 def test_toggle_details_pane_syncs_rail_tab_stop() -> None:
@@ -100,11 +98,11 @@ def test_toggle_details_pane_syncs_rail_tab_stop() -> None:
         js,
         re.DOTALL,
     )
-    assert m is not None, "toggleDetailsPane() missing from _board_foot.html"
-    body = m.group(1)
-    assert re.search(r"pane\.tabIndex\s*=\s*on\s*\?\s*0\s*:\s*-1", body), (
-        "toggleDetailsPane() must sync pane.tabIndex (0 collapsed, -1 open)"
-    )
+    body = m.group(1) if m else ""
+    # Assert — one compound assertion (PA-307).
+    assert m is not None and re.search(
+        r"pane\.tabIndex\s*=\s*on\s*\?\s*0\s*:\s*-1", body
+    ), "toggleDetailsPane() must sync pane.tabIndex (0 collapsed, -1 open)"
 
 
 def test_sync_details_pane_applies_rail_tab_stop_at_boot() -> None:
@@ -118,8 +116,8 @@ def test_sync_details_pane_applies_rail_tab_stop_at_boot() -> None:
         js,
         re.DOTALL,
     )
-    assert m is not None, "_syncDetailsPane() missing from _board_foot.html"
-    body = m.group(1)
-    assert re.search(
+    body = m.group(1) if m else ""
+    # Assert — one compound assertion (PA-307).
+    assert m is not None and re.search(
         r"pane\.tabIndex\s*=\s*collapsed\s*\?\s*0\s*:\s*-1", body
     ), "_syncDetailsPane() must sync pane.tabIndex alongside the class"
