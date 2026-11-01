@@ -51,11 +51,10 @@ WHY CAPABILITY COMES FROM MEMBERSHIP, NOT FROM THE USER REGISTRY. "Can this
 recipient confirm at all?" must be answered from the RECIPIENT's standing, never
 from the absence of a receipt — decide it from absence and every genuinely
 unconfirmed message quietly becomes "cannot tell", and the detector is dead.
-The registry looks like the right oracle and is not: ``list_users`` parses the
-store as YAML, so on the canonical database store it raises, ``_registry_agents``
-fail-softs to ``[]``, and the live ``/dm/threads`` reports ``kind: null`` for
-every peer. Keying capability on "is registered" would therefore mark EVERY
-message unknowable and hide the outage completely. Membership is the honest
+The global account registry is not an agent runtime directory and does not
+prove that a historical peer can currently receive messages. Existing DM lists
+therefore come from the authenticated reader's threads, independent of registry
+membership. Membership is the honest
 oracle and the schema says so: ``dm_messages`` records who SENT, the member
 event log records who can SEE (``_dm_read`` module docstring). A message whose
 thread has recipients has parties who can confirm; a message with no recipients

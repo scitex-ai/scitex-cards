@@ -79,7 +79,7 @@
         apiBase + "/dm/thread/" + encodeURIComponent(peer) + "/hidden",
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: window.ChatRequest.headers(true),
           body: JSON.stringify({ hidden: hidden }),
         },
       )
