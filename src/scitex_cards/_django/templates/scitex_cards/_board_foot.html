@@ -1046,7 +1046,7 @@
         : null;
       var honorsFilters =
         layout !== "timeline" || tlView === "simple" || tlView == null;
-      _renderEmptyStateBanner(visible.length, STATE.graph.nodes.length, honorsFilters);
+      _renderFilterMatchStatus(visible.length, STATE.graph.nodes.length, honorsFilters);
       if (layout === "graph") {
         _renderGraphView(canvas, visible);
       } else if (layout === "stale") {
@@ -1099,42 +1099,15 @@
       }
     }
 
-    // === Empty-state banner ──────────────────────────────────────────
-    // Operator TG12911 (via lead a2a `ffa6c606`): "filtering by
-    // nv-lessons does NOT work at all — returns nothing / no effect."
-    // Root cause was UX: the filter LOGICALLY narrowed the set to 0
-    // matches and the board went blank with no explanation, reading as
-    // "broken filter". This helper flips a banner on whenever the store
-    // has rows but the active filters drop everything, and offers a
-    // one-click "Clear all filters" that resets STATE.filters.
-    // (hook-bypass: line-limit.)
-    function _renderEmptyStateBanner(visibleCount, totalCount, honorsFilters) {
-      const banner = document.getElementById("filter-empty-banner");
-      if (!banner) return;
-      // Show only when the store HAS rows but filters narrow to 0;
-      // a truly empty store falls through to the normal columns view
-      // (the user just hasn't seeded any tasks yet). `honorsFilters`
-      // gates views that don't render `visible` at all (raster timelines
-      // pull their own feed) — see the call site.
-      const filtersAreActive = _anyActiveFilter();
-      if (
-        honorsFilters !== false &&
-        visibleCount === 0 &&
-        totalCount > 0 &&
-        filtersAreActive
-      ) {
-        const detail = document.getElementById("filter-empty-banner-detail");
-        if (detail) {
-          detail.textContent =
-            ` Active filters narrow ${totalCount} task` +
-            (totalCount === 1 ? "" : "s") +
-            " to none. Either widen the filters or use the button to" +
-            " clear them.";
-        }
-        banner.style.display = "block";
-      } else {
-        banner.style.display = "none";
-      }
+    // Keep empty-filter feedback beside the chips, without a dedicated panel.
+    function _renderFilterMatchStatus(visibleCount, totalCount, honorsFilters) {
+      const status = document.getElementById("filter-match-status");
+      if (!status) return;
+      const show = honorsFilters !== false && visibleCount === 0 &&
+        totalCount > 0 && _anyActiveFilter();
+      status.hidden = !show;
+      const detail = document.getElementById("filter-match-detail");
+      if (detail) detail.textContent = show ? "0 matches" : "";
     }
 
     function _anyActiveFilter() {
@@ -1145,32 +1118,7 @@
       );
     }
 
-    // Wire the banner's "Clear all filters" button once at boot. The
-    // banner element is in the static template; the button needs a JS
-    // listener so the click resets STATE.filters and re-renders.
     document.addEventListener("DOMContentLoaded", () => {
-      const btn = document.getElementById("filter-empty-banner-clear");
-      if (!btn) return;
-      btn.addEventListener("click", () => {
-        // Reset every filter dimension to its empty value + clear the
-        // <select.filt> + search-input DOM controls so the chip strip
-        // re-renders consistent with the cleared state.
-        const f = STATE.filters || {};
-        f.project = ""; f.host = ""; f.status = "";
-        f.blocker = ""; f.agent = ""; f.date = "";
-        f.search = ""; f.blockingMe = false;
-        for (const id of ["f-host", "f-status",
-                          "f-blocker", "f-agent", "f-date"]) {
-          const el = document.getElementById(id);
-          if (el) el.value = "";
-        }
-        const search = document.getElementById("f-search");
-        if (search) search.value = "";
-        const detailsText = document.getElementById("f-text");
-        if (detailsText) detailsText.value = "";
-        renderActiveFilterChips();
-        render();
-      });
       // Mobile declutter (card cards-mobile-declutter-20261007): on touch
       // devices the search placeholder's desktop keyboard hints (/ to focus,
       // Esc to blur, Tab to autocomplete) name keys that don't exist. Swap
@@ -2203,6 +2151,9 @@
         if (el) el.value = "";
       });
       STATE.filters.search = "";
+      STATE.filters.blockingMe = false;
+      const blocking = document.getElementById("f-blockingme");
+      if (blocking) blocking.checked = false;
       const hdr = document.getElementById("f-search");
       if (hdr) hdr.value = "";
       const dt = document.getElementById("f-text");

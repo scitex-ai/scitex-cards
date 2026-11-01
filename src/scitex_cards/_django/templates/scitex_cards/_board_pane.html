@@ -168,6 +168,10 @@
          aria-label="{% translate 'Recognized search qualifiers' %}"></div>
     <div id="filt-chips" class="filt-chips"
          aria-live="polite" aria-label="{% translate 'Active filters' %}"></div>
+    <span id="filter-match-status" class="filter-match-status" role="status" hidden>
+      <span id="filter-match-detail"></span>
+      <button type="button" onclick="clearAllFilters()">{% translate "Clear filters" %}</button>
+    </span>
   </div>
 
   {% comment %}
@@ -223,22 +227,6 @@
     {% endcomment %}
     <div class="board-area">
 
-    <!-- Empty-state banner (operator TG12911, lead a2a `ffa6c606`) — when
-         the active filters narrow the visible set to 0 cards, surface an
-         explicit "0 matches" line + a one-click "Clear filters" so a
-         silent empty board doesn't read as "the filter is broken".
-         Hidden by default; render() flips it on/off. -->
-    <div id="filter-empty-banner"
-         style="display:none; padding:14px 18px; margin:6px 12px;
-                background:var(--accent-soft, #fff7e6);
-                border:1px solid var(--accent, #d99700);
-                border-radius:6px; font-size:13px; line-height:1.5;"
-         role="status">
-      <strong style="color:var(--accent-strong, #b97400)">{% translate "0 matches." %}</strong>
-      <span id="filter-empty-banner-detail"></span>
-      <button type="button" id="filter-empty-banner-clear"
-              style="margin-left:10px; cursor:pointer;">{% translate "Clear all filters" %}</button>
-    </div>
     <div class="columns" id="columns" aria-busy="true"
          data-cards-internal-chrome="{{ cards_internal_chrome_enabled|yesno:'true,false,false' }}">
       {% comment %}

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.56.19] - 2026-11-01
+
+- Remove the dedicated zero-match Board banner. Show a compact neutral count
+  and clear-filters action beside the active filter chips instead.
+
 ## [0.56.18] - 2026-11-01
 
 - Declare the board's SDK AppConfig inheritance explicitly so the host can
