@@ -2,6 +2,9 @@
 
 ## 0.56.22 — 2026-11-01
 
+- Show only the reader's actual DM conversations, send CSRF tokens for protected
+  mutations, and report refused receipt updates without claiming success.
+
 - Use the SDK theme's semantic navigation accent for Details, DM/Board,
   and timeline tabs: navy in light mode and gold in dark mode.
 
