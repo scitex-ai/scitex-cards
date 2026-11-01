@@ -309,12 +309,28 @@
       </div>
       <div class="stx-shell-sidebar__content details-body">
 
-        <div class="details-section open" data-id="board">
-          <button type="button" class="details-section-toggle"
-                  onclick="toggleDetailsSection('board')">
-            <span class="details-section-title">{% translate "Board" %}</span>
-            <span class="details-chevron" aria-hidden="true">▸</span>
-          </button>
+        <div class="stx-content-tabs details-tabs" role="tablist"
+             aria-label="{% translate 'Details sections' %}"
+             onkeydown="onDetailsTabKeyDown(event)">
+          <button type="button" class="stx-content-tabs__tab"
+                  id="details-tab-board" role="tab" aria-controls="details-content-board"
+                  aria-selected="true" tabindex="0"
+                  onclick="selectDetailsTab('board')">{% translate "Board" %}</button>
+          <button type="button" class="stx-content-tabs__tab"
+                  id="details-tab-stats" role="tab" aria-controls="details-content-stats"
+                  aria-selected="false" tabindex="-1"
+                  onclick="selectDetailsTab('stats')">{% translate "Stats" %}</button>
+          <button type="button" class="stx-content-tabs__tab"
+                  id="details-tab-filters" role="tab" aria-controls="details-content-filters"
+                  aria-selected="false" tabindex="-1"
+                  onclick="selectDetailsTab('filters')">{% translate "Filters" %} <span class="details-filter-count" id="filt-active-count">(0)</span></button>
+          <button type="button" class="stx-content-tabs__tab"
+                  id="details-tab-hidden" role="tab" aria-controls="details-content-hidden"
+                  aria-selected="false" tabindex="-1"
+                  onclick="selectDetailsTab('hidden')">{% translate "Hidden cards" %} <span class="details-filter-count">(<span id="hidden-count">0</span>)</span></button>
+        </div>
+        <div class="details-section" data-id="board" id="details-content-board"
+             role="tabpanel" aria-labelledby="details-tab-board" tabindex="0">
           <div class="details-section-body">
             {% comment %}
               BOARD VIEW CONTROLS (operator 2026-10-22: View, Span, Layout
@@ -372,12 +388,8 @@
           </div>
         </div>
 
-        <div class="details-section open" data-id="stats">
-          <button type="button" class="details-section-toggle"
-                  onclick="toggleDetailsSection('stats')">
-            <span class="details-section-title">{% translate "Stats" %}</span>
-            <span class="details-chevron" aria-hidden="true">▸</span>
-          </button>
+        <div class="details-section" data-id="stats" id="details-content-stats"
+             role="tabpanel" aria-labelledby="details-tab-stats" tabindex="0" hidden>
           <div class="details-section-body" id="details-stats-body">
             {% comment %}
               TIMESCALE — the SAME d/w/m window the Timeline raster uses
@@ -398,13 +410,8 @@
           </div>
         </div>
 
-        <div class="details-section open" data-id="filters">
-          <button type="button" class="details-section-toggle"
-                  onclick="toggleDetailsSection('filters')">
-            <span class="details-section-title">{% translate "Filters" %}</span>
-            <span class="details-filter-count" id="filt-active-count">(0)</span>
-            <span class="details-chevron" aria-hidden="true">▸</span>
-          </button>
+        <div class="details-section" data-id="filters" id="details-content-filters"
+             role="tabpanel" aria-labelledby="details-tab-filters" tabindex="0" hidden>
           <div class="details-section-body">
             <div class="details-row details-row--filter">
               <label for="f-text">{% translate "Text" %}</label>
@@ -457,13 +464,8 @@
           </div>
         </div>
 
-        <div class="details-section" data-id="hidden">
-          <button type="button" class="details-section-toggle"
-                  onclick="toggleDetailsSection('hidden')">
-            <span class="details-section-title">{% translate "Hidden cards" %}</span>
-            <span class="details-filter-count">(<span id="hidden-count">0</span>)</span>
-            <span class="details-chevron" aria-hidden="true">▸</span>
-          </button>
+        <div class="details-section" data-id="hidden" id="details-content-hidden"
+             role="tabpanel" aria-labelledby="details-tab-hidden" tabindex="0" hidden>
           <div class="details-section-body">
             <div id="hidden-list-panel" class="hidden-list-panel">
               <div class="hidden-list-empty">{% translate "No hidden cards." %}</div>

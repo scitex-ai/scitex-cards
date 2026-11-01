@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.56.20 — 2026-11-01
+
+- Replace Details accordions with shared SDK tabs for Board, Stats, Filters,
+  and Hidden cards, including arrow-key navigation and saved selection.
+
 ## [0.56.19] - 2026-11-01
 
 - Remove the dedicated zero-match Board banner. Show a compact neutral count

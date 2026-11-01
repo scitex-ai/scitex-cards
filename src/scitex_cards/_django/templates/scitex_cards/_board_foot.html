@@ -1738,31 +1738,42 @@
       }
     }
 
-    const DETAILS_OPEN_KEY = "scitex-cards:details-open";
-    function _detailsOpenSet() {
-      try {
-        const raw = localStorage.getItem(DETAILS_OPEN_KEY);
-        if (raw) return new Set(JSON.parse(raw));
-      } catch {}
-      // Board OPEN by default (operator 2026-10-23: the Details pane
-      // "does not open"): View/Span/Layout/Live live in Details > Board
-      // since the 2026-10-22 re-home, so a closed Board section hides the
-      // very controls the move was for. A stored preference still wins.
-      return new Set(["board", "stats", "filters"]);
-    }
-    function toggleDetailsSection(id) {
-      const open = _detailsOpenSet();
-      if (open.has(id)) open.delete(id); else open.add(id);
-      try {
-        localStorage.setItem(DETAILS_OPEN_KEY, JSON.stringify([...open]));
-      } catch {}
-      _syncDetailsSections();
-    }
-    function _syncDetailsSections() {
-      const open = _detailsOpenSet();
-      document.querySelectorAll(".details-section").forEach((sec) => {
-        sec.classList.toggle("open", open.has(sec.getAttribute("data-id")));
+    // SDK content-tabs owns appearance; this producer owns selection and keys.
+    const DETAILS_TAB_KEY = "scitex-cards:details-tab";
+    const DETAILS_TABS = ["board", "stats", "filters", "hidden"];
+    function selectDetailsTab(id, focus = false) {
+      if (!DETAILS_TABS.includes(id)) id = "board";
+      document.querySelectorAll(".details-tabs [role=tab]").forEach((tab) => {
+        const selected = tab.id === "details-tab-" + id;
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+        if (selected && focus) {
+          tab.focus();
+          tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+        }
       });
+      document.querySelectorAll(".details-section").forEach((panel) => {
+        panel.hidden = panel.getAttribute("data-id") !== id;
+      });
+      try { localStorage.setItem(DETAILS_TAB_KEY, id); } catch {}
+    }
+    function onDetailsTabKeyDown(event) {
+      const tab = event.target.closest('[role="tab"]');
+      if (!tab) return;
+      const current = DETAILS_TABS.indexOf(tab.id.replace("details-tab-", ""));
+      let next;
+      if (event.key === "ArrowRight") next = (current + 1) % DETAILS_TABS.length;
+      else if (event.key === "ArrowLeft") next = (current + DETAILS_TABS.length - 1) % DETAILS_TABS.length;
+      else if (event.key === "Home") next = 0;
+      else if (event.key === "End") next = DETAILS_TABS.length - 1;
+      else return;
+      event.preventDefault();
+      selectDetailsTab(DETAILS_TABS[next], true);
+    }
+    function _syncDetailsTabs() {
+      let id = "board";
+      try { id = localStorage.getItem(DETAILS_TAB_KEY) || id; } catch {}
+      selectDetailsTab(id);
     }
 
     // === Details > Board (View / Span / Layout / Live) ════════════════
@@ -3113,7 +3124,7 @@
     })();
 
     _syncDetailsPane();
-    _syncDetailsSections();
+    _syncDetailsTabs();
     renderStats();
     // Details > Board paints even when the graph fails (operator sees the
     // View/Span/Layout/Live chrome on an error-state board, not an empty
