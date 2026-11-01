@@ -1,10 +1,20 @@
 # Changelog
 
+## [0.56.18] - 2026-11-01
+
+- Declare the board's SDK AppConfig inheritance explicitly so the host can
+  certify installed plugins from source. Remove the unsupported plain-Django
+  fallback for a missing required SDK.
+
 ## [0.56.17] - 2026-11-01
 
-- Declare the board's SDK AppConfig inheritance explicitly, allowing the host
-  to certify installed plugin identities before importing application code.
-  Remove the unsupported plain-Django fallback for a missing required SDK.
+- Prompt-02 leftovers + 6 board/DM slices: board chrome goes monochrome
+  except CTA and card-state colors (exception-presence pin); buzz filter
+  space-separated keywords AND-combine; DM agent menu gains Mark-as-read
+  + Copy-name beside Hide/Pin with typed refusal reasons; DM composer
+  sits flush; app header carries no margins; document.title follows the
+  visible #dm/#board pane. Audit gate: whitelist `dm unhide` (§1d),
+  notifyd via scitex-logging (PS-220).
 
 ## [0.56.16] - 2026-10-25
 
