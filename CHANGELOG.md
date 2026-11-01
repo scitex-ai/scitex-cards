@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.56.17] - 2026-11-01
+
+- Prompt-02 leftovers + 6 board/DM slices: board chrome goes monochrome
+  except CTA and card-state colors (exception-presence pin); buzz filter
+  space-separated keywords AND-combine; DM agent menu gains Mark-as-read
+  + Copy-name beside Hide/Pin with typed refusal reasons; DM composer
+  sits flush; app header carries no margins; document.title follows the
+  visible #dm/#board pane. Audit gate: whitelist `dm unhide` (§1d),
+  notifyd via scitex-logging (PS-220).
+
 ## [0.56.16] - 2026-10-25
 
 - Operator 2026-10-25: the empty-state banner and the rendered list
