@@ -69,7 +69,7 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     --line: var(--border-default);
     --text: var(--text-primary);
     --dim: var(--text-muted);
-    --accent: var(--app-accent-figrecipe);
+    /* Inherit the SDK navigation accent: navy in light, gold in dark. */
     --accent-2: var(--app-accent-clew);
     --bubble-op: var(--bg-muted);
     --bubble-agent: var(--bg-surface);
@@ -658,7 +658,7 @@ links, holding the header bar's height/padding/gap so the two headers line up
 structurally instead of by two hand-synced numbers.
 {% endcomment %}
 <link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_marquee.css' %}">
-<link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}?v={{ scitex_cards_version|urlencode }}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}?v={{ scitex_cards_version|urlencode }}">
 <link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/app-header.css' %}">{# CCT 3878: SDK header grammar for the shared .stx-app-header row. #}
 <link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_panes.css' %}">

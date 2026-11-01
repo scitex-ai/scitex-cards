@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.56.22 — 2026-11-01
+
+- Use the SDK theme's semantic navigation accent for Details, DM/Board,
+  and timeline tabs: navy in light mode and gold in dark mode.
+
 ## 0.56.21 — 2026-11-01
 
 - Avoid duplicate graph prefetch/cache writers and bound the complete JSON read.
