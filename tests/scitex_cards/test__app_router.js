@@ -148,3 +148,30 @@ test("visiblePane: exposed on the router API for poll-tick guards", () => {
   assert.equal(typeof MOD.visiblePane, "function");
   assert.ok("visiblePane" in MOD);
 });
+
+test("visiblePane: reads the hash on the unified page", () => {
+  const els = { "board-pane": {}, "dm-pane": {} };
+  globalThis.document = { getElementById: (id) => els[id] || null };
+  globalThis.window = { location: { hash: "#board" } };
+  try {
+    assert.equal(MOD.visiblePane(), "board");
+    globalThis.window.location.hash = "#dm";
+    assert.equal(MOD.visiblePane(), "dm");
+    globalThis.window.location.hash = "";
+    assert.equal(MOD.visiblePane(), "dm");
+  } finally {
+    delete globalThis.document;
+    delete globalThis.window;
+  }
+});
+
+test("visiblePane: null on standalone pages (no contention, callers write)", () => {
+  globalThis.document = { getElementById: () => null };
+  globalThis.window = { location: { hash: "#board" } };
+  try {
+    assert.equal(MOD.visiblePane(), null);
+  } finally {
+    delete globalThis.document;
+    delete globalThis.window;
+  }
+});
