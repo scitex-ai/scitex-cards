@@ -1,5 +1,5 @@
 {% extends "scitex_sdk/ui/standalone_shell.html" %}
-{% load static %}
+{% load static scitex_static %}
 {% comment %}data-theme="dark" ACTIVATES the SDK's dark token set — it is not
 decoration. theme.css defines --text-primary / --bg-page / --border-default /
 … twice, once under [data-theme="light"] and once under [data-theme="dark"],
@@ -659,7 +659,7 @@ structurally instead of by two hand-synced numbers.
 <link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_marquee.css' %}?v={{ scitex_cards_version|urlencode }}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}?v={{ scitex_cards_version|urlencode }}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}?v={{ scitex_cards_version|urlencode }}">
-<link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/app-header.css' %}">{# CCT 3878: SDK header grammar for the shared .stx-app-header row. #}
+<link rel="stylesheet" href="{% app_static 'scitex_sdk/ui/css/app/app-header.css' %}">{# CCT 3878: SDK header grammar for the shared .stx-app-header row. #}
 <link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_panes.css' %}?v={{ scitex_cards_version|urlencode }}">
 {% comment %}
 Board assets for the unified page: the board pane below is the SAME partial
