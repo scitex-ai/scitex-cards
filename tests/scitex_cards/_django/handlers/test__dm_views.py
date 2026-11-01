@@ -4,7 +4,7 @@
 
 Minimal-slice contract (card fleet-agent-direct-message-board-pane-20260707):
 
-  - GET  /dm/threads      → registry agents ∪ thread peers, with unread + last.
+  - GET  /dm/threads      → current-reader thread peers, with unread + last.
   - GET  /dm/thread/<p>   → chronological messages; mark_read=1 acks.
   - POST /dm/thread/<p>   → persists a user-authored DM and returns a delivery
                             exchange; 400 on empty body.
@@ -189,32 +189,39 @@ def test_threads_view_exposes_the_last_message_body(store):
     assert agents[0]["last_body"] == "ping"
 
 
-def test_threads_view_includes_registry_agents_without_threads(store):
+def test_threads_view_excludes_registry_accounts_without_threads(store):
     # Arrange
     response = _threads_with_a_silent_registry_agent(store)
     # Act
     agents = _agents_of(response)
     # Assert
-    # registered but silent agents still appear (composable-to).
-    assert [a["name"] for a in agents] == ["agent-quiet"]
+    assert agents == []
 
 
-def test_silent_registry_agent_has_no_unread_messages(store):
+def test_threads_view_keeps_unregistered_conversation_peers(store):
     # Arrange
-    response = _threads_with_a_silent_registry_agent(store)
+    from scitex_cards._users import register_user
+
+    register_user(kind="agent", names=["unrelated-agent"], store=store)
+    append_message("historical-peer", "operator", "history", store=store)
     # Act
-    agents = _agents_of(response)
+    agents = _agents_of(dm_threads_view(_get(f"/dm/threads?{_q(store)}")))
     # Assert
-    assert agents[0]["unread"] == 0
+    assert [a["name"] for a in agents] == ["historical-peer"]
 
 
-def test_silent_registry_agent_has_no_last_timestamp(store):
+def test_threads_view_excludes_other_readers_conversations(store):
     # Arrange
-    response = _threads_with_a_silent_registry_agent(store)
+    from types import SimpleNamespace
+
+    append_message("alice-peer", "alice", "alice history", store=store)
+    append_message("bob-peer", "bob", "bob history", store=store)
+    request = _get(f"/dm/threads?{_q(store)}")
+    request.user = SimpleNamespace(is_authenticated=True, get_username=lambda: "alice")
     # Act
-    agents = _agents_of(response)
+    agents = _agents_of(dm_threads_view(request))
     # Assert
-    assert agents[0]["last_ts"] is None
+    assert [a["name"] for a in agents] == ["alice-peer"]
 
 
 def test_threads_view_rejects_post(store):

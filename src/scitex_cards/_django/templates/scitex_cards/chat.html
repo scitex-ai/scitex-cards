@@ -780,6 +780,7 @@ must therefore ALWAYS be rendered.
 <section id="cards-dm-app"
          data-api-base="{{ api_base }}"
          data-user-scope="{{ cards_user }}">
+{% csrf_token %}
 {% comment %}
 The header is the SHARED partial board_v3.html renders too, so the two pages
 cannot drift into two different heights or two different tab rows again
@@ -986,7 +987,7 @@ Forward uses.
       <div id="compose-row">
         <button id="compose-attach" type="button" title="Attach a file (or paste / drag one in)">+</button>
         <div id="compose-field">
-          <textarea id="compose-body" rows="1" placeholder="Message&hellip;" disabled></textarea>
+          <textarea id="compose-body" rows="1" placeholder="Select a conversation to write a message" disabled></textarea>
         </div>
         <button id="compose-send" type="submit" disabled>Send</button>
       </div>
@@ -1008,6 +1009,7 @@ Load order matters and is one-directional: each file reads the ones before it
 off `window` and never the reverse.
 
   combobox.js      the SDK's fuzzy matcher (STX.Combobox.fuzzyMatch)
+  chat_request.js CSRF headers for JSON and multipart DM mutations (no deps)
   chat_diff.js     pure render planning (no deps)
   chat_title.js    the unread count in the browser tab (no deps)
   chat_actions.js  pure message-action decisions (no deps)
@@ -1039,6 +1041,7 @@ if the symbol is missing, so an old SDK costs behaviour, not the page.
 `defer` scripts execute in document order, so this list IS the order.
 {% endcomment %}
 <script defer src="{% static 'scitex_sdk/ui/js/app/combobox.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_request.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_diff.js' %}"></script>
 {% comment %}
   chat_window.js — which messages render, and where scroll lands after older
