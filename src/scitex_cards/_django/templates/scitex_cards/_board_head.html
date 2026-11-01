@@ -22,7 +22,7 @@
      to. Lead a2a 510a58d4 (2026-06-14) operator complaint. -->
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/00-theme-scrollbar-select.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/01-filterbar.css' %}">
-<link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}?v={{ scitex_cards_version|urlencode }}">
 <link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/app-header.css' %}">{# CCT 3878: SDK header grammar for the shared .stx-app-header row. #}{# page-header.css: geometry of the header bar SHARED with chat.html — the single place its height/padding/gap are stated. Linked AFTER 01-filterbar.css (so the shared h1 rule wins the desktop baseline) and BEFORE 05-responsive.css (so the phone overrides still win). (hook-bypass: line-limit — pre-existing over-cap template.) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/02-card.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/03-right-and-modal.css' %}">
