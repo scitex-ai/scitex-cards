@@ -391,7 +391,7 @@ NOT alive escalates straight to the card's creator (the assignee will never act)
 | `scitex-cards mcp start` | MCP server (stdio/HTTP) | Exposes the CRUD + roles + edges tools (`add_task`, `comment_task`, `update_task`, `complete_task`, `reassign_task`, `set_collaborator`, `set_subscriber`, `set_edge`, `resolve_task`, `list_tasks`, `poll_notifications`, …). Every tool is a thin wrapper over `scitex_cards._store` so MCP / CLI / GUI share one logic path. |
 | `scitex-cards mcp channel --agent X` | per-agent channel server (stdio) | Drains agent `X`'s inbox and pushes `notifications/claude/channel` into its Claude session. Fail-loud on an unresolved agent id (never drains an `unknown`/blank inbox). |
 | `scitex-cards notifyd` | always-on delivery + reminder daemon | Ticks the reminder sweep + delivery pass every `--interval` seconds under a single-instance lock; `--once` runs a single pass; `notifyd install-unit` writes an operator-gated systemd user unit. |
-| `scitex-cards board [start] --port 8051` | board GUI (Django) | Serves the `board_v3` app (kanban columns, timeline, multi-select toolbar, resolve→notify). Lifecycle verbs `start` / `stop` / `restart` / `status` via a pidfile at `~/.scitex/cards/board.pid`. Embedded in the scitex-ui shell. |
+| `scitex-cards board [start] --port 8051` | board GUI (Django) | Serves the `board_v3` app (kanban columns, timeline, multi-select toolbar, resolve→notify). Lifecycle verbs `start` / `stop` / `restart` / `status` via a pidfile at `~/.scitex/cards/board.pid`. Embedded in the scitex-sdk shell with a source-certifiable SDK AppConfig. |
 
 <sub><b>Table 3.</b> The long-running roles of the one CLI — MCP server, channel server, notifyd, and board.</sub>
 

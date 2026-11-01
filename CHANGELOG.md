@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.56.18] - 2026-11-01
+
+- Declare the board's SDK AppConfig inheritance explicitly so the host can
+  certify installed plugins from source. Remove the unsupported plain-Django
+  fallback for a missing required SDK.
+
 ## [0.56.17] - 2026-11-01
 
 - Prompt-02 leftovers + 6 board/DM slices: board chrome goes monochrome

@@ -2,21 +2,15 @@
 # -*- coding: utf-8 -*-
 """Django AppConfig for the scitex-cards board.
 
-Inherits ``scitex_sdk.app.ScitexAppConfig`` when scitex-sdk is
-installed (so the board can register as a scitex-hub module), and falls back
-to Django's plain ``AppConfig`` otherwise — keeping ``pip install
-scitex-cards`` functional without a hard scitex-sdk dependency (the
-``scitex-sdk`` distribution itself remains declared, so the fallback is
-only a degraded-install guard, not a supported configuration).
+SDK inheritance and identity are explicit so the host can certify the
+plugin from source before importing application code. The SDK is a required
+dependency; a broken installation must fail instead of dropping host hooks.
 """
 
-try:
-    from scitex_sdk.app import ScitexAppConfig
-except ImportError:  # scitex-sdk not installed — standalone still works
-    from django.apps import AppConfig as ScitexAppConfig
+from scitex_sdk import app as _sdk_app
 
 
-class ScitexCardsConfig(ScitexAppConfig):
+class ScitexCardsConfig(_sdk_app.embed.ScitexAppConfig):
     name = "scitex_cards._django"
     label = "scitex_cards_board"
     verbose_name = "SciTeX Card Board"
