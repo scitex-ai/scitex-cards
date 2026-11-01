@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.56.21 — 2026-11-01
+
+- Keep selected Details tab content visible with cached accordion CSS and
+  version the Details stylesheet URL for ordinary browser reloads.
+
 ## 0.56.20 — 2026-11-01
 
 - Replace Details accordions with shared SDK tabs for Board, Stats, Filters,

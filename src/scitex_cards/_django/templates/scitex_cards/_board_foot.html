@@ -1751,7 +1751,10 @@
         }
       });
       document.querySelectorAll(".details-section").forEach((panel) => {
-        panel.hidden = panel.getAttribute("data-id") !== id;
+        const selected = panel.getAttribute("data-id") === id;
+        panel.hidden = !selected;
+        // Older cached accordion CSS hides bodies without this class.
+        panel.classList.toggle("open", selected);
       });
       try { localStorage.setItem(DETAILS_TAB_KEY, id); } catch {}
     }

@@ -32,7 +32,7 @@
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/06-layout-and-recent.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/07-toolbar-groups.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/08-board-states.css' %}">
-<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/13-details-pane.css' %}">{# 13-details-pane.css: right-hand Details column (filters + legend-aligned stats), scitex-writer convention #}
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/13-details-pane.css' %}?v={{ scitex_cards_version|urlencode }}">{# 13-details-pane.css: shared SDK tabs; versioned URL keeps old accordion CSS out of new pages #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/09-timeline.css' %}">{# 09-timeline.css: Timeline layout — raster + per-task simple cards (operator CARD 2026-06-17) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/11-sticky-wall.css' %}">{# 11-sticky-wall.css: Wall layout (notes + islands) + the shared .stx-flash status-transition glow #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/14-matrix.css' %}">{# 14-matrix.css: Matrix layout — urgency×importance 5x5 plane + quadrant divide + unscored tray (ADR-0011 §8). (hook-bypass: line-limit) #}
