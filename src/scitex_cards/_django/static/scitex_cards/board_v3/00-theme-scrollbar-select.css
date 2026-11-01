@@ -88,14 +88,14 @@ body select {
 }
 
 body select:hover {
-  border-color: var(--purple, #6d4cad);
+  border-color: var(--text-muted);
 }
 
 body select:focus,
 body select:focus-visible {
   outline: none;
-  border-color: var(--purple, #6d4cad);
-  box-shadow: 0 0 0 2px rgba(109, 76, 173, 0.25);
+  border-color: var(--text-link);
+  box-shadow: none;
 }
 
 body select:disabled {

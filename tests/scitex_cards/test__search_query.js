@@ -275,3 +275,37 @@ test("matchesSearchQuery: empty string passes everything", () => {
   const hits = sampleTasks.filter((t) => matchesSearchQuery(t, p));
   assert.equal(hits.length, sampleTasks.length);
 });
+
+test("matchesSearchQuery: two keywords AND-combine (prompt-02 keyword1 keyword2)", () => {
+  const p = parseSearchQuery("clew paper");
+  const hits = sampleTasks.filter((t) => matchesSearchQuery(t, p));
+  assert.deepEqual(
+    hits.map((t) => t.id),
+    ["paper-clew-1", "paper-clew-2", "decide-1"],
+  );
+});
+
+test("matchesSearchQuery: keyword order never decides (reversed query, same hits)", () => {
+  const fwd = sampleTasks
+    .filter((t) => matchesSearchQuery(t, parseSearchQuery("clew paper")))
+    .map((t) => t.id);
+  const rev = sampleTasks
+    .filter((t) => matchesSearchQuery(t, parseSearchQuery("paper clew")))
+    .map((t) => t.id);
+  assert.deepEqual(rev, fwd);
+});
+
+test("matchesSearchQuery: second keyword vetoes (baseline hub matches nothing)", () => {
+  const p = parseSearchQuery("baseline hub");
+  const hits = sampleTasks.filter((t) => matchesSearchQuery(t, p));
+  assert.equal(hits.length, 0);
+});
+
+test("matchesSearchQuery: single keyword keeps fzf subsequence (bsln)", () => {
+  const p = parseSearchQuery("bsln");
+  const hits = sampleTasks.filter((t) => matchesSearchQuery(t, p));
+  assert.deepEqual(
+    hits.map((t) => t.id),
+    ["paper-clew-2"],
+  );
+});

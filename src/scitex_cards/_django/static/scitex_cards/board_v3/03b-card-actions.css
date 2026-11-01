@@ -386,12 +386,12 @@
 }
 .proj-hide > summary:hover {
   color: var(--text);
-  border-color: var(--purple);
+  border-color: var(--text-muted);
 }
 .proj-hide[open] > summary {
-  background: var(--purple);
-  color: #fff;
-  border-color: var(--purple);
+  background: var(--col-bg);
+  color: var(--text);
+  border-color: var(--border);
 }
 .proj-hide-list {
   position: absolute;

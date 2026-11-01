@@ -439,15 +439,16 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
      (chat_compose.js measures it; a textarea cannot do this in CSS), which is
      where the other ~40px of that band went. */
   #compose {
-    display: flex; flex-direction: column; gap: 6px; padding: 6px 12px;
+    display: flex; flex-direction: column; gap: 6px; padding: 6px 12px 0;
     border-top: 1px solid var(--line); background: var(--panel); flex: 0 0 auto;
   }
   /* Phone home-indicator clearance: the safe-area inset exists ONLY where
-     the OS reports one (notched phones). Unconditional calc(6px + env(...))
-     leaves a permanent dead strip under the composer on desktop — the
-     operator 2026-10-23 bottom gap. Gate the extra inset behind support. */
+     the OS reports one (notched phones). The base bottom padding is 0 —
+     #compose's own 6px was the whole dead strip under the row (operator
+     2026-10-26) — so the inset is the only bottom padding a phone may add,
+     still gated behind @supports so desktops get none. */
   @supports (padding-bottom: env(safe-area-inset-bottom)) {
-    #compose { padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
+    #compose { padding-bottom: env(safe-area-inset-bottom); }
   }
   #compose-row {
     display: flex; align-items: flex-end; gap: 6px;
@@ -874,7 +875,10 @@ Hide/Unhide rides the existing dm/visibility endpoint — the only row
 action with a backend. A menu needs a backing endpoint per item or it
 is a dead control: rename/delete/archive/mute have no DM endpoint
 (append-only store, no tombstone), so they are NOT offered — the menu
-is Hide/Unhide only, and grows only when a backend lands.
+is Hide/Unhide + Pin/Unpin + Mark as read + Copy name, and grows only
+when a backend lands. Mark-as-read reuses GET ?mark_read=1 on the
+thread route; Copy name is client-side (clipboard) and needs no
+endpoint.
 Like mm-* above, the item lives here so the page can be asserted to
 actually SERVE it.
 {% endcomment %}
@@ -882,6 +886,8 @@ actually SERVE it.
     <div id="agent-menu" class="stx-app-context-menu" role="menu" aria-label="Conversation actions">
       <button class="stx-app-context-menu__item" id="am-hide" role="menuitem">Hide</button>
       <button class="stx-app-context-menu__item" id="am-pin" role="menuitem">Pin</button>
+      <button class="stx-app-context-menu__item" id="am-read" role="menuitem">Mark as read</button>
+      <button class="stx-app-context-menu__item" id="am-copy" role="menuitem">Copy name</button>
     </div>
   </div>
 {% comment %}

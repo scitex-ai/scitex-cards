@@ -52,6 +52,7 @@
 
   function show(root, which) {
     var state = applyPane(root, which);
+    repaintTitle(which);
     // A pane shown after being hidden may have measured zero-size containers
     // (timeline raster). Nudge listeners; board + DM renderers that poll
     // repaint on their own tick regardless.
@@ -59,6 +60,23 @@
       window.dispatchEvent(new Event("resize"));
     }
     return state;
+  }
+
+  /* The chrome title belongs to the VISIBLE pane. Each pane repaints its
+   * own title on its own poll tick, but a tick can be up to ~10s away — so
+   * the router repaints on every switch instead of leaving the other pane's
+   * title stale (2026-10-31: #board showing "Cards DM (3)"). Panes opt in by
+   * registering window.STX.paneTitle[which]; absent hooks (standalone pages,
+   * tests) are a no-op, never a throw — a title must not break a switch. */
+  function repaintTitle(which) {
+    try {
+      var NS = typeof window !== "undefined" ? window.STX : null;
+      var hooks = NS && NS.paneTitle;
+      var fn = hooks && hooks[which];
+      if (typeof fn === "function") fn();
+    } catch (e) {
+      /* title is decoration; ignore */
+    }
   }
 
   function mount(doc) {
@@ -99,7 +117,7 @@
     return { show: function (w) { return show(doc, w); } };
   }
 
-  var _api = { paneForHash: paneForHash, applyPane: applyPane, mount: mount };
+  var _api = { paneForHash: paneForHash, applyPane: applyPane, mount: mount, repaintTitle: repaintTitle };
   if (typeof globalThis !== "undefined") {
     globalThis.STX = globalThis.STX || {};
     globalThis.STX.appRouter = _api;

@@ -35,8 +35,8 @@
   padding: 10px 10px 12px;
 }
 .sw-island--selected {
-  border-color: var(--purple);
-  background: rgba(109, 76, 173, 0.06);
+  border-color: var(--text);
+  background: rgba(128, 128, 128, 0.08);
   flex-basis: 100%;
 }
 .sw-island-head {
@@ -108,7 +108,7 @@
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 .sw-note:focus-visible {
-  outline: 2px solid var(--purple);
+  outline: 2px solid var(--text-link);
   outline-offset: 2px;
 }
 .sw-note-head {
@@ -153,8 +153,8 @@
   background: transparent;
 }
 .sw-chip--next {
-  background: var(--purple);
-  color: #fff;
+  background: var(--col-bg);
+  color: var(--text);
   letter-spacing: 0.04em;
 }
 

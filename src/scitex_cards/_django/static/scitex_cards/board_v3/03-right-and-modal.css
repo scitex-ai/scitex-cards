@@ -18,11 +18,7 @@
   overflow-y: auto;
 }
 .block-you {
-  background: linear-gradient(
-    135deg,
-    rgba(255, 193, 7, 0.14),
-    rgba(109, 76, 173, 0.2)
-  );
+  background: rgba(255, 193, 7, 0.14);
   border: 2px solid var(--gold);
   border-radius: 12px;
   padding: 12px;
@@ -112,7 +108,7 @@
 }
 .detail {
   background: var(--card-bg);
-  border: 1px solid var(--purple);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 22px;
   max-width: 640px;

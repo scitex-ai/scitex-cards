@@ -105,3 +105,37 @@ test("mount: returns null without a document (node has none)", () => {
   assert.equal(mount(null), null);
   assert.equal(mount({}), null);
 });
+
+test("repaintTitle: calls the registered hook for the shown pane", () => {
+  const calls = [];
+  globalThis.window = {
+    STX: { paneTitle: { board: () => calls.push("board") } },
+  };
+  try {
+    MOD.repaintTitle("board");
+    assert.deepEqual(calls, ["board"]);
+  } finally {
+    delete globalThis.window;
+  }
+});
+
+test("repaintTitle: absent hooks and throwing hooks never break a switch", () => {
+  globalThis.window = {};
+  try {
+    assert.doesNotThrow(() => MOD.repaintTitle("dm"));
+    assert.doesNotThrow(() => MOD.repaintTitle("board"));
+    globalThis.window = {
+      STX: {
+        paneTitle: {
+          dm: () => {
+            throw new Error("title boom");
+          },
+        },
+      },
+    };
+    assert.doesNotThrow(() => MOD.repaintTitle("dm"));
+  } finally {
+    delete globalThis.window;
+  }
+  assert.doesNotThrow(() => MOD.repaintTitle("dm"));
+});

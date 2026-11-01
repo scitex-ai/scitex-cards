@@ -48,14 +48,20 @@ def test_tab_title_counts_the_last_hour_off_newest_ts() -> None:
     assert "_newestTs" in window and "3600" in window
 
 
-def test_tab_title_base_is_captured_once() -> None:
-    """Re-rendering must not compound the suffix onto itself."""
+def test_tab_title_base_is_a_literal_never_captured() -> None:
+    """The base must not be read from document.title.
+
+    On the unified page the DM side rewrites the title on every poll
+    ("Cards DM (3)"), so a capture-once read the DM title and the board
+    tab compounded it ("Cards DM (3) (22 in last 1h)", 2026-10-31).
+    A literal base can never compound and never pollute.
+    """
     # Arrange
     source = _source()
     # Act
-    once = "_boardTabBase === null" in source
-    # Assert
-    assert once
+    literal = '_boardTabBase = "Board"' in source
+    # Assert — one compound assertion (PA-307: single assert per test).
+    assert literal and "document.title ||" not in source
 
 
 def test_tab_title_omits_the_count_at_zero() -> None:
