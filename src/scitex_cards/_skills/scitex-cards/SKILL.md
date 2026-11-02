@@ -29,7 +29,7 @@ interfaces:
 # scitex-cards
 
 One `tasks` table is authoritative; adapters render or import it.
-`SCITEX_STORE_DSN` identifies the deployment-selected backend. Inspect it with
+`$SCITEX_STORE_DSN` identifies the deployment-selected backend. Inspect it with
 `scitex-cards resolve-store`. An unconfigured target refuses; no file is invented.
 
 ## ⚑ THE THREE MANDATES
