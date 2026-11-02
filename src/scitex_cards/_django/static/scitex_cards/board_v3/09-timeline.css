@@ -69,12 +69,12 @@
 }
 .tl-window-tab--on,
 .tl-window-tab--on:hover {
-  border-bottom-color: var(--app-accent-todo, var(--text-muted));
+  border-bottom-color: var(--accent);
   color: var(--text, #e0e6f0);
   font-weight: 700;
 }
 .tl-window-tab:focus-visible {
-  outline: 2px solid var(--app-accent-todo, var(--text-link));
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 .tl-count {

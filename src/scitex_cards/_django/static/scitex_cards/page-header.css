@@ -132,3 +132,16 @@ body:has(.site-dock) .stx-cards-header--mounted {
  * measurement lives in test__board_header_fits_a_phone.py against the SDK's
  * own classes now.
  */
+
+/* The SDK title row owns its padding. Its Cards wrapper must not add a
+ * second inset or shrink the shared header to the title/picker width. */
+header.stx-cards-headerbar {
+  margin: 0;
+  padding: 0;
+  gap: 0;
+}
+header.stx-cards-headerbar > [data-stx-cards-header] {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}

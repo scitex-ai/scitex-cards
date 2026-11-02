@@ -10,6 +10,31 @@
 - Listen for native Window hash-change events so Board/DM links and browser
   Back/Forward update the visible pane and its title immediately.
 
+## [0.56.22] - 2026-11-01
+
+- Show only the reader's actual DM conversations, send CSRF tokens for protected
+  mutations, and report refused receipt updates without claiming success.
+
+- Use the SDK theme's semantic navigation accent for Details, DM/Board,
+  and timeline tabs: navy in light mode and gold in dark mode.
+
+## [0.56.21] - 2026-11-01
+
+- Avoid duplicate graph prefetch/cache writers and bound the complete JSON read.
+- Remove outer header spacing around the shared SDK app header and let it fill the row.
+- Keep selected Details tab content visible with cached accordion CSS and
+  version the Details stylesheet URL for ordinary browser reloads.
+
+## [0.56.20] - 2026-11-01
+
+- Replace Details accordions with shared SDK tabs for Board, Stats, Filters,
+  and Hidden cards, including arrow-key navigation and saved selection.
+
+## [0.56.19] - 2026-11-01
+
+- Remove the dedicated zero-match Board banner. Show a compact neutral count
+  and clear-filters action beside the active filter chips instead.
+
 ## [0.56.18] - 2026-11-01
 
 - Declare the board's SDK AppConfig inheritance explicitly so the host can
@@ -289,7 +314,6 @@ Board and DM as equal full-width top tabs with a straight accent underline
 on the active page (44px targets on desktop and phone). Routes, markup,
 aria-current, the unread badge and the mount-aware `api_base` hrefs are
 unchanged.
->>>>>>> origin/main
 
 ## [0.53.5] - 2026-10-03
 

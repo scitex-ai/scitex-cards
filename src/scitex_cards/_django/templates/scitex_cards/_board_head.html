@@ -1,4 +1,5 @@
 {% load scitex_static static i18n %}
+<link rel="stylesheet" href="{% app_static 'scitex_sdk/ui/css/app/content-tabs.css' %}">
 {% comment %}Board head assets — extracted VERBATIM from board_v3.html extra_css (CSS links + defer scripts + graph prefetch). Included by the standalone board AND the unified page: one list, no drift.{% endcomment %}
 <!-- P11b (lead-approved, operator priority 2026-06-12). Load the SDK
      Combobox bundle (pre-built JS sibling of the TS class shipped in
@@ -21,8 +22,8 @@
      to. Lead a2a 510a58d4 (2026-06-14) operator complaint. -->
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/00-theme-scrollbar-select.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/01-filterbar.css' %}">
-<link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}">
-<link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/app-header.css' %}">{# CCT 3878: SDK header grammar for the shared .stx-app-header row. #}{# page-header.css: geometry of the header bar SHARED with chat.html — the single place its height/padding/gap are stated. Linked AFTER 01-filterbar.css (so the shared h1 rule wins the desktop baseline) and BEFORE 05-responsive.css (so the phone overrides still win). (hook-bypass: line-limit — pre-existing over-cap template.) #}
+<link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}?v={{ scitex_cards_version|urlencode }}">
+<link rel="stylesheet" href="{% app_static 'scitex_sdk/ui/css/app/app-header.css' %}">{# CCT 3878: SDK header grammar for the shared .stx-app-header row. #}{# page-header.css: geometry of the header bar SHARED with chat.html — the single place its height/padding/gap are stated. Linked AFTER 01-filterbar.css (so the shared h1 rule wins the desktop baseline) and BEFORE 05-responsive.css (so the phone overrides still win). (hook-bypass: line-limit — pre-existing over-cap template.) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/02-card.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/03-right-and-modal.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/03b-card-actions.css' %}">
@@ -31,11 +32,11 @@
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/06-layout-and-recent.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/07-toolbar-groups.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/08-board-states.css' %}">
-<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/13-details-pane.css' %}">{# 13-details-pane.css: right-hand Details column (filters + legend-aligned stats), scitex-writer convention #}
-<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/09-timeline.css' %}">{# 09-timeline.css: Timeline layout — raster + per-task simple cards (operator CARD 2026-06-17) #}
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/13-details-pane.css' %}?v={{ scitex_cards_version|urlencode }}">{# 13-details-pane.css: shared SDK tabs; versioned URL keeps old accordion CSS out of new pages #}
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/09-timeline.css' %}?v={{ scitex_cards_version|urlencode }}">{# 09-timeline.css: Timeline layout — raster + per-task simple cards (operator CARD 2026-06-17) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/11-sticky-wall.css' %}">{# 11-sticky-wall.css: Wall layout (notes + islands) + the shared .stx-flash status-transition glow #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/14-matrix.css' %}">{# 14-matrix.css: Matrix layout — urgency×importance 5x5 plane + quadrant divide + unscored tray (ADR-0011 §8). (hook-bypass: line-limit) #}
-<link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">{# page-switcher.css: the shared Board|Chat switcher — NOT board-only, chat.html links the same file. Loaded after the board CSS so it reads the board palette off :root. #}
+<link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}?v={{ scitex_cards_version|urlencode }}">{# page-switcher.css: the shared Board|Chat switcher — NOT board-only, chat.html links the same file. Loaded after the board CSS so it reads the board palette off :root. #}
 {% comment %}
   18-skeleton.css: the open-first shell — skeleton cards + spinner the server
   paints BEFORE /graph resolves, so first paint carries feedback even when
@@ -44,13 +45,10 @@
 {% endcomment %}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/18-skeleton.css' %}">
 {% comment %}
-  Prefetch the board JSON this page is about to request anyway. Mount-aware
-  via graph_prefetch_url (the view strips api_base exactly like the API_BASE
-  const does: "" + "/graph" at a root mount, "/apps/cards/graph" on the
-  hub). Low-priority and cache-deduped against loadGraph()'s own call, so
-  revisits and Back/forward navigations start warm.
+  The inline boot starts the graph fetch while scripts download. Do not
+  prefetch the same large response: concurrent prefetch/fetch cache writers
+  can fail with ERR_CACHE_WRITE_FAILURE and leave Stats without data.
 {% endcomment %}
-<link rel="prefetch" href="{{ graph_prefetch_url }}" as="fetch" crossorigin="anonymous">
 {# combobox.css (loaded below the page-CSS so its specificity sits ON TOP if needed) #}
 <link rel="stylesheet" href="{% static 'scitex_sdk/ui/css/app/combobox.css' %}">
 <script defer src="{% static 'scitex_sdk/ui/js/app/combobox.js' %}"></script>

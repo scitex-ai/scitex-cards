@@ -470,6 +470,7 @@
     $title.appendChild(document.createTextNode("Thread with "));
     $title.appendChild(el("b", null, peer));
     $body.disabled = false;
+    $body.placeholder = "Message…";
     $send.disabled = false;
     showHint("Loading…");
     refreshThread();

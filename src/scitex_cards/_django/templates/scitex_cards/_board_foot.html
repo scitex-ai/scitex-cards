@@ -198,16 +198,17 @@
         const _graphTimer = (_graphCtl && typeof setTimeout !== "undefined")
           ? setTimeout(() => { try { _graphCtl.abort(); } catch {} }, 30000)
           : null;
-        let r;
+        let r, graph;
         try {
           r = await fetch(API_BASE + "/graph",
             _graphCtl ? { signal: _graphCtl.signal } : undefined);
+          // Keep the deadline active until the complete body is consumed.
+          graph = r.ok ? await r.json() : null;
         } finally {
           if (_graphTimer !== null) clearTimeout(_graphTimer);
         }
         // Successful JSON parsing overlaps deferred script download. Error
         // bodies retain boardStates.js's tolerant reader and named states.
-        const graph = r.ok ? await r.json() : null;
         if (r.ok) markBoardPhase("graph-data-ready");
         await BOARD_MODULES_READY;
         if (!r.ok) {
@@ -1046,7 +1047,7 @@
         : null;
       var honorsFilters =
         layout !== "timeline" || tlView === "simple" || tlView == null;
-      _renderEmptyStateBanner(visible.length, STATE.graph.nodes.length, honorsFilters);
+      _renderFilterMatchStatus(visible.length, STATE.graph.nodes.length, honorsFilters);
       if (layout === "graph") {
         _renderGraphView(canvas, visible);
       } else if (layout === "stale") {
@@ -1099,42 +1100,15 @@
       }
     }
 
-    // === Empty-state banner ──────────────────────────────────────────
-    // Operator TG12911 (via lead a2a `ffa6c606`): "filtering by
-    // nv-lessons does NOT work at all — returns nothing / no effect."
-    // Root cause was UX: the filter LOGICALLY narrowed the set to 0
-    // matches and the board went blank with no explanation, reading as
-    // "broken filter". This helper flips a banner on whenever the store
-    // has rows but the active filters drop everything, and offers a
-    // one-click "Clear all filters" that resets STATE.filters.
-    // (hook-bypass: line-limit.)
-    function _renderEmptyStateBanner(visibleCount, totalCount, honorsFilters) {
-      const banner = document.getElementById("filter-empty-banner");
-      if (!banner) return;
-      // Show only when the store HAS rows but filters narrow to 0;
-      // a truly empty store falls through to the normal columns view
-      // (the user just hasn't seeded any tasks yet). `honorsFilters`
-      // gates views that don't render `visible` at all (raster timelines
-      // pull their own feed) — see the call site.
-      const filtersAreActive = _anyActiveFilter();
-      if (
-        honorsFilters !== false &&
-        visibleCount === 0 &&
-        totalCount > 0 &&
-        filtersAreActive
-      ) {
-        const detail = document.getElementById("filter-empty-banner-detail");
-        if (detail) {
-          detail.textContent =
-            ` Active filters narrow ${totalCount} task` +
-            (totalCount === 1 ? "" : "s") +
-            " to none. Either widen the filters or use the button to" +
-            " clear them.";
-        }
-        banner.style.display = "block";
-      } else {
-        banner.style.display = "none";
-      }
+    // Keep empty-filter feedback beside the chips, without a dedicated panel.
+    function _renderFilterMatchStatus(visibleCount, totalCount, honorsFilters) {
+      const status = document.getElementById("filter-match-status");
+      if (!status) return;
+      const show = honorsFilters !== false && visibleCount === 0 &&
+        totalCount > 0 && _anyActiveFilter();
+      status.hidden = !show;
+      const detail = document.getElementById("filter-match-detail");
+      if (detail) detail.textContent = show ? "0 matches" : "";
     }
 
     function _anyActiveFilter() {
@@ -1145,32 +1119,7 @@
       );
     }
 
-    // Wire the banner's "Clear all filters" button once at boot. The
-    // banner element is in the static template; the button needs a JS
-    // listener so the click resets STATE.filters and re-renders.
     document.addEventListener("DOMContentLoaded", () => {
-      const btn = document.getElementById("filter-empty-banner-clear");
-      if (!btn) return;
-      btn.addEventListener("click", () => {
-        // Reset every filter dimension to its empty value + clear the
-        // <select.filt> + search-input DOM controls so the chip strip
-        // re-renders consistent with the cleared state.
-        const f = STATE.filters || {};
-        f.project = ""; f.host = ""; f.status = "";
-        f.blocker = ""; f.agent = ""; f.date = "";
-        f.search = ""; f.blockingMe = false;
-        for (const id of ["f-host", "f-status",
-                          "f-blocker", "f-agent", "f-date"]) {
-          const el = document.getElementById(id);
-          if (el) el.value = "";
-        }
-        const search = document.getElementById("f-search");
-        if (search) search.value = "";
-        const detailsText = document.getElementById("f-text");
-        if (detailsText) detailsText.value = "";
-        renderActiveFilterChips();
-        render();
-      });
       // Mobile declutter (card cards-mobile-declutter-20261007): on touch
       // devices the search placeholder's desktop keyboard hints (/ to focus,
       // Esc to blur, Tab to autocomplete) name keys that don't exist. Swap
@@ -1745,9 +1694,7 @@
     }
 
     // === Details column (right) ══════════════════════════════════════
-    // Accordion behaviour lifted from scitex-writer's details-panel.ts: an
-    // open-set persisted in localStorage, sections closed by default except
-    // the ones we open here. (hook-bypass: line-limit.)
+    // The SDK sidebar owns collapse; content tabs keep their own selection.
     const DETAILS_PANE_KEY = "scitex-cards:details-collapsed";
     function toggleDetailsPane() {
       const pane = document.getElementById("details-panel");
@@ -1790,31 +1737,45 @@
       }
     }
 
-    const DETAILS_OPEN_KEY = "scitex-cards:details-open";
-    function _detailsOpenSet() {
-      try {
-        const raw = localStorage.getItem(DETAILS_OPEN_KEY);
-        if (raw) return new Set(JSON.parse(raw));
-      } catch {}
-      // Board OPEN by default (operator 2026-10-23: the Details pane
-      // "does not open"): View/Span/Layout/Live live in Details > Board
-      // since the 2026-10-22 re-home, so a closed Board section hides the
-      // very controls the move was for. A stored preference still wins.
-      return new Set(["board", "stats", "filters"]);
-    }
-    function toggleDetailsSection(id) {
-      const open = _detailsOpenSet();
-      if (open.has(id)) open.delete(id); else open.add(id);
-      try {
-        localStorage.setItem(DETAILS_OPEN_KEY, JSON.stringify([...open]));
-      } catch {}
-      _syncDetailsSections();
-    }
-    function _syncDetailsSections() {
-      const open = _detailsOpenSet();
-      document.querySelectorAll(".details-section").forEach((sec) => {
-        sec.classList.toggle("open", open.has(sec.getAttribute("data-id")));
+    // SDK content-tabs owns appearance; this producer owns selection and keys.
+    const DETAILS_TAB_KEY = "scitex-cards:details-tab";
+    const DETAILS_TABS = ["board", "stats", "filters", "hidden"];
+    function selectDetailsTab(id, focus = false) {
+      if (!DETAILS_TABS.includes(id)) id = "board";
+      document.querySelectorAll(".details-tabs [role=tab]").forEach((tab) => {
+        const selected = tab.id === "details-tab-" + id;
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+        if (selected && focus) {
+          tab.focus();
+          tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+        }
       });
+      document.querySelectorAll(".details-section").forEach((panel) => {
+        const selected = panel.getAttribute("data-id") === id;
+        panel.hidden = !selected;
+        // Older cached accordion CSS hides bodies without this class.
+        panel.classList.toggle("open", selected);
+      });
+      try { localStorage.setItem(DETAILS_TAB_KEY, id); } catch {}
+    }
+    function onDetailsTabKeyDown(event) {
+      const tab = event.target.closest('[role="tab"]');
+      if (!tab) return;
+      const current = DETAILS_TABS.indexOf(tab.id.replace("details-tab-", ""));
+      let next;
+      if (event.key === "ArrowRight") next = (current + 1) % DETAILS_TABS.length;
+      else if (event.key === "ArrowLeft") next = (current + DETAILS_TABS.length - 1) % DETAILS_TABS.length;
+      else if (event.key === "Home") next = 0;
+      else if (event.key === "End") next = DETAILS_TABS.length - 1;
+      else return;
+      event.preventDefault();
+      selectDetailsTab(DETAILS_TABS[next], true);
+    }
+    function _syncDetailsTabs() {
+      let id = "board";
+      try { id = localStorage.getItem(DETAILS_TAB_KEY) || id; } catch {}
+      selectDetailsTab(id);
     }
 
     // === Details > Board (View / Span / Layout / Live) ════════════════
@@ -2203,6 +2164,9 @@
         if (el) el.value = "";
       });
       STATE.filters.search = "";
+      STATE.filters.blockingMe = false;
+      const blocking = document.getElementById("f-blockingme");
+      if (blocking) blocking.checked = false;
       const hdr = document.getElementById("f-search");
       if (hdr) hdr.value = "";
       const dt = document.getElementById("f-text");
@@ -3013,10 +2977,10 @@
     document.addEventListener("touchend", _cancelLongPress, { passive: true });
     document.addEventListener("touchcancel", _cancelLongPress, { passive: true });
 
-    // ── Hidden-cards dropdown (operator TG 381) ────────────────────────
+    // ── Hidden-cards tab (original operator TG 381) ────────────────────────
     // Walks STATE.graph.nodes for everything in hiddenSet() and paints
     // a row per hidden card (title + project + un-hide button). Also
-    // updates the "👁 hidden (N)" count in the dropdown summary.
+    // updates the count in the Hidden cards tab.
     function rebuildHiddenList() {
       const hidden = hiddenSet();
       const panel = document.getElementById("hidden-list-panel");
@@ -3165,7 +3129,7 @@
     })();
 
     _syncDetailsPane();
-    _syncDetailsSections();
+    _syncDetailsTabs();
     renderStats();
     // Details > Board paints even when the graph fails (operator sees the
     // View/Span/Layout/Live chrome on an error-state board, not an empty
