@@ -92,16 +92,26 @@ def test_phone_board_and_details_share_a_reachable_scroll_region(layout_page):
     }""")
     # Act
     page.locator('#details-toggle').click()
-    page.locator('#details-tab-board').scroll_into_view_if_needed()
+    region = page.locator('#board-pane .main')
+    box = region.bounding_box()
+    page.mouse.move(box['x'] + 80, box['y'] + 40)
+    page.mouse.wheel(0, -2000)
+    page.wait_for_function(
+        "document.querySelector('#board-pane .main').scrollTop === 0", timeout=3000
+    )
+    page.mouse.wheel(0, 2000)
+    page.wait_for_function(
+        "document.querySelector('#board-pane .main').scrollTop > 0", timeout=3000
+    )
     observation = page.locator('#details-tab-board').evaluate("""el => {
       const r = el.getBoundingClientRect(), main = document.querySelector('#board-pane .main');
       const hit = document.elementFromPoint(r.x + r.width/2, r.y + r.height/2);
       return {reachable: hit === el || el.contains(hit),
         scrollable: main.scrollHeight > main.clientHeight,
-        overflow: getComputedStyle(main).overflowY};
+        overflow: getComputedStyle(main).overflowY, moved: main.scrollTop > 0};
     }""")
     # Assert
-    assert observation == {"reachable": True, "scrollable": True, "overflow": "auto"}
+    assert observation == {"reachable": True, "scrollable": True, "overflow": "auto", "moved": True}
 
 
 def test_details_button_collapse_survives_bubbling_and_rail_still_expands(layout_page):
