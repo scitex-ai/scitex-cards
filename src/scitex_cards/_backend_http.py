@@ -389,7 +389,9 @@ class HubBackend:
         notification_id: str | None = None,
         limit: int | None = None,
         after: str | None = None,
+        ledger_store: Any = None,
     ) -> dict:
+        self._forbid_store(ledger_store)
         self._forbid_store(store)
         selectors = {
             key: value for key, value in
@@ -427,7 +429,10 @@ class HubBackend:
         body: str,
         store: Any = None,
         client_request_id: str | None = None,
+        *,
+        ledger_store: Any = None,
     ) -> dict:
+        self._forbid_store(ledger_store)
         self._forbid_store(store)
         if client_request_id is None:
             from ._dm.exchange import new_client_request_id

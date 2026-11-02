@@ -134,6 +134,7 @@ def poll_notifications(
     notification_id: str | None = None,
     limit: int | None = None,
     after: str | None = None,
+    ledger_store: Any = None,
 ) -> dict:
     """PULL ``agent``'s pending notifications. READING NEVER CONFIRMS.
 
@@ -160,8 +161,9 @@ def poll_notifications(
         (("notification_id", notification_id), ("limit", limit), ("after", after))
         if value is not None
     }
+    ledger_kwargs = {"ledger_store": ledger_store} if ledger_store is not None else {}
     return get_backend().poll_notifications(
-        agent, unseen_only=unseen_only, ack=ack, store=store, **selectors
+        agent, unseen_only=unseen_only, ack=ack, store=store, **selectors, **ledger_kwargs
     )
 
 
@@ -215,6 +217,8 @@ def dm_send(
     store: Any = None,
     sender: str | None = None,
     client_request_id: str | None = None,
+    *,
+    ledger_store: Any = None,
 ) -> dict:
     """Persist a text DM and return its responder-issued delivery exchange.
 
@@ -227,6 +231,10 @@ def dm_send(
     generates and returns a key, which is convenient but cannot repair a
     timeout that hid the first response.
 
+    ``store`` selects DM data only; the status ledger keeps its canonical
+    target. ``ledger_store`` is an internal trusted-host credential hint,
+    checked against that exact target, and is never forwarded over HTTP.
+
     TEXT ONLY — use :func:`dm_send_document` to send a file. Describing a file
     in prose, or pasting a filesystem path, hands the operator something they
     cannot open from a browser.
@@ -237,12 +245,14 @@ def dm_send(
         from ._dm.exchange import new_client_request_id
 
         client_request_id = new_client_request_id()
+    ledger_kwargs = {"ledger_store": ledger_store} if ledger_store is not None else {}
     return get_backend().dm_send(
         resolve_sender(sender),
         canonical_agent_identity(to),
         body,
         store=store,
         client_request_id=client_request_id,
+        **ledger_kwargs,
     )
 
 
