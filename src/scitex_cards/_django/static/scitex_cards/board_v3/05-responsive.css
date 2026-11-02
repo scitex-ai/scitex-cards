@@ -13,34 +13,7 @@
  * a 375pt-wide iPhone viewport.
  * ============================================================ */
 @media (max-width: 768px) {
-  /* OVERRIDE the SDK shell's three-column grid (workspace-three-col
-   * sets a desktop layout with sidebars + fixed widths that swallow the
-   * board content on phone widths). On mobile collapse the shell to a
-   * single column so the board's filterbar + columns get the full
-   * viewport width. iOS Simulator post-0.5.0 verification showed only
-   * the .by-fab rendering. */
-  #workspace-three-col,
-  .workspace-three-col {
-    display: block !important;
-    grid-template-columns: 1fr !important;
-    width: 100% !important;
-  }
-  #main-content.ws-module-pane,
-  main.ws-module-pane {
-    width: 100% !important;
-    max-width: 100% !important;
-    grid-column: 1 / -1 !important;
-    flex: 1 1 100% !important;
-    min-width: 0 !important;
-  }
-  /* Hide the SDK shell's left/right utility panes on mobile. */
-  .ws-ai-pane,
-  .ws-worktree-pane,
-  .ws-viewer-pane,
-  .stx-shell-sidebar,
-  aside.stx-shell-sidebar {
-    display: none !important;
-  }
+  /* The shared SDK/host owns workspace columns and utility panes. */
 
   /* Filter bar — WRAP, don't scroll. This sheet used to give the bar
    * `overflow-x: auto` and set no `flex-wrap`, so it stayed the flex default

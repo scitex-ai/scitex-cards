@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Use the public SDK 0.3.17 FilterField for the DM agent filter. Mount it before
+  the classic controller captures its input; retain SDK fuzzy matching across
+  list rebuilds and let the SDK own Ctrl+K/Escape behavior. Hidden board panes
+  yield keyboard focus. Remove app overrides of the host workspace frame.
+
 - Listen for native Window hash-change events so Board/DM links and browser
   Back/Forward update the visible pane and its title immediately.
 

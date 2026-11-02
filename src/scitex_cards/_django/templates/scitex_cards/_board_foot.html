@@ -3107,6 +3107,9 @@
       const search = document.getElementById("f-search");
       if (!search) return;
       document.addEventListener("keydown", (e) => {
+        // Yield to shared SDK filters and never focus this hidden board pane.
+        if (e.defaultPrevented || !search.getClientRects().length ||
+            getComputedStyle(search).visibility === "hidden") return;
         if ((e.ctrlKey || e.metaKey) && !e.altKey &&
             (e.key === "k" || e.key === "K")) {
           e.preventDefault();

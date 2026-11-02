@@ -140,7 +140,7 @@ def test_every_chat_script_is_linked(page: str, name: str):
 
 def test_the_scripts_are_linked_in_dependency_order(page: str):
     # Arrange
-    order = ["chat_diff.js", "chat_actions.js", "chat_menu.js", "chat.js"]
+    order = ["chat_diff.js", "chat_actions.js", "chat_menu.js", "chat_bootstrap.js"]
     # Act — match the SCRIPT REFERENCE, not any mention of the filename. Indexing
     # the bare token also matches prose: a template comment naming a module put
     # its "hit" thousands of bytes before the real <script>, and this test went
@@ -158,8 +158,8 @@ def test_the_scripts_are_linked_in_dependency_order(page: str):
         re.search(pattern.format(re.escape(name)), page).start() for name in order
     ]
     # Assert
-    # `defer` executes in document order, so this list IS the load order;
-    # chat_menu reads ChatActions and the controller mounts chat_menu.
+    # Classic defer dependencies precede the bootstrap; it mounts the SDK
+    # input before loading chat.js after DOMContentLoaded.
     assert positions == sorted(positions)
 
 

@@ -1,4 +1,4 @@
-{% load static i18n %}
+{% load scitex_static static i18n %}
 {% comment %}Board head assets — extracted VERBATIM from board_v3.html extra_css (CSS links + defer scripts + graph prefetch). Included by the standalone board AND the unified page: one list, no drift.{% endcomment %}
 <!-- P11b (lead-approved, operator priority 2026-06-12). Load the SDK
      Combobox bundle (pre-built JS sibling of the TS class shipped in
@@ -27,7 +27,7 @@
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/03-right-and-modal.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/03b-card-actions.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/04-collapse-and-groups.css' %}">
-<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/05-responsive.css' %}">
+<link rel="stylesheet" href="{% app_static 'scitex_cards/board_v3/05-responsive.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/06-layout-and-recent.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/07-toolbar-groups.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/08-board-states.css' %}">
