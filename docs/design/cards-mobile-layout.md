@@ -1,6 +1,6 @@
 # Cards mobile content layout
 
-The SDK owns the outer viewport frame. Cards fills that supplied height; it
+This feature requires SDK 0.3.18 or newer. The SDK owns the outer viewport frame. Cards fills that supplied height; it
 must not create another viewport-height box below the host header. Its Board/DM
 navigation row does not grow to consume unused vertical space.
 
