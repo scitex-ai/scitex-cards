@@ -27,6 +27,8 @@ shared-header suite).
 from __future__ import annotations
 
 from pathlib import Path
+from html.parser import HTMLParser
+import re
 
 import pytest
 
@@ -250,18 +252,34 @@ def test_agent_list_fits_the_filter_row():
     assert width is not None and int(width.group(1)) >= 280
 
 
-def test_agent_filter_carries_a_kbd_shortcut_marker():
-    """Operator 2026-10-24: the shortcut lives in a hub-style kbd marker
-    at the input's end — the placeholder never inlines it. Served in the
-    template, aria-hidden, and pointed nowhere (pointer-events none lives
-    in CSS, not assertable here)."""
-    # Arrange
-    template = _CHAT.read_text(encoding="utf-8")
+class _SdkFilterMounts(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.mounts = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if "data-stx-filter-field" in attrs:
+            self.mounts.append((tag, attrs.get("data-filter-subject"),
+                                attrs.get("data-filter-id")))
+
+
+def test_agent_filter_delegates_shortcut_chrome_to_the_shared_sdk(dm_html):
+    """Rendered HTML declares one empty SDK mount; SDK owns input and hint."""
+    # Arrange — the same response also embeds a separate hidden Board pane.
+    region = _nav_agents_region(dm_html)
+    parser = _SdkFilterMounts()
     # Act
-    served = '<kbd class="agent-filter-kbd" aria-hidden="true">Ctrl+K</kbd>' in template
-    short = "Ctrl+K to focus" not in template and "(Ctrl+K)" not in template
+    parser.feed(region)
+    empty_mount = re.search(
+        r'<div\b[^>]*\bdata-stx-filter-field\b[^>]*>\s*</div>', region
+    ) is not None
+    handwritten_hint = 'agent-filter-kbd' in region
+    inline_hint = "Ctrl+K to focus" in region or "(Ctrl+K)" in region
     # Assert
-    assert served and short
+    assert (parser.mounts, empty_mount, handwritten_hint, inline_hint) == (
+        [('div', 'agents', 'agent-filter')], True, False, False,
+    )
 
 
 def test_list_fetches_every_row_including_hidden():

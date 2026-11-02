@@ -57,5 +57,9 @@
       "dm/thread/<str:peer>/hidden",
       "dm/thread/<str:peer>/pinned"
     ]
+  },
+  "scope_capabilities": {
+    "user": true,
+    "project": true
   }
 }

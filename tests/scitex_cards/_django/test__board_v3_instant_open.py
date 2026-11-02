@@ -16,9 +16,8 @@ The contract pinned here:
   off the response path but still fires;
 - first paint carries feedback: server-rendered skeleton cards + spinner
   with ``aria-busy``, retired the moment data (or a named state) lands;
-- the board JSON is warmed cheaply: a mount-aware ``<link rel="prefetch">``
-  for ``/graph`` in the head, plus hover/focus warming of the DM JSON
-  behind the Board|DM switcher.
+- one inline graph fetch starts early; no speculative duplicate prefetch
+  competes for its cache entry. DM JSON still warms on switcher hover/focus.
 
 RequestFactory against the real view, following the repo's _django
 view-test conventions (see test__board_v3_mount_prefix.py).
@@ -235,27 +234,31 @@ def test_board_state_painters_retire_skeleton_busy():
     assert retires == 3
 
 
-# --- the board JSON is warmed cheaply --------------------------------------
+# --- graph fetching avoids duplicate cache writers --------------------------------------
 
 
-def test_board_shell_prefetches_graph_at_a_subpath_mount(store):
-    """The hub mount prefetches its own /graph, not the root's."""
+def test_board_shell_does_not_duplicate_graph_fetch_at_a_subpath_mount(store):
+    """The mounted shell starts its own fetch without a competing prefetch."""
     # Arrange
     request = RequestFactory().get(f"/apps/cards/?store={store}")
     # Act
     body = views.board_v3_page(request).content.decode("utf-8")
+    observed = ('<link rel="prefetch" href="/apps/cards/graph"' in body,
+                'fetch(API_BASE + "/graph"' in body)
     # Assert
-    assert '<link rel="prefetch" href="/apps/cards/graph"' in body
+    assert observed == (False, True)
 
 
-def test_board_shell_prefetches_graph_at_a_root_mount(store):
-    """A root mount prefetches \"/graph\" — never a \"//graph\"."""
+def test_board_shell_does_not_duplicate_graph_fetch_at_a_root_mount(store):
+    """A root mount starts its fetch without a competing prefetch."""
     # Arrange
     request = RequestFactory().get(f"/?store={store}")
     # Act
     body = views.board_v3_page(request).content.decode("utf-8")
+    observed = ('<link rel="prefetch" href="/graph"' in body,
+                'fetch(API_BASE + "/graph"' in body)
     # Assert
-    assert '<link rel="prefetch" href="/graph"' in body
+    assert observed == (False, True)
 
 
 def test_board_warms_dm_json_on_switcher_hover():

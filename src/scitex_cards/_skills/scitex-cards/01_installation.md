@@ -49,3 +49,11 @@ needs neither.
 python -c "import scitex_cards; print(scitex_cards.__version__)"
 scitex-cards --help
 ```
+
+### Shared DM filter checks
+
+The DM filter requires public SDK >=0.3.17. The SDK owns the input, icon,
+shortcut hint and keyboard handling; Cards owns agent matching and poll refresh.
+For its rendered-response checks and explicit real-Chromium bootstrap test,
+see `docs/testing-sdk-filter.md` in the source repository. The browser fixture
+uses disposable loopback assets and does not contact the live message store.

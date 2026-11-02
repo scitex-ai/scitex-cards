@@ -92,7 +92,7 @@
 
       return fetchImpl(apiBase + "/dm/thread/" + encodeURIComponent(peer), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: window.ChatRequest.headers(true),
         body: JSON.stringify({
           body: text,
           client_request_id: retry.clientRequestId,

@@ -19,10 +19,9 @@
  *   COLLAPSE  = its `.collapsed` state ("スマートな畳み方"): the pane shrinks to
  *               --ui-collapsed-pane-width and the header becomes a vertical
  *               icon+label strip. The board only TOGGLES the class.
- *   SECTIONS  = scitex-writer's Details accordion shape (editor.css
- *               `.details-section` / `-toggle` / `-body` / `.details-row` +
- *               frontend/src/details-panel.ts's localStorage open-set), so the
- *               two products' Details columns read the same.
+ *   TABS      = the SDK `.stx-content-tabs` primitive. One active panel,
+ *               selected underline and focus styling come from the SDK;
+ *               the board owns selection, keyboard navigation and storage.
  *
  * Per stx-shell-sidebar.css's own instruction ("Module CSS should ONLY define
  * overrides"), everything below is either an override that docks the pane to
@@ -66,52 +65,38 @@
   font-size: 1rem;
   line-height: 1;
 }
-.details-section {
-  border-bottom: 1px solid var(--border);
+.details-tabs.stx-content-tabs {
+  gap: 0;
+  padding: 0;
 }
-.details-section-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 9px 12px;
-  background: transparent;
-  color: var(--text);
-  border: 0;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.8rem;
-  text-align: left;
-}
-.details-section-toggle:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-.details-section-title {
-  flex: 1;
-  font-weight: 600;
+.details-tabs .stx-content-tabs__tab {
+  padding-inline: 6px;
 }
 .details-filter-count {
   color: var(--text-muted);
   font-size: 0.72rem;
 }
-.details-chevron {
-  font-size: 0.7rem;
-  opacity: 0.6;
-  transition: transform 120ms ease;
-}
-.details-section.open .details-chevron {
-  transform: rotate(90deg);
-}
-/* Closed sections keep their body in the DOM (the filter <select>s must stay
- * addressable by populateFilters() even when collapsed) but out of view. */
-.details-section-body {
+/* Inactive controls remain in the DOM for filter population and live stats. */
+.details-section[hidden] {
   display: none;
-  padding: 2px 12px 12px;
+}
+.details-section-body {
+  padding: 12px;
   font-size: 0.78rem;
   color: var(--text-muted);
 }
-.details-section.open .details-section-body {
-  display: block;
+
+/* The hidden list lives inside a panel, rather than its former popover. */
+.details-section .hidden-list-panel {
+  position: static;
+  min-width: 0;
+  max-width: none;
+  max-height: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
 }
 
 /* --- filter rows ------------------------------------------------------- */

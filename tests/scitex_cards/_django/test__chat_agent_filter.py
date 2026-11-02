@@ -13,8 +13,8 @@ module (``static/scitex_cards/chat/test_chat_filter.py``); what is pinned HERE i
 delivery and structure, because this feature has three ways to be correct and
 still absent:
 
-  1. THE INPUT IS NEVER SERVED. It is written in the template rather than created
-     by JS precisely so this is assertable against the rendered response.
+  1. THE MOUNT IS NEVER SERVED. The empty SDK mount and content-hashed bootstrap
+     declare the shared field; bootstrap constructs it before chat.js starts.
 
   2. THE INPUT IS SERVED AND THEN DESTROYED. ``renderAgents`` clears its
      container on every 5s poll. An input inside that container is wiped four
@@ -87,30 +87,56 @@ def _uncommented(source: str) -> str:
 # === (1) it is served ======================================================
 
 
-def test_the_page_serves_a_filter_input(page: str) -> None:
-    """Written in the template so its delivery is assertable at all."""
+def test_the_page_serves_an_empty_sdk_filter_mount(page: str) -> None:
     # Arrange
+    pattern = r'<div[^>]*data-stx-filter-field[^>]*>\s*</div>'
     # Act
+    mount = re.search(pattern, page)
     # Assert
-    assert 'id="agent-filter"' in page
+    assert mount is not None
 
 
-def test_the_filter_input_is_a_search_field(page: str) -> None:
-    """`type=search` is what gives phone keyboards the search affordance."""
+@pytest.mark.parametrize("attribute", [
+    'data-filter-subject="agents"', 'data-filter-id="agent-filter"',
+])
+def test_the_sdk_mount_declares_its_filter_contract(page: str, attribute: str) -> None:
     # Arrange
-    match = re.search(r"<input[^>]*id=\"agent-filter\"[^>]*>", page, re.DOTALL)
+    pattern = r'<div[^>]*data-stx-filter-field[^>]*>\s*</div>'
     # Act
+    mount = re.search(pattern, page)
     # Assert
-    assert match and 'type="search"' in match.group(0)
+    assert attribute in mount.group(0)
 
 
-def test_the_filter_input_is_labelled(page: str) -> None:
-    """It has no visible <label>; without this it is an unnamed box to a reader."""
+def test_the_template_leaves_input_construction_to_the_sdk(page: str) -> None:
     # Arrange
-    match = re.search(r"<input[^>]*id=\"agent-filter\"[^>]*>", page, re.DOTALL)
+    handwritten_input = '<input id="agent-filter"'
     # Act
+    present = handwritten_input in page
     # Assert
-    assert match and 'aria-label="Filter agents"' in match.group(0)
+    assert not present
+
+
+@pytest.mark.parametrize("reference", [
+    'data-sdk-filter-url=', 'data-chat-controller-url=',
+    'filter-field.js?v=', 'chat.js?v=',
+])
+def test_the_page_declares_hashed_sdk_bootstrap_assets(page: str, reference: str) -> None:
+    # Arrange
+    pattern = r'<script[^>]*chat_bootstrap\.js[^>]*>'
+    # Act
+    bootstrap = re.search(pattern, page)
+    # Assert
+    assert reference in bootstrap.group(0)
+
+
+def test_the_page_declares_hashed_sdk_filter_css(page: str) -> None:
+    # Arrange
+    reference = 'filter-field.css?v='
+    # Act
+    present = reference in page
+    # Assert
+    assert present
 
 
 def test_the_page_serves_the_filter_module(page: str) -> None:
@@ -160,7 +186,7 @@ def test_the_filter_input_is_not_inside_the_rebuilt_list(page: str) -> None:
     """
     # Arrange
     # Act
-    input_at = page.index('id="agent-filter"')
+    input_at = page.index('data-filter-id="agent-filter"')
     list_at = page.index('id="agent-list"')
     # Assert
     assert input_at < list_at

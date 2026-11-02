@@ -23,6 +23,8 @@ the card's evidence.
 from __future__ import annotations
 
 from pathlib import Path
+import json
+import subprocess
 
 import pytest
 
@@ -58,15 +60,46 @@ def test_banner_speaks_only_for_views_rendering_visible() -> None:
     assert gated
 
 
-def test_banner_keeps_its_empty_store_and_no_filter_cases() -> None:
-    """The gate must not swallow the two original cases: a truly empty
-    store, and zero matches with no filter active, both hide the banner."""
-    # Arrange
+@pytest.fixture
+def filter_status_functions():
+    """The shipped functions, evaluated unchanged rather than reimplemented."""
     source = _FOOT.read_text(encoding="utf-8")
+    start = source.index("    function _renderFilterMatchStatus(")
+    end = source.index('    document.addEventListener("DOMContentLoaded"', start)
+    return source[start:end]
+
+
+@pytest.mark.parametrize(
+    "visible,total,filters,honors,expected",
+    [
+        (0, 0, {"project": "fixture"}, True, {"hidden": True, "detail": ""}),
+        (0, 10, {}, True, {"hidden": True, "detail": ""}),
+        (0, 10, {"agent": "fixture"}, True, {"hidden": False, "detail": "0 matches"}),
+        (2, 10, {"agent": "fixture"}, True, {"hidden": True, "detail": ""}),
+        (0, 10, {"agent": "fixture"}, False, {"hidden": True, "detail": ""}),
+    ],
+)
+def test_banner_keeps_empty_store_no_filter_and_nonhonoring_cases(
+    filter_status_functions, visible, total, filters, honors, expected
+) -> None:
+    """Empty/no-filter/nonmatching views hide status; only zero matches show."""
+    # Arrange
+    script = filter_status_functions + """
+      const args = JSON.parse(process.argv[1]);
+      const STATE = {filters: args.filters};
+      const status = {hidden: false}, detail = {textContent: 'stale text'};
+      const document = {getElementById: id => ({
+        'filter-match-status': status, 'filter-match-detail': detail})[id]};
+      _renderFilterMatchStatus(args.visible, args.total, args.honors);
+      console.log(JSON.stringify({hidden: status.hidden, detail: detail.textContent}));
+    """
+    args = json.dumps({"visible": visible, "total": total, "filters": filters,
+                       "honors": honors})
     # Act
-    keeps = "totalCount > 0" in source and "filtersAreActive" in source
+    result = subprocess.run(["node", "--input-type=commonjs", "-e", script, args],
+                            check=True, capture_output=True, text=True, timeout=10)
     # Assert
-    assert keeps
+    assert json.loads(result.stdout) == expected
 
 
 # EOF

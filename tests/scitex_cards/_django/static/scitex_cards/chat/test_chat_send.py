@@ -75,7 +75,7 @@ def _run(script: str) -> dict:
     node = shutil.which("node")
     if node is None:  # pragma: no cover - environment guard
         pytest.skip("node is not installed, so the shipped module cannot run")
-    src = MODULE.read_text(encoding="utf-8")
+    src = MODULE.with_name("chat_request.js").read_text(encoding="utf-8") + MODULE.read_text(encoding="utf-8")
     proc = subprocess.run(
         [node, "-e", src + HARNESS + script],
         capture_output=True,

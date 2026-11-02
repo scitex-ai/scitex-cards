@@ -92,6 +92,7 @@
       form.append("file", file);
       return fetch(host.apiBase + "/dm/upload", {
         method: "POST",
+        headers: window.ChatRequest.headers(false),
         body: form,
       }).then(function (resp) {
         return resp.json().then(function (data) {
