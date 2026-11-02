@@ -647,7 +647,7 @@ def dm_exchange_view(request: HttpRequest, exchange_id: str) -> HttpResponse:
 
     reader = _author_of(request)
     try:
-        exchange = get_exchange(exchange_id, sender=reader)
+        exchange = get_exchange(exchange_id, sender=reader, store=_write_store_of(request))
     except Exception:  # noqa: BLE001 - canonical status, no traceback wire
         status = _http_status(
             503,

@@ -64,7 +64,7 @@ dependencies = [
     # and the shared status_exchanges ledger. The CLI must consume this SSoT;
     # re-declaring retry/status fields in scitex-cards is explicitly forbidden
     # by scitex-dev ADR-0007.
-    "scitex-dev>=0.59.0",
+    "scitex-dev>=0.60.1",
     # PROMOTED FROM THE `web`, `mcp` AND `currency` EXTRAS, 2026-08-03, under
     # the same test psycopg was promoted by: WHEN THIS IS MISSING, DOES THE
     # FAILURE NAME ITSELF? -- and under the operator's all-or-nothing ruling,
@@ -140,7 +140,7 @@ dev = [
     #
     # Measured from the tag, not a changelog: `scitex_dev/store/testing.py`
     # first appears at v0.57.0 (absent at v0.56.8).
-    "scitex-dev>=0.59.0",
+    "scitex-dev>=0.60.1",
     # Web-extra deps are imported (guarded) by the Django board source and its
     # tests; include them so a fresh `pip install -e .[dev]` runs the full
     # suite rather than silently skipping the board tests (PS-210).

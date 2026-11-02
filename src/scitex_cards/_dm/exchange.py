@@ -59,11 +59,13 @@ def new_exchange() -> tuple[str, str]:
     return new_exchange_id(), datetime.now(timezone.utc).isoformat()
 
 
-def open_exchange_store(sender: str) -> Store:
+def open_exchange_store(sender: str, *, store=None) -> Store:
     """Open scitex-dev's canonical exchange ledger, with no local fallback."""
+    from ._exchange_target import credential_target
+
     plugin = plugin_for(LEDGER_TABLE)
     return Store(
-        resolve_target(plugin),
+        credential_target(resolve_target(plugin), store),
         plugin.schema,
         node=socket.gethostname(),
         writer_policy=plugin.writer_policy,
@@ -124,22 +126,22 @@ def failure_status(
     elif isinstance(exc, (StoreError, PostgresError)):
         code = 503
         persistence_known = persistence_known_absent
-        detail = str(exc).lower()
-        refused_config = any(
-            marker in detail
-            for marker in ("auth", "password", "pgbouncer", "configuration")
-        )
         if stage == "config":
-            observation = (
-                "PostgreSQL authentication/configuration refused the shared "
-                "status-ledger connection before DM persistence"
-                if refused_config
-                else "the shared PostgreSQL status ledger could not be opened"
-            )
+            from ._exchange_errors import ledger_failure_kind
+
+            kind = ledger_failure_kind(exc)
+            if kind == "privilege":
+                code = 403
+            descriptions = {
+                "authentication": "PostgreSQL authentication refused the shared status-ledger connection",
+                "privilege": "PostgreSQL refused required shared status-ledger privileges (SQLSTATE 42501)",
+                "schema_access": "the ledger schema is missing or unavailable to this role; inspect provisioning and permissions",
+                "unavailable": "the shared PostgreSQL status ledger could not be opened",
+            }
+            observation = descriptions[kind] + " before DM persistence"
             action = (
-                'run `psql "$SCITEX_STORE_DSN" -c \'select '
-                "current_database(), pg_is_in_recovery()'`; correct the "
-                "DSN/auth route, then run `scitex-cards health`"
+                "have the datastore administrator inspect SCITEX_STORE_DSN and "
+                "the scoped ledger role/schema, then run `scitex-cards health` before retrying"
             )
         else:
             observation = (
@@ -266,7 +268,7 @@ def rotate_failed_notification_exchange(
         )
         inbox_database = inbox_location["database"]
         inbox_schema = inbox_location["schema"]
-    with open_exchange_store(sender) as ledger:
+    with open_exchange_store(sender, store=store) as ledger:
         with ledger.batch():
             # Cross-record atomicity is intentional here: Store owns the
             # canonical transaction, while Cards owns the notification row.
@@ -402,7 +404,7 @@ def persist_dm(
         raise ValueError("dm_send requires a non-empty client_request_id")
     exchange_id, opened_at = new_exchange()
     try:
-        ledger = open_exchange_store(sender)
+        ledger = open_exchange_store(sender, store=store)
     except Exception as exc:
         status = failure_status(
             exc,
@@ -529,10 +531,10 @@ def persisted_without_exchange_status(exchange_id: str, message_id: str):
     )
 
 
-def get_exchange(exchange_id: str, *, sender: str) -> dict | None:
+def get_exchange(exchange_id: str, *, sender: str, store=None) -> dict | None:
     """Read one exchange as a plain protocol payload."""
-    with open_exchange_store(sender) as store:
-        row = store.get({"exchange_id": exchange_id})
+    with open_exchange_store(sender, store=store) as ledger:
+        row = ledger.get({"exchange_id": exchange_id})
     if row is None:
         return None
     return _exchange_payload(row)

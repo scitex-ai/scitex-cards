@@ -28,12 +28,9 @@ interfaces:
 
 # scitex-cards
 
-A canonical task store with pluggable adapters. One `tasks` table is the
-single source of truth; adapters render or import it. Store identity is
-`$SCITEX_STORE_DSN`, and the deployment picks the BACKEND — never assume
-one. Run `scitex-cards resolve-store` to see what this process resolved.
-No zero-config default: an unconfigured target REFUSES rather than
-inventing a file.
+One `tasks` table is authoritative; adapters render or import it.
+`SCITEX_STORE_DSN` identifies the deployment-selected backend. Inspect it with
+`scitex-cards resolve-store`. An unconfigured target refuses; no file is invented.
 
 ## ⚑ THE THREE MANDATES
 
@@ -95,6 +92,7 @@ work queue — the 7-step wake loop is in 32.
 - [22_pretooluse-hook-redirect.md](22_pretooluse-hook-redirect.md) — redirects private task files here
 - [22_skills-propagation.md](22_skills-propagation.md) — `required_skills` propagation
 - [23_stop-hook-second-delivery-rail.md](23_stop-hook-second-delivery-rail.md) — Stop hook, second delivery rail
+- [24_dm-ledger-credentials.md](24_dm-ledger-credentials.md) — scoped DM ledger credentials, typed refusals and reviewed minimum ACLs
 
 **Architecture (30+)**
 - [30_two-tier-conventions-and-write-protocol.md](30_two-tier-conventions-and-write-protocol.md) — tiers, store resolution, write protocol (how-to: 11)
