@@ -7,10 +7,10 @@
  * aliases only.
  */
 
-/* Fill the viewport above the hub dock so the composer sits at the bottom
- * and only the message list scrolls ("height: 100%" had no sized parent). */
+/* Fill the SDK content frame, whose height already excludes host chrome.
+ * A second viewport height here overflows the frame and scrolls its header. */
 #cards-dm-app {
-  height: calc(100dvh - var(--site-dock-clearance, 0px));
+  height: 100%;
 }
 
 #thread-head {

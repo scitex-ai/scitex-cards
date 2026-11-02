@@ -286,10 +286,13 @@
 @media (max-width: 900px) {
   .main {
     flex-direction: column;
+    overflow-y: auto;
   }
   .details-pane.stx-shell-sidebar {
     width: 100%;
     min-width: 0;
+    flex: 0 0 auto;
+    height: auto;
     max-height: 45vh;
     border-left: 0;
     border-top: 1px solid var(--border);

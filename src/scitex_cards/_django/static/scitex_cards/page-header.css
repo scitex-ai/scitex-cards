@@ -99,7 +99,7 @@ body:has(.site-dock) .stx-cards-header--mounted {
     padding-inline: 10px;
   }
   .stx-cards-header {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     min-width: 0;
   }
 }

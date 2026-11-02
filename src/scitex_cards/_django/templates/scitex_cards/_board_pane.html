@@ -298,7 +298,7 @@
           <span>{% translate "Details" %}</span>
         </span>
         <button type="button" class="stx-shell-sidebar__toggle"
-                id="details-toggle" onclick="toggleDetailsPane()"
+                id="details-toggle" onclick="event.stopPropagation();toggleDetailsPane()"
                 aria-expanded="true" aria-controls="details-panel"
                 title="Collapse / expand the Details column">›</button>
       </div>

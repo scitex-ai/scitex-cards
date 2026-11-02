@@ -77,12 +77,12 @@ def test_details_pane_expands_on_guarded_rail_click() -> None:
 
 
 def test_details_toggle_button_keeps_its_own_handler() -> None:
-    """The rail click is additive — the toggle button keeps onclick (runs first on bubble)."""
+    """The button handles its own toggle without re-expanding on rail bubbling."""
     # Arrange
     # Act
     html = _read(_BOARD_PANE_TEMPLATE)
     # Assert
-    assert 'id="details-toggle"' in html and 'onclick="toggleDetailsPane()"' in html, (
+    assert 'id="details-toggle"' in html and 'onclick="event.stopPropagation();toggleDetailsPane()"' in html, (
         "details toggle button lost its own toggleDetailsPane() handler"
     )
 
