@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- Listen for native Window hash-change events so Board/DM links and browser
+  Back/Forward update the visible pane and its title immediately.
+
 ## [0.56.18] - 2026-11-01
 
 - Declare the board's SDK AppConfig inheritance explicitly so the host can

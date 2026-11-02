@@ -5,11 +5,10 @@
  * Run from the repo root:
  *   node --test tests/scitex_cards/test__app_router.js
  *
- * Only the pure parts are covered: paneForHash (hash -> pane name) and
+ * Covers paneForHash (hash -> pane name) and
  * applyPane over a minimal fake root (querySelector/querySelectorAll +
- * classList/setAttribute shims). The live-DOM wiring (hashchange, click
- * interception) is browser-only and short-circuits under node — mount()
- * returns null without a document, pinned below.
+ * classList/setAttribute shims), plus window/document event ownership using
+ * separate native EventTargets. Real browser navigation is checked separately.
  */
 "use strict";
 
@@ -174,4 +173,35 @@ test("visiblePane: null on standalone pages (no contention, callers write)", () 
     delete globalThis.document;
     delete globalThis.window;
   }
+});
+
+test("native window hash events switch panes and their titles", () => {
+  // Arrange: separate native event targets model the non-bubbling browser event.
+  const fs = require("node:fs");
+  const vm = require("node:vm");
+  const root = fakeRoot();
+  const doc = new EventTarget();
+  const view = new EventTarget();
+  view.location = { hash: "#board" };
+  view.STX = { paneTitle: {
+    board: () => { doc.title = "Board"; },
+    dm: () => { doc.title = "Cards DM"; },
+  } };
+  Object.assign(doc, root, {
+    readyState: "complete", defaultView: view,
+    getElementById: id => root.querySelector("#" + id),
+  });
+  const source = fs.readFileSync(path.resolve(__dirname,
+    "../../src/scitex_cards/_django/static/scitex_cards/app_router.js"), "utf8");
+  vm.runInNewContext(source, { document: doc, window: view, Event });
+  // Act: browsers dispatch hashchange on Window, not Document.
+  view.location.hash = "#dm";
+  view.dispatchEvent(new Event("hashchange"));
+  const dm = { title: doc.title, hidden: "hidden" in root._panes["#dm-pane"]._attrs };
+  view.location.hash = "#board";
+  view.dispatchEvent(new Event("hashchange"));
+  // Assert: both directions repaint immediately without another polling tick.
+  assert.deepEqual(dm, { title: "Cards DM", hidden: false });
+  assert.equal(doc.title, "Board");
+  assert.ok(!("hidden" in root._panes["#board-pane"]._attrs));
 });

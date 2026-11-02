@@ -112,9 +112,14 @@
       );
     }
     show(doc, current());
-    doc.addEventListener("hashchange", function () {
-      show(doc, current());
-    });
+    // hashchange is dispatched on Window and does not bubble to Document.
+    // Listening on Document leaves a changed hash showing the previous pane.
+    var view = doc.defaultView || (typeof window !== "undefined" ? window : null);
+    if (view && typeof view.addEventListener === "function") {
+      view.addEventListener("hashchange", function () {
+        show(doc, current());
+      });
+    }
     // Same-page switches must not reload: the switcher links are real
     // path hrefs (standalone pages + bookmarks + pins depend on them), so
     // intercept them here and turn them into hash moves instead.
