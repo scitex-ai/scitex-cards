@@ -243,9 +243,10 @@ def test_board_shell_does_not_duplicate_graph_fetch_at_a_subpath_mount(store):
     request = RequestFactory().get(f"/apps/cards/?store={store}")
     # Act
     body = views.board_v3_page(request).content.decode("utf-8")
+    observed = ('<link rel="prefetch" href="/apps/cards/graph"' in body,
+                'fetch(API_BASE + "/graph"' in body)
     # Assert
-    assert '<link rel="prefetch" href="/apps/cards/graph"' not in body
-    assert 'fetch(API_BASE + "/graph"' in body
+    assert observed == (False, True)
 
 
 def test_board_shell_does_not_duplicate_graph_fetch_at_a_root_mount(store):
@@ -254,9 +255,10 @@ def test_board_shell_does_not_duplicate_graph_fetch_at_a_root_mount(store):
     request = RequestFactory().get(f"/?store={store}")
     # Act
     body = views.board_v3_page(request).content.decode("utf-8")
+    observed = ('<link rel="prefetch" href="/graph"' in body,
+                'fetch(API_BASE + "/graph"' in body)
     # Assert
-    assert '<link rel="prefetch" href="/graph"' not in body
-    assert 'fetch(API_BASE + "/graph"' in body
+    assert observed == (False, True)
 
 
 def test_board_warms_dm_json_on_switcher_hover():

@@ -1,6 +1,6 @@
 """Real Chromium and Django CSRF regression; no store is accessed.
 
-Run: python tests/browser/check_dm_csrf.py [Chromium executable]
+Run: python .github/ci/check_dm_csrf.py [Chromium executable]
 """
 
 import json
