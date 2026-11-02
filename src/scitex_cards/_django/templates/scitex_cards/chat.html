@@ -638,9 +638,9 @@ structurally instead of by two hand-synced numbers.
 {% endcomment %}
 <link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_marquee.css' %}?v={{ scitex_cards_version|urlencode }}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}?v={{ scitex_cards_version|urlencode }}">
-<link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}?v={{ scitex_cards_version|urlencode }}">
+<link rel="stylesheet" href="{% app_static 'scitex_cards/page-header.css' %}">
 <link rel="stylesheet" href="{% app_static 'scitex_sdk/ui/css/app/app-header.css' %}">{# CCT 3878: SDK header grammar for the shared .stx-app-header row. #}
-<link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_panes.css' %}?v={{ scitex_cards_version|urlencode }}">
+<link rel="stylesheet" href="{% app_static 'scitex_cards/chat/chat_panes.css' %}">
 {% comment %}
 Board assets for the unified page: the board pane below is the SAME partial
 the standalone board serves, so it needs the SAME stylesheets + scripts.

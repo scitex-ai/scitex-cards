@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Address the shared header, DM panes and Board Details styles by content hash
+  so layout updates refresh browser caches without a package version bump.
+
 - Forward the trusted DM store credential to the canonical exchange ledger for
   persistence, retry rotation and status reads without changing its endpoint
   or the global reader. Distinguish native privilege/authentication failures
