@@ -198,6 +198,14 @@ submission, or accepts `--client-request-id`; reuse that key after an uncertain
 timeout to receive the original `m_`, `n_`, and `xch_` rather than duplicating
 the request.
 
+An ordinary explicit `store` selects DM/notification data; it never implicitly
+replaces canonical ledger credentials. For mounted DM requests, the separate
+internal `ledger_store` comes only from the server's trusted request capability
+and opens the shared exchange ledger using only an authentication overlay on
+the centrally resolved endpoint. Global read-only credentials stay unchanged. The ledger requires its
+own existing-schema privileges; a healthy Cards read does not prove them.
+See [DM ledger diagnosis and operator ACL recipes](src/scitex_cards/_skills/scitex-cards/24_dm-ledger-credentials.md).
+
 Hide a conversation without deleting it (view state, not content — the
 append-only store is untouched):
 

@@ -261,6 +261,7 @@ class LocalBackend:
         notification_id: str | None = None,
         limit: int | None = None,
         after: str | None = None,
+        ledger_store: Any = None,
     ) -> dict:
         if notification_id is not None or limit is not None or after is not None:
             from ._notification_recovery import recover_notifications
@@ -346,7 +347,7 @@ class LocalBackend:
             """A failed-DM exchange gets one immutable successor per poll."""
             return (
                 rotate_failed_notification_exchange(
-                    row, recipient=recipient_key, store=store
+                    row, recipient=recipient_key, store=store, ledger_store=ledger_store
                 )
                 if (
                     row.get("event_type") == "dm"
@@ -469,6 +470,8 @@ class LocalBackend:
         body: str,
         store: Any = None,
         client_request_id: str | None = None,
+        *,
+        ledger_store: Any = None,
     ) -> dict:
         # CURRENCY VISIBILITY (module docstring): the confirmed entry point
         # from the incident. Non-raising and warn-once by contract, so the DM
@@ -481,6 +484,7 @@ class LocalBackend:
             to,
             body,
             store=store,
+            ledger_store=ledger_store,
             client_request_id=client_request_id or new_client_request_id(),
         )
 

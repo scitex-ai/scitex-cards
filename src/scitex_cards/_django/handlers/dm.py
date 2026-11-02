@@ -607,6 +607,7 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
             peer,
             body,
             store=_write_store_of(request),
+            ledger_store=_write_store_of(request),
             sender=_author_of(request),
             client_request_id=client_request_id,
         )
@@ -647,7 +648,9 @@ def dm_exchange_view(request: HttpRequest, exchange_id: str) -> HttpResponse:
 
     reader = _author_of(request)
     try:
-        exchange = get_exchange(exchange_id, sender=reader)
+        exchange = get_exchange(
+            exchange_id, sender=reader, ledger_store=_write_store_of(request)
+        )
     except Exception:  # noqa: BLE001 - canonical status, no traceback wire
         status = _http_status(
             503,
