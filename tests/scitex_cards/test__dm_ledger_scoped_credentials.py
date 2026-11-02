@@ -147,11 +147,11 @@ def test_minimal_dedicated_grants_allow_ledger_roundtrip_keep_reader_closed(rout
     _grant_fixture_ledger(routed_ledger)
     exchange, opened = new_exchange()
     # Act
-    with open_exchange_store('owned-fixture-sender',store=routed_ledger['writer']) as ledger:
+    with open_exchange_store('owned-fixture-sender',ledger_store=routed_ledger['writer']) as ledger:
         record_exchange(ledger,exchange_id=exchange,opened_at=opened,
                         sender='owned-fixture-sender',recipient='owned-fixture-recipient',
                         status=accepted_status(exchange,'owned-fixture-message'))
-    found = get_exchange(exchange,sender='owned-fixture-sender',store=routed_ledger['writer'])
+    found = get_exchange(exchange,sender='owned-fixture-sender',ledger_store=routed_ledger['writer'])
     with psycopg.connect(routed_ledger['writer']) as connection:
         forbidden = connection.execute("SELECT has_table_privilege(current_user,'status_exchanges_rows','DELETE'),has_table_privilege(current_user,'status_exchanges_cursor','UPDATE'),has_table_privilege(current_user,'status_exchanges_identity','INSERT')").fetchone()
     refused = _ledger_refusal()
@@ -179,7 +179,7 @@ def test_django_status_view_uses_trusted_credential_and_sender_filter(routed_led
     from scitex_cards._django.handlers.dm import dm_exchange_view
     _grant_fixture_ledger(routed_ledger)
     exchange,opened=new_exchange()
-    with open_exchange_store('owned-fixture-sender',store=routed_ledger['writer']) as ledger:
+    with open_exchange_store('owned-fixture-sender',ledger_store=routed_ledger['writer']) as ledger:
         record_exchange(ledger,exchange_id=exchange,opened_at=opened,
                         sender='owned-fixture-sender',recipient='owned-fixture-recipient',
                         status=accepted_status(exchange,'owned-fixture-message'))
@@ -228,14 +228,81 @@ def test_actual_dm_persistence_notification_ledger_and_idempotent_retry(routed_l
     # Act
     try:
         first=persist_dm('owned-fixture-sender','owned-fixture-recipient','owned fixture only',
-                         store=routed_ledger['writer'],client_request_id=request_id)
+                         store=routed_ledger['writer'],ledger_store=routed_ledger['writer'],client_request_id=request_id)
     except DmExchangeError as error:
         raise RuntimeError('Owned PostgreSQL fixture refusal') from error.__context__
     repeated=persist_dm('owned-fixture-sender','owned-fixture-recipient','owned fixture only',
-                        store=routed_ledger['writer'],client_request_id=request_id)
+                        store=routed_ledger['writer'],ledger_store=routed_ledger['writer'],client_request_id=request_id)
     with psycopg.connect(routed_ledger['admin']) as connection:
         dm_count=connection.execute('SELECT count(*) FROM dm_messages WHERE client_request_id=%s',(request_id,)).fetchone()[0]
         notification_count=connection.execute('SELECT count(*) FROM notifications WHERE exchange_id=%s',(first['exchange_id'],)).fetchone()[0]
         ledger_count=connection.execute('SELECT count(*) FROM status_exchanges_rows WHERE exchange_id=%s',(first['exchange_id'],)).fetchone()[0]
     # Assert
     assert (first['status']['code'],repeated['status']['code'],first['id']==repeated['id'],first['exchange_id']==repeated['exchange_id'],dm_count,notification_count,ledger_count)==(202,202,True,True,1,1,1)
+
+
+def test_ordinary_explicit_data_store_does_not_retarget_canonical_ledger(
+    new_store, env
+):
+    # Arrange: two genuine owned schemas; only the canonical one owns the ledger.
+    canonical = new_store()
+    data = new_store()
+    env.set("SCITEX_STORE_DSN", canonical)
+    request_id = "req_" + uuid.uuid4().hex
+    # Act
+    from scitex_cards import dm_send
+
+    record = dm_send(
+        "owned-fixture-recipient",
+        "owned fixture",
+        sender="owned-fixture-sender",
+        store=data,
+        client_request_id=request_id,
+    )
+    found = get_exchange(record["exchange_id"], sender="owned-fixture-sender")
+    with psycopg.connect(data) as connection:
+        dm_count = connection.execute(
+            "SELECT count(*) FROM dm_messages WHERE client_request_id=%s", (request_id,)
+        ).fetchone()[0]
+        data_has_ledger = connection.execute(
+            "SELECT to_regclass('status_exchanges_rows') IS NOT NULL"
+        ).fetchone()[0]
+    # Assert
+    assert (
+        record["status"]["code"],
+        found["status"]["code"],
+        dm_count,
+        data_has_ledger,
+    ) == (202, 202, 1, False)
+
+
+def test_django_post_uses_server_ledger_hint_ignores_body_hint(routed_ledger):
+    # Arrange: valid server role and invalid body credential point at different targets.
+    import json
+
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "scitex_cards._django.settings")
+    import django
+
+    django.setup()
+    from django.test import RequestFactory
+    from scitex_cards._django.handlers.dm import dm_thread_view
+
+    _grant_fixture_ledger(routed_ledger)
+    request = RequestFactory().post(
+        "/dm/owned-fixture-recipient",
+        data=json.dumps(
+            {
+                "body": "owned fixture only",
+                "client_request_id": "req_" + uuid.uuid4().hex,
+                "ledger_store": "postgresql://caller@127.0.0.1:1/other",
+            }
+        ),
+        content_type="application/json",
+    )
+    request.user = _AuthenticatedPrincipal("owned-fixture-sender")
+    request.scitex_store = routed_ledger["writer"]
+    # Act
+    response = dm_thread_view(request, "owned-fixture-recipient")
+    payload = json.loads(response.content)
+    # Assert
+    assert (response.status_code, payload.get("exchange", {}).get("status", {}).get("code")) == (202, 202)

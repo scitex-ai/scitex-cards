@@ -59,13 +59,17 @@ def new_exchange() -> tuple[str, str]:
     return new_exchange_id(), datetime.now(timezone.utc).isoformat()
 
 
-def open_exchange_store(sender: str, *, store=None) -> Store:
-    """Open scitex-dev's canonical exchange ledger, with no local fallback."""
+def open_exchange_store(sender: str, *, ledger_store=None) -> Store:
+    """Open the canonical ledger; only explicit trusted credentials may overlay it.
+
+    ``ledger_store`` is independent from a DM/notification data ``store``.
+    Ordinary library/CLI callers keep canonical resolution unchanged.
+    """
     from ._exchange_target import credential_target
 
     plugin = plugin_for(LEDGER_TABLE)
     return Store(
-        credential_target(resolve_target(plugin), store),
+        credential_target(resolve_target(plugin), ledger_store),
         plugin.schema,
         node=socket.gethostname(),
         writer_policy=plugin.writer_policy,
@@ -234,6 +238,7 @@ def rotate_failed_notification_exchange(
     *,
     recipient: str,
     store=None,
+    ledger_store=None,
 ) -> dict:
     """Atomically replace one terminal-failed notification exchange.
 
@@ -268,7 +273,7 @@ def rotate_failed_notification_exchange(
         )
         inbox_database = inbox_location["database"]
         inbox_schema = inbox_location["schema"]
-    with open_exchange_store(sender, store=store) as ledger:
+    with open_exchange_store(sender, ledger_store=ledger_store) as ledger:
         with ledger.batch():
             # Cross-record atomicity is intentional here: Store owns the
             # canonical transaction, while Cards owns the notification row.
@@ -395,6 +400,7 @@ def persist_dm(
     body: str,
     *,
     store=None,
+    ledger_store=None,
     client_request_id: str,
 ) -> dict:
     """Persist one DM, its notification exchange, and the canonical HTTP 202."""
@@ -404,7 +410,7 @@ def persist_dm(
         raise ValueError("dm_send requires a non-empty client_request_id")
     exchange_id, opened_at = new_exchange()
     try:
-        ledger = open_exchange_store(sender, store=store)
+        ledger = open_exchange_store(sender, ledger_store=ledger_store)
     except Exception as exc:
         status = failure_status(
             exc,
@@ -531,9 +537,9 @@ def persisted_without_exchange_status(exchange_id: str, message_id: str):
     )
 
 
-def get_exchange(exchange_id: str, *, sender: str, store=None) -> dict | None:
+def get_exchange(exchange_id: str, *, sender: str, ledger_store=None) -> dict | None:
     """Read one exchange as a plain protocol payload."""
-    with open_exchange_store(sender, store=store) as ledger:
+    with open_exchange_store(sender, ledger_store=ledger_store) as ledger:
         row = ledger.get({"exchange_id": exchange_id})
     if row is None:
         return None

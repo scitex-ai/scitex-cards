@@ -9,16 +9,23 @@ tags: [scitex-cards-dm-ledger-credentials]
 
 # DM ledger credentials and refusal diagnosis
 
-A DM and its notification use the trusted `store=` capability. The exchange
-ledger first resolves through `scitex_dev.store.resolve_target` for the builtin
-`status_exchanges` plugin. With an explicit trusted capability, Cards overlays
-only its user/password on that canonical target. All other parsed connection
-parameters must match, including host, port, database, schema/options and TLS
+A DM and its notification use the ordinary `store=` data target. It may be an
+explicit owned schema and does not select or authenticate the shared ledger.
+The exchange ledger resolves separately through `scitex_dev.store.resolve_target`
+for the builtin `status_exchanges` plugin. Only the separate internal trusted
+`ledger_store=` capability overlays user/password on that canonical target.
+All other parsed connection parameters must match, including host, port, database, schema/options and TLS
 settings. The authenticated server session role and database are checked before
 opening the Store. A mismatch refuses; there is no alternate database or file.
 
 Hub supplies the capability after its authentication/audience guards, through
-`request.scitex_store`. A browser query/body cannot select the writer. Preserve
+`request.scitex_store`; the DM view passes it separately as `ledger_store` as
+well as the DM data store. A browser query/body cannot select this credential.
+The generic RPC server keeps its ordinary boot-pinned data store separate from
+the canonical ledger; RPC bodies reject `ledger_store`, and HubBackend refuses
+to forward such credentials. CLI/library calls keep canonical ledger routing
+and credentials unless trusted in-process host code explicitly supplies the
+internal capability. No new CLI credential flag is introduced. Preserve
 the existing sender visibility check on exchange GETs. Do not widen the global
 `SCITEX_STORE_DSN` reader to make a private DM operation work.
 

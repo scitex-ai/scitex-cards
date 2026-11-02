@@ -5,10 +5,11 @@
 - Address the shared header, DM panes and Board Details styles by content hash
   so layout updates refresh browser caches without a package version bump.
 
-- Forward the trusted DM store credential to the canonical exchange ledger for
-  persistence, retry rotation and status reads without changing its endpoint
-  or the global reader. Distinguish native privilege/authentication failures
-  from missing or inaccessible schema, and document reviewed minimum ACLs.
+- Forward the trusted internal ledger credential separately from ordinary DM
+  data stores, for persistence, retry rotation and status reads. Retain the
+  canonical endpoint/options checks and global reader, refuse client RPC
+  credential injection, distinguish native privilege/authentication failures
+  from inaccessible schema, and document reviewed minimum ACLs.
 - Keep mobile navigation compact, size the Cards app to its host content frame,
   and let the stacked Board/Details region scroll. Preserve the existing
   Details button, rail and keyboard expansion without click-bubbling reversal.
