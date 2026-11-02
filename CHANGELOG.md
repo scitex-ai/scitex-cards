@@ -6,6 +6,9 @@
   persistence, retry rotation and status reads without changing its endpoint
   or the global reader. Distinguish native privilege/authentication failures
   from missing or inaccessible schema, and document reviewed minimum ACLs.
+- Keep mobile navigation compact, size the Cards app to its host content frame,
+  and let the stacked Board/Details region scroll. Preserve the existing
+  Details button, rail and keyboard expansion without click-bubbling reversal.
 
 - Use the public SDK 0.3.17 FilterField for the DM agent filter. Mount it before
   the classic controller captures its input; retain SDK fuzzy matching across
