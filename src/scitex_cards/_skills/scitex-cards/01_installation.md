@@ -28,6 +28,11 @@ System requirements: Python ≥ 3.10.
 | `dev`   | pytest, pytest-cov, scitex-dev (test + audit toolchain)     |
 | `all`   | everything above                                            |
 
+The board's AppConfig declares its required SDK base explicitly. Host plugin
+discovery can certify its literal `name` and `label` before importing the app;
+do not replace the declaration with a lazy class import or a plain-Django
+fallback. A missing required SDK installation must fail clearly.
+
 ## Rendering backends (for `render-graph`)
 
 PNG output needs **one** of:
@@ -44,3 +49,11 @@ needs neither.
 python -c "import scitex_cards; print(scitex_cards.__version__)"
 scitex-cards --help
 ```
+
+### Shared DM filter checks
+
+The DM filter requires public SDK >=0.3.17. The SDK owns the input, icon,
+shortcut hint and keyboard handling; Cards owns agent matching and poll refresh.
+For its rendered-response checks and explicit real-Chromium bootstrap test,
+see `docs/testing-sdk-filter.md` in the source repository. The browser fixture
+uses disposable loopback assets and does not contact the live message store.

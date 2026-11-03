@@ -457,20 +457,21 @@ def test_template_details_board_hosts_live_chip() -> None:
     assert 'id="details-live"' in body and "live-dot" in body
 
 
-def test_template_details_board_section_open_by_default() -> None:
-    """Details > Board is OPEN for a fresh profile (operator 2026-10-23:
-    the pane 'does not open'). View/Span/Layout/Live live there since the
-    2026-10-22 re-home — a closed Board section hides the very controls
-    the move was for. A stored localStorage preference still wins."""
+def test_template_details_board_tab_is_selected_and_content_visible_by_default() -> None:
+    """Fresh Details exposes Board controls through the canonical selected tab."""
     # Arrange
     html = _read_board_family()
     # Act
-    m = re.search(r"return new Set\(\[([^\]]*)\]\);", html)
-    # Assert — one compound assertion (PA-307: single assert per test).
-    assert m is not None and '"board"' in m.group(1), (
-        "Details > Board section is closed by default — "
-        "View/Span/Layout/Live hide behind a shut accordion"
+    tab = re.search(r'<button[^>]*id="details-tab-board"[^>]*>', html)
+    panel = re.search(r'<div[^>]*id="details-content-board"[^>]*>', html)
+    observation = (
+        tab is not None and 'aria-selected="true"' in tab.group(),
+        panel is not None and 'role="tabpanel"' in panel.group(),
+        panel is not None and not re.search(r"\bhidden(?:\s|=|>)", panel.group()),
+        'id="details-layout-timeline"' in _details_board_body(html),
     )
+    # Assert
+    assert observation == (True, True, True, True)
 
 
 def test_template_header_identity_band_carries_no_live_chip() -> None:

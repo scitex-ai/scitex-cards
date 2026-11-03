@@ -19,7 +19,7 @@
  .stx-cards-switcher {
    --sw-fg: var(--workspace-text-secondary);
    --sw-fg-on: var(--workspace-text-primary);
-   --sw-accent: var(--app-accent-todo);
+   --sw-accent: var(--accent);
    --sw-hover: var(--app-accent-todo-tint);
 
    display: flex;

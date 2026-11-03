@@ -56,7 +56,7 @@ _STORE_KWARG_IS_STORE = frozenset(
 )
 
 #: Body keys that would retarget the pinned store — rejected outright.
-_FORBIDDEN_BODY_KEYS = frozenset({"tasks_path", "store"})
+_FORBIDDEN_BODY_KEYS = frozenset({"tasks_path", "store", "ledger_store"})
 
 _TOKEN_BYTES = 32
 

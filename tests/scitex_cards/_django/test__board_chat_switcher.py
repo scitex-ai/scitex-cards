@@ -441,28 +441,28 @@ def test_the_slashed_chat_url_still_serves_the_dm_page():
     assert response.status_code == 200
 
 
-def test_the_old_chat_url_serves_the_same_page_as_the_new_dm_url():
-    """Two doors, ONE room. A `/chat` that survives as a slightly different
-    page is the drift that makes the alias guarantee worthless — the operator
-    would be reading a stale surface and have no way to tell."""
-    # Arrange
-    paths = ("/chat", "/dm")
-    # Act
-    bodies = {_serve(path).content for path in paths}
-    # Assert
-    assert len(bodies) == 1
+def _alias_page_observation(response):
+    """Compare the real page except Django's independently masked CSRF value."""
+    body, csrf_count = re.subn(
+        rb'(<input type="hidden" name="csrfmiddlewaretoken" value=")[A-Za-z0-9]{64}(">)',
+        rb"\1<masked-csrf>\2",
+        response.content,
+    )
+    header_count = len(re.findall(rb"<div\s+data-stx-app-header(?:\s|>)", body))
+    return response.status_code, csrf_count, header_count, body
 
 
-def test_the_root_url_serves_the_same_page_as_the_dm_url():
-    """The entry half of the same guarantee: `/` and `/dm` are two doors
-    onto ONE room (CCT4610). A `/` that survives as a slightly different
-    page is the drift that makes the entry guarantee worthless."""
+@pytest.mark.parametrize("paths", [("/chat", "/dm"), ("/", "/dm")])
+def test_legacy_and_current_dm_doors_render_one_canonical_page(paths):
+    """Aliases retain one SDK header and identical content, with fresh CSRF masks."""
     # Arrange
-    paths = ("/", "/dm")
+    expected_metadata = {(200, 1, 1)}
     # Act
-    bodies = {_serve(path).content for path in paths}
+    observations = [_alias_page_observation(_serve(path)) for path in paths]
+    metadata = {row[:3] for row in observations}
+    bodies = {row[3] for row in observations}
     # Assert
-    assert len(bodies) == 1
+    assert (metadata, len(bodies)) == (expected_metadata, 1)
 
 
 # EOF

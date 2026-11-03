@@ -379,4 +379,25 @@ def test_validation_error_crosses_the_wire_typed(hub):
         backend.add_task(None, id="hb-bad", title="No owner")
 
 
+
+
+@pytest.mark.parametrize("operation", ["dm_send", "poll_notifications"])
+def test_remote_client_never_transmits_ledger_credentials(hub, operation):
+    # Arrange: this is a server-owned capability, not an RPC input.
+    backend = get_backend()
+    kwargs = {
+        "dm_send": {
+            "sender": "remote-agent",
+            "to": "operator",
+            "body": "owned fixture",
+        },
+        "poll_notifications": {"agent": "remote-agent"},
+    }[operation]
+    # Act
+    # Assert: refusal occurs client-side before serializing a request.
+    with pytest.raises(HubBackendError, match="pinned hub-side"):
+        getattr(backend, operation)(
+            **kwargs, ledger_store="postgresql://caller@127.0.0.1:1/other"
+        )
+
 # EOF

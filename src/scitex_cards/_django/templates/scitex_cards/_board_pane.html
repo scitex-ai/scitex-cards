@@ -168,6 +168,10 @@
          aria-label="{% translate 'Recognized search qualifiers' %}"></div>
     <div id="filt-chips" class="filt-chips"
          aria-live="polite" aria-label="{% translate 'Active filters' %}"></div>
+    <span id="filter-match-status" class="filter-match-status" role="status" hidden>
+      <span id="filter-match-detail"></span>
+      <button type="button" onclick="clearAllFilters()">{% translate "Clear filters" %}</button>
+    </span>
   </div>
 
   {% comment %}
@@ -223,22 +227,6 @@
     {% endcomment %}
     <div class="board-area">
 
-    <!-- Empty-state banner (operator TG12911, lead a2a `ffa6c606`) — when
-         the active filters narrow the visible set to 0 cards, surface an
-         explicit "0 matches" line + a one-click "Clear filters" so a
-         silent empty board doesn't read as "the filter is broken".
-         Hidden by default; render() flips it on/off. -->
-    <div id="filter-empty-banner"
-         style="display:none; padding:14px 18px; margin:6px 12px;
-                background:var(--accent-soft, #fff7e6);
-                border:1px solid var(--accent, #d99700);
-                border-radius:6px; font-size:13px; line-height:1.5;"
-         role="status">
-      <strong style="color:var(--accent-strong, #b97400)">{% translate "0 matches." %}</strong>
-      <span id="filter-empty-banner-detail"></span>
-      <button type="button" id="filter-empty-banner-clear"
-              style="margin-left:10px; cursor:pointer;">{% translate "Clear all filters" %}</button>
-    </div>
     <div class="columns" id="columns" aria-busy="true"
          data-cards-internal-chrome="{{ cards_internal_chrome_enabled|yesno:'true,false,false' }}">
       {% comment %}
@@ -270,14 +258,9 @@
       "Legend と対応させて Details の方に Stats を用意して、可視化してください。
       タイムスケールも分けられるようにして … (d/w/m)").
 
-      Convention borrowed from scitex-writer's Details pane (aside +
-      accordion sections + localStorage open-set) so the two products look
-      like one system rather than two bespoke boards.
-
-      The three sections are exactly the things that used to shout from the
-      header: STATS (incl. the "N new/24h" counter), FILTERS (the six
-      dropdowns from the old popover, plus show-done + blocking-me as
-      ordinary filter rows) and HIDDEN cards.
+      Shared SDK sidebar chrome contains four SDK content tabs: Board,
+      Stats, Filters, and Hidden cards. One panel is visible at a time;
+      inactive controls remain mounted so population and live updates work.
     {% endcomment %}
     <aside class="details-pane stx-shell-sidebar" id="details-panel"
            aria-label="{% translate 'Details' %}"
@@ -321,12 +304,28 @@
       </div>
       <div class="stx-shell-sidebar__content details-body">
 
-        <div class="details-section open" data-id="board">
-          <button type="button" class="details-section-toggle"
-                  onclick="toggleDetailsSection('board')">
-            <span class="details-section-title">{% translate "Board" %}</span>
-            <span class="details-chevron" aria-hidden="true">▸</span>
-          </button>
+        <div class="stx-content-tabs details-tabs" role="tablist"
+             aria-label="{% translate 'Details sections' %}"
+             onkeydown="onDetailsTabKeyDown(event)">
+          <button type="button" class="stx-content-tabs__tab"
+                  id="details-tab-board" role="tab" aria-controls="details-content-board"
+                  aria-selected="true" tabindex="0"
+                  onclick="selectDetailsTab('board')">{% translate "Board" %}</button>
+          <button type="button" class="stx-content-tabs__tab"
+                  id="details-tab-stats" role="tab" aria-controls="details-content-stats"
+                  aria-selected="false" tabindex="-1"
+                  onclick="selectDetailsTab('stats')">{% translate "Stats" %}</button>
+          <button type="button" class="stx-content-tabs__tab"
+                  id="details-tab-filters" role="tab" aria-controls="details-content-filters"
+                  aria-selected="false" tabindex="-1"
+                  onclick="selectDetailsTab('filters')">{% translate "Filters" %} <span class="details-filter-count" id="filt-active-count">(0)</span></button>
+          <button type="button" class="stx-content-tabs__tab"
+                  id="details-tab-hidden" role="tab" aria-controls="details-content-hidden"
+                  aria-selected="false" tabindex="-1"
+                  onclick="selectDetailsTab('hidden')">{% translate "Hidden cards" %} <span class="details-filter-count">(<span id="hidden-count">0</span>)</span></button>
+        </div>
+        <div class="details-section open" data-id="board" id="details-content-board"
+             role="tabpanel" aria-labelledby="details-tab-board" tabindex="0">
           <div class="details-section-body">
             {% comment %}
               BOARD VIEW CONTROLS (operator 2026-10-22: View, Span, Layout
@@ -384,12 +383,8 @@
           </div>
         </div>
 
-        <div class="details-section open" data-id="stats">
-          <button type="button" class="details-section-toggle"
-                  onclick="toggleDetailsSection('stats')">
-            <span class="details-section-title">{% translate "Stats" %}</span>
-            <span class="details-chevron" aria-hidden="true">▸</span>
-          </button>
+        <div class="details-section" data-id="stats" id="details-content-stats"
+             role="tabpanel" aria-labelledby="details-tab-stats" tabindex="0" hidden>
           <div class="details-section-body" id="details-stats-body">
             {% comment %}
               TIMESCALE — the SAME d/w/m window the Timeline raster uses
@@ -410,13 +405,8 @@
           </div>
         </div>
 
-        <div class="details-section open" data-id="filters">
-          <button type="button" class="details-section-toggle"
-                  onclick="toggleDetailsSection('filters')">
-            <span class="details-section-title">{% translate "Filters" %}</span>
-            <span class="details-filter-count" id="filt-active-count">(0)</span>
-            <span class="details-chevron" aria-hidden="true">▸</span>
-          </button>
+        <div class="details-section" data-id="filters" id="details-content-filters"
+             role="tabpanel" aria-labelledby="details-tab-filters" tabindex="0" hidden>
           <div class="details-section-body">
             <div class="details-row details-row--filter">
               <label for="f-text">{% translate "Text" %}</label>
@@ -469,13 +459,8 @@
           </div>
         </div>
 
-        <div class="details-section" data-id="hidden">
-          <button type="button" class="details-section-toggle"
-                  onclick="toggleDetailsSection('hidden')">
-            <span class="details-section-title">{% translate "Hidden cards" %}</span>
-            <span class="details-filter-count">(<span id="hidden-count">0</span>)</span>
-            <span class="details-chevron" aria-hidden="true">▸</span>
-          </button>
+        <div class="details-section" data-id="hidden" id="details-content-hidden"
+             role="tabpanel" aria-labelledby="details-tab-hidden" tabindex="0" hidden>
           <div class="details-section-body">
             <div id="hidden-list-panel" class="hidden-list-panel">
               <div class="hidden-list-empty">{% translate "No hidden cards." %}</div>

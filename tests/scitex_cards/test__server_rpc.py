@@ -627,4 +627,73 @@ def test_rotation_admits_the_new_token(rig):
     assert status == 200
 
 
+
+
+def test_rpc_body_cannot_supply_ledger_credentials(rig):
+    # Arrange: caller JSON cannot replace the server's boot-pinned capability.
+    body = {
+        "sender": "remote-agent",
+        "to": "operator",
+        "body": "owned fixture",
+        "ledger_store": "postgresql://caller@127.0.0.1:1/other",
+    }
+    # Act
+    status, payload = _call(rig, "dm_send", body)
+    # Assert
+    assert (
+        status,
+        "pinned" in payload["error"],
+        "ledger_store" in payload["error"],
+    ) == (400, True, True)
+
+
+@pytest.fixture
+def separate_data_store_rpc(tmp_path, env, new_store):
+    """The server's explicit data schema is not a canonical-ledger credential."""
+    env.set("SCITEX_CARDS_AGENT_ID", "rpc-tester")
+    data = new_store()
+    tokens = tmp_path / "custom-tokens"
+    server = _server.make_server(
+        store=data,
+        port=0,
+        tokens_dir=tokens,
+        audit_path=tmp_path / "custom-audit.jsonl",
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield {
+            "store": data,
+            "port": server.server_address[1],
+            "token": (tokens / "hub.token").read_text().strip(),
+        }
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+
+def test_rpc_custom_data_store_keeps_canonical_ledger(separate_data_store_rpc):
+    # Arrange
+    from scitex_cards._dm.exchange import get_exchange
+
+    rig = separate_data_store_rpc
+    # Act
+    status, payload = _call(
+        rig,
+        "dm_send",
+        {
+            "sender": "remote-agent",
+            "to": "operator",
+            "body": "owned custom-store fixture",
+        },
+    )
+    found = get_exchange(payload.get("exchange_id", ""), sender="remote-agent")
+    # Assert
+    assert (status, found["status"]["code"], payload["from"]) == (
+        202,
+        202,
+        "remote-agent",
+    )
+
 # EOF

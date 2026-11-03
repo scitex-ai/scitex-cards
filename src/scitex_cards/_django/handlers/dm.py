@@ -21,8 +21,8 @@ Endpoints::
     GET  /dm/threads[?show=all|hidden]
       -> 200 + {"agents": [{"name", "kind", "unread", "last_ts",
                             "last_body", "hidden", "pinned"}, ...]}
-         The union of the ``users:`` registry and any peer that already has
-         a DM thread with the operator, pinned rows first, then most-recent
+         Only peers with a DM thread involving the authenticated reader,
+         pinned rows first, then most-recent
          activity. Every row carries ``hidden`` and ``pinned`` for the
          current reader; hidden rows are EXCLUDED by default. ``?show=all``
          includes them (flagged); ``?show=hidden`` answers only them — the
@@ -165,26 +165,6 @@ def _author_of(request: HttpRequest) -> str:
     from .._user_scope import current_user
 
     return current_user(request)
-
-
-def _registry_agents(store) -> list[dict]:
-    """Project the ``users:`` registry onto ``{name, kind}`` rows.
-
-    Fail-soft: a missing/malformed registry yields ``[]`` — the chat view
-    still works from thread peers alone.
-    """
-    try:
-        from scitex_cards._users import list_users
-
-        users = list_users(store)
-    except Exception:  # noqa: BLE001 — registry optional for the chat view
-        return []
-    out = []
-    for u in users:
-        name = u.names[0] if u.names else u.id
-        if name and name != OPERATOR_NAME:
-            out.append({"name": name, "kind": u.kind})
-    return out
 
 
 #: What an anonymous visitor is told when the DM views have no store to read.
@@ -425,7 +405,7 @@ def dm_agents_view(
 
 @_typed_store_refusals
 def dm_threads_view(request: HttpRequest) -> HttpResponse:
-    """GET the CURRENT USER's agent list + per-agent thread summaries.
+    """GET the CURRENT USER's existing conversations and thread summaries.
 
     ``reader`` is the authenticated principal (:func:`_author_of`), NOT a
     constant: the DM read path used to hardcode ``OPERATOR_NAME`` so every
@@ -450,26 +430,10 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
     hidden_threads = _dm_read.hidden_for(reader, store=store)
     pinned_threads = _dm_read.pinned_for(reader, store=store)
     rows: dict[str, dict] = {}
-    for agent in _registry_agents(store):
-        rows[agent["name"]] = {
-            "name": agent["name"],
-            "kind": agent["kind"],
-            "unread": 0,
-            "last_ts": None,
-            "last_body": None,
-            "hidden": False,
-            "pinned": False,
-        }
-    # Merge in any peer that already has a thread with the CURRENT reader
-    # (covers unregistered senders — the thread store is the SSOT of who
-    # talked). THE STORE, NOT THE SIDECAR. `_threads.list_threads` reads
-    # `threads.json`, a PER-HOST FILE, and nothing else — so this view showed
-    # only the threads of agents running on the same machine as the board.
-    # Measured 2026-08-09 on the operator's laptop: its sidecar had
-    # scitex-agent-container live at 12:33 (that agent runs laptop-side) while
-    # scitex-cards sat at 2026-08-02, and five agents on scitex-compute-04 were
-    # invisible entirely. All 4150 messages were in the store the whole time.
-    # Operator's ruling the same day: "never use threads.json but database".
+    # Existing conversations come only from this reader's canonical threads.
+    # The global account registry includes unrelated humans, test identities,
+    # and inactive agents; it is neither a conversation nor runtime directory.
+    # New-conversation discovery belongs to dm_agents_view's directory port.
     for key, summary in _dm_read.threads_summary(
         reader, store=store
     ).items():
@@ -643,6 +607,7 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
             peer,
             body,
             store=_write_store_of(request),
+            ledger_store=_write_store_of(request),
             sender=_author_of(request),
             client_request_id=client_request_id,
         )
@@ -683,7 +648,9 @@ def dm_exchange_view(request: HttpRequest, exchange_id: str) -> HttpResponse:
 
     reader = _author_of(request)
     try:
-        exchange = get_exchange(exchange_id, sender=reader)
+        exchange = get_exchange(
+            exchange_id, sender=reader, ledger_store=_write_store_of(request)
+        )
     except Exception:  # noqa: BLE001 - canonical status, no traceback wire
         status = _http_status(
             503,

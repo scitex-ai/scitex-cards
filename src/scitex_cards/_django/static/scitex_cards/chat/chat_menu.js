@@ -167,7 +167,7 @@
         host.apiBase + "/dm/thread/" + encodeURIComponent(peer) + "/reaction",
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: window.ChatRequest.headers(true),
           body: JSON.stringify({
             message_id: messageId,
             emoji: emoji,
@@ -300,7 +300,7 @@
     function sendForwardBody(toPeer, body) {
       return fetch(host.apiBase + "/dm/thread/" + encodeURIComponent(toPeer), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: window.ChatRequest.headers(true),
         body: JSON.stringify({ body: body }),
       }).then(function (resp) {
         return resp.json().then(function (data) {
@@ -502,7 +502,7 @@
       var base = (host && host.apiBase) || window.API_BASE || "";
       return fetch(base + "/dm/thread/" + encodeURIComponent(name) + leaf, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: window.ChatRequest.headers(true),
         body: JSON.stringify(body),
       }).then(function (r) {
         if (!r.ok) {
@@ -578,7 +578,12 @@
             throw new Error(reason ? baseMsg + ": " + reason : baseMsg);
           });
         }
-        return r.json();
+        return r.json().then(function (data) {
+          if (data.ack && !data.ack.ok) {
+            throw new Error("Mark as read failed: " + (data.ack.reason || "receipt refused"));
+          }
+          return data;
+        });
       });
     }
     if (readBtn) {
