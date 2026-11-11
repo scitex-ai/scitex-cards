@@ -239,9 +239,9 @@ def test_summary_stays_honest_case1():
     # Arrange
     doc = _doc41()
     # Act
-    section = doc.split("### `scitex-cards summary`")[1].split("## ")[0]
+    section = doc.split("### `scitex-cards show-summary`")[1].split("## ")[0]
     # Assert
-    help_text = _help("summary")
+    help_text = _help("show-summary")
     assert "`--scope`, `--assignee`" in section
 
 
@@ -249,9 +249,9 @@ def test_summary_stays_honest_case2():
     # Arrange
     doc = _doc41()
     # Act
-    section = doc.split("### `scitex-cards summary`")[1].split("## ")[0]
+    section = doc.split("### `scitex-cards show-summary`")[1].split("## ")[0]
     # Assert
-    help_text = _help("summary")
+    help_text = _help("show-summary")
     assert "remains the follow-up now that `list-tasks` has landed" in section
 
 
@@ -259,8 +259,8 @@ def test_summary_stays_honest_case3():
     # Arrange
     # Act
     doc = _doc41()
-    section = doc.split("### `scitex-cards summary`")[1].split("## ")[0]
-    help_text = _help("summary")
+    section = doc.split("### `scitex-cards show-summary`")[1].split("## ")[0]
+    help_text = _help("show-summary")
     # Assert
     assert "--scope" in help_text
 
@@ -269,7 +269,7 @@ def test_summary_stays_honest_case4():
     # Arrange
     # Act
     doc = _doc41()
-    section = doc.split("### `scitex-cards summary`")[1].split("## ")[0]
-    help_text = _help("summary")
+    section = doc.split("### `scitex-cards show-summary`")[1].split("## ")[0]
+    help_text = _help("show-summary")
     # Assert
     assert "--assignee" in help_text

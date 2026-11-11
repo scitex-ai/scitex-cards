@@ -94,7 +94,7 @@ Today: `--by`. No additions needed.
 
 ### `scitex-cards show-summary`
 
-Today: `--scope`, `--assignee` (verified 2026-10-12 against `summary --help`). Mirroring `list-tasks`' wider filters remains the follow-up now that `list-tasks` has landed.
+Today: `--scope`, `--assignee` (see `show-summary --help`). Mirroring `list-tasks`' wider filters remains the follow-up now that `list-tasks` has landed.
 
 ## C. MCP parity gaps — CLOSED
 
