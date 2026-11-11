@@ -118,7 +118,7 @@ when every ID is already present.
                                        ▼
                   ┌──────────────────────────────────────────────┐
                   │  Every fleet agent reads scitex-cards SKILL.md│
-                  │  on boot → consults shared YAML store        │
+                  │  on boot → consults shared PostgreSQL store  │
                   │  correctly. The SSoT mandate holds.          │
                   └──────────────────────────────────────────────┘
 ```
