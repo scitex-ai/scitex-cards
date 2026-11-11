@@ -12,7 +12,7 @@ Purpose
 Operator directive — board card
 ``rec-propagate-scitex-cards-skill-into-every-agent-required-skills``: every
 fleet agent's spec.yaml must declare the scitex-cards skill IDs on its skill
-list so the agent reads the usage skill on boot and consults the shared YAML
+list so the agent reads the usage skill on boot and consults the shared PostgreSQL
 store correctly.
 
 scitex-cards can't directly edit other agents' spec.yaml files

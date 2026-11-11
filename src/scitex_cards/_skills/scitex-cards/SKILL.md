@@ -28,9 +28,16 @@ interfaces:
 
 # scitex-cards
 
-One `tasks` table is authoritative; adapters render or import it.
-`$SCITEX_STORE_DSN` identifies the deployment-selected backend. Inspect it with
-`scitex-cards resolve-store`. An unconfigured target refuses; no file is invented.
+One PostgreSQL `tasks` table is authoritative; adapters render or import it.
+Set `SCITEX_STORE_DSN` to select the intended database. When no explicit target
+is supplied, Cards delegates resolution to `scitex_dev.store.host_store`,
+including its default when the variable is absent. Installation does not
+provision a database. Inspect the resolved target with `scitex-cards resolve-store`.
+YAML task exports are interchange data, not a parallel task store.
+
+The resolver is implemented in `_store_target.resolve_store_target`; backend
+selection and file-target refusal are covered by
+`tests/scitex_cards/test__store_target.py` and `test__store_url.py`.
 
 ## ⚑ THE THREE MANDATES
 
@@ -77,7 +84,7 @@ work queue — the 7-step wake loop is in 32.
 
 **Core (01–09)**
 - [01_installation.md](01_installation.md) — install + import check
-- [02_quick-start.md](02_quick-start.md) — load → build_mermaid → render
+- [02_quick-start.md](02_quick-start.md) — read PostgreSQL cards and render their graph
 - [03_python-api.md](03_python-api.md) — public callables + schema
 - [04_cli-reference.md](04_cli-reference.md) — `scitex-cards` subcommands
 - [05_mcp-tools.md](05_mcp-tools.md) — the MCP tool surface (Convention A)
