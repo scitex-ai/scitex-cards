@@ -25,14 +25,12 @@ intransitive_verbs:
   # runnable/blocked tasks". Whitelisted via the §1/§1d escape hatch the
   # auditor itself points to, rather than renamed, because these subcommands
   # are established + operator-facing and a rename would be worse UX.
-  # `summary` remains a legacy noun-like leaf requiring separate review.
   - runnable   # `scitex-cards runnable` — list dispatchable tasks
   - blocked    # `scitex-cards blocked`  — list non-dispatchable tasks + reason
   - ci-watch   # `scitex-cards ci-watch` — poll GitHub CI (decoupled poller)
   - comment    # `scitex-cards comment`  — append a comment to a card
   - close      # `scitex-cards close`    — close / resolve a task
   - watch      # `scitex-cards watch`    — follow board changes live
-  - summary    # `scitex-cards summary`  — print a task-state summary
 
   # ── 2026-08-23 pass. Three more leaves where the token IS the verb ───────
   # Added only where the word is a real verb in this CLI's context. The test
@@ -48,10 +46,6 @@ intransitive_verbs:
                # the noun. Renaming to `<verb>-ack` would produce
                # "acknowledge-ack", which explains nothing the leaf did not
                # already say.
-  - triage     # `scitex-cards triage` — to triage is a verb in its original
-               # sense (sort by urgency and act), which is exactly what the
-               # command does to the board. The noun reading ("a triage") is
-               # the derived one.
   - serve      # `scitex-cards serve` — the hub RPC listener. Moby marks it
                # both noun and verb and the auditor asks which is meant: the
                # verb. `serve` is the established ecosystem-wide spelling for
