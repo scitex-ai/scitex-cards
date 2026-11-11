@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.56.23] - 2026-11-11
+
 - Require explicit `--yes` for Markdown `export --output`, including scripts.
   `--dry-run` previews the action without reading the store. File output creates
   a new file only: existing files, directories and symlinks are refused, and
@@ -25,6 +27,14 @@
 
 - Listen for native Window hash-change events so Board/DM links and browser
   Back/Forward update the visible pane and its title immediately.
+
+- Expose `show-summary`, `show-triage` and `skills show-manifest` as the
+  canonical read commands. Retain hidden deprecated aliases with argument
+  forwarding and stderr warnings through 0.58.
+
+- Ship the existing CLI vocabulary from its authoritative repository file so
+  installed audits recognize the same commands as source audits. Exclude
+  Sphinx builder caches from both distributions while retaining rendered docs.
 
 ## [0.56.22] - 2026-11-01
 
