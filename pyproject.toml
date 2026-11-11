@@ -491,6 +491,12 @@ artifacts = [
     "!src/scitex_cards/_sphinx_html/.doctrees/**",
 ]
 
+# Keep the repository dictionary authoritative while making its exact bytes
+# available to RECORD-verified installed CLI audits. The sdist already carries
+# the source file, so this mapping applies to both normal wheel build paths.
+[tool.hatch.build.targets.wheel.force-include]
+".scitex/dev/cli-audit-dict.yaml" = "scitex_cards/_cli_audit_dict.yaml"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # PS-211 / PS-212 test layers: `-m smoke` (fast CLI happy-path, every PR) and
