@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- Require explicit `--yes` for Markdown `export --output`, including scripts.
+  `--dry-run` previews the action without reading the store. File output creates
+  a new file only: existing files, directories and symlinks are refused, and
+  publication cannot replace a destination created concurrently. Stdout export
+  remains available without approval. Filesystems without hard-link support
+  refuse file publication.
+
+- Correct the documentation and quick-start skill to use the public PostgreSQL
+  API, current task statuses, required creation identities and scitex-sdk.
+
 - Forward the trusted internal ledger credential separately from ordinary DM
   data stores, for persistence, retry rotation and status reads. Retain the
   canonical endpoint/options checks and global reader, refuse client RPC
