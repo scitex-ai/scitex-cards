@@ -1,5 +1,7 @@
 """Actual CLI, private PostgreSQL and filesystem export boundaries."""
 
+import os
+
 import click
 import pytest
 from click.testing import CliRunner
@@ -11,19 +13,23 @@ from scitex_cards._users import register_user
 
 
 @pytest.fixture
-def saved_card(new_store, monkeypatch):
+def saved_card(new_store):
     dsn = new_store()
-    monkeypatch.setenv("SCITEX_STORE_DSN", dsn)
-    actor = register_user(kind="agent", names=["export-author"], store=dsn)
-    return add_task(
-        store=dsn,
-        assignee=actor.id,
-        created_by=actor.id,
-        id="export-safety",
-        title="Saved export",
-        status="done",
-        scope="export-tests",
-    )
+    previous = os.environ["SCITEX_STORE_DSN"]
+    os.environ["SCITEX_STORE_DSN"] = dsn
+    try:
+        actor = register_user(kind="agent", names=["export-author"], store=dsn)
+        yield add_task(
+            store=dsn,
+            assignee=actor.id,
+            created_by=actor.id,
+            id="export-safety",
+            title="Saved export",
+            status="done",
+            scope="export-tests",
+        )
+    finally:
+        os.environ["SCITEX_STORE_DSN"] = previous
 
 
 def test_stdout_export_reads_the_real_private_store(saved_card):
@@ -86,9 +92,9 @@ def test_approved_export_publishes_exact_real_store_bytes(tmp_path, saved_card):
     ) == (0, b"- [x] Saved export\n", ["tasks.md"])
 
 
-@pytest.mark.parametrize("kind", ["file", "directory", "symlink", "dangling"])
-def test_existing_destination_entries_are_preserved(tmp_path, saved_card, kind):
-    # Arrange
+@pytest.fixture(params=["file", "directory", "symlink", "dangling"])
+def existing_destination(request, tmp_path):
+    kind = request.param
     original = tmp_path / "original.md"
     original.write_bytes(b"keep original\n")
     output = tmp_path / "tasks.md"
@@ -98,9 +104,18 @@ def test_existing_destination_entries_are_preserved(tmp_path, saved_card, kind):
         output.mkdir()
     else:
         output.symlink_to(original if kind == "symlink" else tmp_path / "missing")
-    before = output.lstat()
-    expected_exit = 2 if kind == "directory" else 1
-    expected_hint = "is a directory" if kind == "directory" else "already exists"
+    return (
+        original,
+        output,
+        output.lstat().st_ino,
+        2 if kind == "directory" else 1,
+        "is a directory" if kind == "directory" else "already exists",
+    )
+
+
+def test_existing_destination_entries_are_preserved(saved_card, existing_destination):
+    # Arrange
+    original, output, inode, expected_exit, expected_hint = existing_destination
     # Act
     result = CliRunner().invoke(main, ["export", "--output", str(output), "--yes"])
     # Assert
@@ -109,7 +124,7 @@ def test_existing_destination_entries_are_preserved(tmp_path, saved_card, kind):
         original.read_bytes(),
         output.lstat().st_ino,
         expected_hint in result.output,
-    ) == (expected_exit, b"keep original\n", before.st_ino, True)
+    ) == (expected_exit, b"keep original\n", inode, True)
 
 
 def test_atomic_publication_never_replaces_an_existing_file(tmp_path):
