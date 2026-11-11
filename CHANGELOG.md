@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.56.23] - 2026-11-11
+
 - Require explicit `--yes` for Markdown `export --output`, including scripts.
   `--dry-run` previews the action without reading the store. File output creates
   a new file only: existing files, directories and symlinks are refused, and
@@ -11,6 +13,8 @@
 
 - Correct the documentation and quick-start skill to use the public PostgreSQL
   API, current task statuses, required creation identities and scitex-sdk.
+
+## [0.56.22] - 2026-11-03
 
 - Forward the trusted internal ledger credential separately from ordinary DM
   data stores, for persistence, retry rotation and status reads. Retain the
@@ -25,8 +29,6 @@
 
 - Listen for native Window hash-change events so Board/DM links and browser
   Back/Forward update the visible pane and its title immediately.
-
-## [0.56.22] - 2026-11-01
 
 - Show only the reader's actual DM conversations, send CSRF tokens for protected
   mutations, and report refused receipt updates without claiming success.
