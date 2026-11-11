@@ -23,7 +23,7 @@ interfaces:
 # scitex-cards
 
 PostgreSQL's `tasks` table is authoritative; YAML exports are interchange data.
-Set `SCITEX_STORE_DSN` for your database; `scitex-cards resolve-store` inspects
+Set `$SCITEX_STORE_DSN` for your database; `scitex-cards resolve-store` inspects
 the target. Without an explicit target, `_store_target.resolve_store_target`
 uses `scitex_dev.store.host_store`, including its default for an absent variable.
 Installation does not provision a database. Resolution and file-target checks:
