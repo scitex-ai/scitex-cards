@@ -67,7 +67,7 @@ scitex-cards list-tasks --scope ""                       # opt out of env-defaul
 scitex-cards list-tasks --assignee agent:lead            # tasks owned by the lead
 scitex-cards list-tasks --status in_progress             # what's actively being worked
 scitex-cards list-tasks --status deferred --json            # JSON for scripting
-scitex-cards summary --scope project:scitex-clew   # counts by status for one project
+scitex-cards show-summary --scope project:scitex-clew   # counts by status for one project
 ```
 
 ### 2.2 Write
@@ -307,7 +307,7 @@ scitex-cards add e1-acl "sac ACL fleet-group + grant CLI" \
 ### 7.5 "I want to see one team's progress at a glance"
 
 ```bash
-scitex-cards summary --scope project:sac
+scitex-cards show-summary --scope project:sac
 # → totals + by_status + by_scope + by_assignee, JSON-able with --json
 ```
 
@@ -321,7 +321,7 @@ the cross-HOST axis. With both, "every task on every host" is just
 # On any host, after a sync:
 scitex-cards sync-store --apply             # 🟠 PHASE-2 — pull/push the state repo
 scitex-cards list-tasks --scope ''          # the full kushizashi view (no scope filter)
-scitex-cards summary --scope ''       # numeric digest of the same
+scitex-cards show-summary --scope ''       # numeric digest of the same
 ```
 
 Slice the kushizashi view by host with the `host:<hostname>` scope label

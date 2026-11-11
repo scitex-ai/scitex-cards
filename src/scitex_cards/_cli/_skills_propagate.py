@@ -12,7 +12,7 @@ Purpose
 Operator directive — board card
 ``rec-propagate-scitex-cards-skill-into-every-agent-required-skills``: every
 fleet agent's spec.yaml must declare the scitex-cards skill IDs on its skill
-list so the agent reads the usage skill on boot and consults the shared YAML
+list so the agent reads the usage skill on boot and consults the shared PostgreSQL
 store correctly.
 
 scitex-cards can't directly edit other agents' spec.yaml files
@@ -40,7 +40,7 @@ _DEFAULT_SKILL_FIELD = "metadata.labels.skills"
 
 
 # --------------------------------------------------------------------------- #
-# Manifest helpers — shared with the `skills manifest` introspection verb.    #
+# Manifest helpers — shared with the `skills show-manifest` introspection verb.    #
 # --------------------------------------------------------------------------- #
 
 
@@ -71,9 +71,7 @@ def load_manifest():
     with path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
     if not isinstance(data, dict):
-        raise ValueError(
-            f"manifest root must be a mapping, got {type(data).__name__}"
-        )
+        raise ValueError(f"manifest root must be a mapping, got {type(data).__name__}")
     return data
 
 
@@ -212,22 +210,22 @@ def propagate_one(spec_path, canonical_ids, field, write):
 
 
 def build_manifest_cmd():
-    """Return the ``skills manifest`` Click command."""
+    """Return the ``skills show-manifest`` Click command."""
 
     @click.command(
-        "manifest",
+        "show-manifest",
         **spec_command_kwargs(
             summary="Print the canonical skill-ID manifest.",
             description=(
                 "The skills that should appear in every fleet agent's "
                 "required_skills list, per _skills/manifest.yaml.",
             ),
-            examples=(("{prog} skills manifest --json", "Machine-readable manifest."),),
+            examples=(
+                ("{prog} skills show-manifest --json", "Machine-readable manifest."),
+            ),
         ),
     )
-    @click.option(
-        "--json", "as_json", is_flag=True, help="Emit machine-readable JSON."
-    )
+    @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
     def manifest_cmd(as_json: bool) -> None:
         path = manifest_path()
         data = load_manifest()
@@ -251,7 +249,9 @@ def build_propagate_cmd():
     @click.command(
         "propagate",
         **spec_command_kwargs(
-            summary="Append canonical scitex-cards skill IDs to every agent's spec.yaml.",
+            summary=(
+                "Append canonical scitex-cards skill IDs to every agent's spec.yaml."
+            ),
             description=(
                 "Fleet-wide required_skills propagation. Default field "
                 "is `metadata.labels.skills` (v3 CSV) — use --field to "
@@ -268,7 +268,7 @@ def build_propagate_cmd():
                     "{prog} skills propagate "
                     "--agents-dir ~/.scitex/agent-container/agents -y",
                     "Apply the propagation.",
-        ),
+                ),
             ),
         ),
     )
@@ -300,7 +300,9 @@ def build_propagate_cmd():
         help="Skip confirmation. Required when not --dry-run.",
     )
     @click.option(
-        "--json", "as_json", is_flag=True,
+        "--json",
+        "as_json",
+        is_flag=True,
         help="Emit per-file outcomes as JSON.",
     )
     def propagate_cmd(
@@ -316,8 +318,7 @@ def build_propagate_cmd():
         canonical = canonical_skill_ids()
         if not canonical:
             raise click.ClickException(
-                "scitex-cards manifest has no skills — refusing to "
-                "propagate nothing."
+                "scitex-cards manifest has no skills — refusing to propagate nothing."
             )
 
         root = Path(agents_dir).expanduser()
@@ -328,9 +329,7 @@ def build_propagate_cmd():
         if not spec_files:
             click.echo(f"# no spec.yaml files found under {root}", err=True)
             if as_json:
-                click.echo(
-                    json.dumps({"results": [], "canonical": canonical})
-                )
+                click.echo(json.dumps({"results": [], "canonical": canonical}))
             return
 
         if not dry_run and not assume_yes and _sys.stdin.isatty():
@@ -342,9 +341,7 @@ def build_propagate_cmd():
         results = []
         for spec_path in spec_files:
             try:
-                outcome = propagate_one(
-                    spec_path, canonical, field, write=not dry_run
-                )
+                outcome = propagate_one(spec_path, canonical, field, write=not dry_run)
             except Exception as exc:  # noqa: BLE001 — surface path
                 outcome = {
                     "path": str(spec_path),
@@ -355,15 +352,11 @@ def build_propagate_cmd():
             results.append(outcome)
 
         if as_json:
-            click.echo(
-                json.dumps({"results": results, "canonical": canonical})
-            )
+            click.echo(json.dumps({"results": results, "canonical": canonical}))
             return
 
         changed = sum(1 for r in results if r.get("changed"))
-        noop = sum(
-            1 for r in results if not r.get("changed") and "error" not in r
-        )
+        noop = sum(1 for r in results if not r.get("changed") and "error" not in r)
         errors = sum(1 for r in results if "error" in r)
         suffix = " (DRY-RUN — no disk changes)" if dry_run else ""
         click.echo(

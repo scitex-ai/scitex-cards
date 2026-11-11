@@ -10,7 +10,7 @@
 # Operator directive (board card
 # ``rec-propagate-scitex-cards-skill-into-every-agent-required-skills``):
 # every agent must read the scitex-cards usage skill on boot so they
-# consult the shared YAML store correctly — no parallel card formats,
+# consult the shared PostgreSQL store correctly — no parallel card formats,
 # no per-agent invention of board conventions.
 #
 # scitex-cards can't directly edit other agents' spec.yaml files
@@ -20,13 +20,13 @@
 #      propagated. agent-container's spec-generation script reads it
 #      to bake the IDs into every agent's required_skills.
 #
-#   2. ``scitex-cards skills propagate <agents-dir>`` is the operator-
+#   2. ``scitex-cards skills propagate --agents-dir <dir>`` is the operator-
 #      facing CLI verb that idempotently appends these IDs to each
 #      spec.yaml's skill list (round-trip via ruamel.yaml so comments
 #      survive).
 #
 #   3. The runbook
-#      ``src/scitex_cards/_skills/scitex-cards/21_fleet-mcp-rollout.md``
+#      ``src/scitex_cards/_skills/scitex-cards/22_skills-propagation.md``
 #      describes the end-to-end propagation flow.
 #
 # Format
@@ -46,9 +46,9 @@ version: 1
 skills:
   - id: scitex-cards
     description: |
-      Canonical YAML task store + the fleet-wide mandate that every
-      durable / cross-session / cross-agent card writes to it. Read
-      this on every agent boot to learn the store-resolution chain,
-      the write protocol, and the SSoT write-here rule.
+      Shared PostgreSQL task store for durable, cross-session and
+      cross-agent tracking. Read on agent boot for store configuration,
+      supported interfaces and the write protocol. YAML files describe
+      skills and agent specifications; task exports are interchange data.
     leaf: SKILL.md
 # EOF

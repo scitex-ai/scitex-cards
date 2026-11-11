@@ -466,6 +466,9 @@ exclude = [
 # the BUILT WHEEL, which is the only check that spans both.
 artifacts = [
     "src/scitex_cards/_sphinx_html/**/*",
+    # Artifacts ignore `exclude`; negate the builder cache after the HTML glob.
+    # https://hatch.pypa.io/latest/config/build/#artifacts
+    "!src/scitex_cards/_sphinx_html/.doctrees/**",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -485,6 +488,7 @@ artifacts = [
     # green and the wheel ships no docs. The release workflow asserts on the
     # built wheel for that reason.
     "src/scitex_cards/_sphinx_html/**/*",
+    "!src/scitex_cards/_sphinx_html/.doctrees/**",
 ]
 
 [tool.pytest.ini_options]
