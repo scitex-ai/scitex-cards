@@ -1,49 +1,42 @@
 Quick Start
 ===========
 
-The store is **PostgreSQL on 55432** (``$SCITEX_STORE_DSN``); unset raises.
-Add a card and read back the in-progress list:
+Connect to a configured PostgreSQL store before running these examples. Set
+``SCITEX_STORE_DSN`` explicitly for the intended database. Store discovery is
+provided by scitex-dev; these commands do not create or provision a database.
+
+Read existing cards through the public Python API:
 
 .. code-block:: python
 
     import scitex_cards as cards
 
-    cards.add_task(None, id="design", title="Design", status="done")
-    cards.add_task(
-        None, id="build", title="Build",
-        status="in_progress", depends_on=["design"],
-    )
-    rows = cards.list_tasks(None, status="in_progress")
+    rows = cards.list_tasks(status="in_progress")
+    print(f"{len(rows)} cards in progress")
 
-Render the store's dependency graph to a PNG from Python:
+Creating cards also requires a registered assignee and a creator identity.
+See :doc:`api/scitex_cards` for ``add_task`` and its identity arguments.
 
-.. code-block:: python
-
-    import scitex_cards as cards
-
-    rows = cards.list_tasks(None, status="in_progress")
-    from scitex_cards._diagram import build_mermaid, render
-
-    mermaid_src = build_mermaid(rows)
-    engine = render(mermaid_src, "tasks.png")   # 'mmdc' or 'kroki'
-
-…or from the shell:
+Inspect the dependency graph without invoking a renderer:
 
 .. code-block:: bash
 
-    # store: $SCITEX_STORE_DSN (PostgreSQL on 55432); unset raises
+    scitex-cards render-graph --print-mermaid
+    scitex-cards list-tasks --json
+
+To write a PNG, choose a destination and run:
+
+.. code-block:: bash
+
     scitex-cards render-graph -o tasks.png
 
-    # inspect the generated mermaid without rendering
-    scitex-cards render-graph --print-mermaid
-
-    # list the resolved tasks (machine-readable with --json)
-    scitex-cards list-tasks --json
+Rendering uses local ``mmdc`` when available, with a network fallback to
+``kroki.io``. See :doc:`installation` for rendering requirements.
 
 Task schema
 -----------
 
-Each task in the ``tasks:`` list:
+Cards returned by ``list_tasks`` include these fields:
 
 .. list-table::
    :header-rows: 1
@@ -60,7 +53,13 @@ Each task in the ``tasks:`` list:
      - short label
    * - ``status``
      - yes
-     - ``goal`` | ``pending`` | ``in_progress`` | ``blocked`` | ``done`` | ``deferred`` | ``failed``
+     - ``goal`` | ``in_progress`` | ``blocked`` | ``done`` | ``deferred`` | ``failed`` | ``cancelled``
+   * - ``assignee``
+     - yes for creation
+     - registered user responsible for the card
+   * - ``created_by``
+     - yes for creation
+     - creator identity; may be resolved from ``SCITEX_CARDS_AGENT_ID``
    * - ``repo``
      - no
      - owning repo / area
@@ -83,13 +82,12 @@ Each task in the ``tasks:`` list:
 Where your task data lives
 --------------------------
 
-``scitex-cards`` ships only the mechanism — no task content. The store is
-**PostgreSQL on 55432**, and there is ONE store identity:
+Card data lives in PostgreSQL. An explicit ``store=`` argument selects the
+store for a Python call. Otherwise scitex-dev's shared-store resolver selects
+the database, including ``SCITEX_STORE_DSN`` configuration. A project directory
+does not supply a separate Cards task store.
 
-1. an explicit ``store`` / ``--store`` argument (wins even if missing)
-2. ``$SCITEX_STORE_DSN`` — e.g. ``postgresql://scitex_cards@127.0.0.1:55432/scitex_cards``
-
-Nothing else. Unset **raises**. There is deliberately no second-engine tier, no project
-scope (a per-repo store meant one agent saw a different board depending on which
-directory it started in), and no bundled ``examples/tasks.yaml`` fallback. Two
-backends would be two ways to be wrong about which board you are reading.
+Set ``SCITEX_STORE_DSN`` to the intended PostgreSQL connection string before
+starting the CLI or browser application. Database credentials, provisioning
+and access permissions are deployment configuration. YAML exports are for
+backup/interchange; they are not a second runtime backend.

@@ -1,51 +1,43 @@
 ---
 description: |
   [TOPIC] Quick Start
-  [DETAILS] 30-second tour — load the task store, build mermaid source,
-  render to PNG (Python), plus the equivalent CLI one-liners.
+  [DETAILS] Read configured PostgreSQL cards through the public Python API
+  and CLI; inspect the dependency graph and identify rendering requirements.
 tags: [scitex-cards-quick-start]
 ---
 
 # Quick Start
 
+Configure `SCITEX_STORE_DSN` for the intended PostgreSQL database before
+running these examples. Store discovery belongs to scitex-dev; installation
+does not provision a database. YAML exports are backup/interchange data.
+
 ## Python
 
 ```python
-# Audit §6 narrows the top-level surface to the six task-store APIs that
-# match MCP tool names 1:1 (add_task/update_task/complete_task/list_tasks/
-# summarize_tasks/resolve_store). The mermaid + render + model helpers
-# remain available via submodule imports.
-from scitex_cards._model   import load_tasks
-from scitex_cards._diagram import build_mermaid
-from scitex_cards._diagram  import render
+import scitex_cards as cards
 
-tasks = load_tasks()                       # validates id / title / status
-mermaid_src = build_mermaid(tasks)         # store -> flowchart TB
-engine = render(mermaid_src, "tasks.png")
-print(f"rendered via {engine}")            # 'mmdc' or 'kroki'
+rows = cards.list_tasks(status="in_progress")
+print(f"{len(rows)} cards in progress")
 ```
 
-A minimal task list (the shape `load_tasks` returns):
-
-```
-tasks:
-  - {id: design, title: Design, status: done}
-  - {id: build, title: Build, status: in_progress, depends_on: [design]}
-  - {id: ship, title: Ship, status: goal, depends_on: [build]}
-```
+Creating a card also requires a registered assignee and a creator identity.
+See the public `add_task` signature in the API reference before writing data.
+The current statuses are `goal`, `in_progress`, `blocked`, `done`, `deferred`,
+`failed` and `cancelled`; `pending` is rejected.
 
 ## CLI
 
 ```bash
-# default store: $SCITEX_STORE_DSN, else the user-canonical database
-scitex-cards render-graph -o tasks.png
-
-# inspect the generated mermaid without rendering
+# inspect the generated Mermaid without rendering or writing a file
 scitex-cards render-graph --print-mermaid
 
-# list the resolved tasks (machine-readable with --json)
+# list the resolved tasks (machine-readable)
 scitex-cards list-tasks --json
 
-# read-only dependency-graph web board (needs the [web] extra)
+# start the browser board; Django and scitex-sdk are core dependencies
 scitex-cards board --port 8051
 ```
+
+To render a PNG, use `scitex-cards render-graph -o tasks.png`. This writes a
+file and uses local `mmdc` when available, with a network fallback to `kroki.io`.
