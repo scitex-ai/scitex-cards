@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI verb ``scitex-cards triage`` — the backlog-consumption payload.
+"""CLI verb ``scitex-cards show-triage`` — the backlog-consumption payload.
 
 READ-ONLY. Draws an owner's pick-for-action sample (recency-weighted, see
 :mod:`scitex_cards._backlog_triage`) plus their expired set, and prints it.
@@ -9,7 +9,7 @@ the consumer decides, this verb only puts the decision in front of them.
 
 Primary consumer: a short-lived twin agent (sac concept, operator 2026-07-10)
 spawned from its parent with the PARENT's ``SCITEX_CARDS_AGENT_ID``, which runs
-``scitex-cards triage --mine --json``, decides each drawn card (start it, name
+``scitex-cards show-triage --mine --json``, decides each drawn card (start it, name
 its blocker, cancel it, or keep it), and exits. The parent never stops.
 """
 
@@ -27,15 +27,17 @@ from .._backlog_triage import (
 )
 from .._model import load_tasks
 from .._paths import resolve_tasks_path
+from ._compat import deprecated_alias
 
 
 def register(main: click.Group) -> None:
-    """Attach the ``triage`` verb to the root group."""
+    """Attach the read action and its legacy compatibility route."""
     main.add_command(triage_cmd)
+    deprecated_alias(main, "triage", target="show-triage", remove_in="0.58")
 
 
 @click.command(
-    "triage",
+    "show-triage",
     help=(
         "Draw an owner's deferred-backlog triage payload (read-only).\n\n"
         "Two sections:\n"
@@ -46,7 +48,7 @@ def register(main: click.Group) -> None:
         "Keep-deferred does NOT reset a card's age; the clock reads\n"
         "deferred_at, stamped once on entry into the backlog.\n\n"
         "Example:\n"
-        "  scitex-cards triage --mine --json"
+        "  scitex-cards show-triage --mine --json"
     ),
 )
 @click.option(

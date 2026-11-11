@@ -21,13 +21,17 @@ Extras
    * - Extra
      - Adds
    * - ``web``
-     - Django + scitex-app / scitex-ui for ``scitex-cards board``
+     - Compatibility extra for Django + scitex-sdk; both are core dependencies
    * - ``docs``
      - Sphinx + RTD theme for building this documentation
    * - ``dev``
      - pytest, pytest-cov, scitex-dev (test + audit toolchain)
    * - ``all``
-     - everything above
+     - ``dev``, ``docs``, ``mcp``, ``web``, ``currency`` and ``postgres``
+
+Django, scitex-sdk, FastMCP and the PostgreSQL driver are core dependencies.
+The ``web``, ``mcp`` and ``postgres`` extras remain accepted compatibility names.
+Installation does not provision a PostgreSQL server or configure access.
 
 Rendering backends
 ------------------

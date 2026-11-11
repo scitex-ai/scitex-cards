@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""§1a ``skills`` group — list / get / install the bundled agent skills.
-
-Self-contained: walks the package's own ``_skills/scitex-cards/`` directory; no
-scitex-dev runtime dependency.
-"""
+"""Browse package-owned skills with shared scitex-dev CLI helpers."""
 
 from __future__ import annotations
 
@@ -13,37 +9,20 @@ import json
 import click
 import scitex_logging as slogging
 
-from ._compat import spec_command_kwargs, spec_group_kwargs
+from ._compat import deprecated_alias, spec_command_kwargs, spec_group_kwargs
 
 logger = slogging.getLogger(__name__)
 
 _SKILLS_PKG = "scitex-cards"
 
-#: The pre-rename directory name. This is an ON-DISK PATH that other packages
-#: resolve directly, so dropping it outright is a breaking change to something
-#: nobody declared — it is a MIGRATION, not a rename. Kept as a read fallback
-#: for the transition window: a checkout or wheel that still carries the old
-#: directory keeps working, and nothing new is written under it.
-_SKILLS_PKG_LEGACY = "scitex-cards"
-
 
 def _skills_root():
-    """Resolve the bundled ``_skills/scitex-cards/`` directory.
-
-    Falls back to the legacy directory ONLY when the current one is absent, so
-    a half-migrated tree degrades to "still works" instead of "no skills found".
-    """
+    """Return the skill directory bundled with this owning package."""
     from pathlib import Path
 
     import scitex_cards
 
-    base = Path(scitex_cards.__file__).parent / "_skills"
-    root = base / _SKILLS_PKG
-    if not root.is_dir():
-        legacy = base / _SKILLS_PKG_LEGACY
-        if legacy.is_dir():
-            return legacy
-    return root
+    return Path(scitex_cards.__file__).parent / "_skills" / _SKILLS_PKG
 
 
 def _list_skill_files(root):
@@ -58,7 +37,7 @@ def _list_skill_files(root):
     **spec_group_kwargs(
         summary="List / get / install the bundled agent skills.",
         command_categories=[
-            ("Core", ["list", "get", "install", "manifest", "propagate"])
+            ("Core", ["list", "get", "install", "show-manifest", "propagate"])
         ],
     ),
 )
@@ -227,13 +206,14 @@ def skills_install_cmd(
 def register(group: click.Group) -> None:
     """Attach the ``skills`` group to the root ``group``.
 
-    The ``manifest`` + ``propagate`` subcommands live in
+    The ``show-manifest`` + ``propagate`` subcommands live in
     :mod:`scitex_cards._cli._skills_propagate` (kept separate so this module
     stays small + focused on the bundled-skills surface).
     """
     from ._skills_propagate import build_manifest_cmd, build_propagate_cmd
 
     skills_grp.add_command(build_manifest_cmd())
+    deprecated_alias(skills_grp, "manifest", target="show-manifest", remove_in="0.58")
     skills_grp.add_command(build_propagate_cmd())
     group.add_command(skills_grp)
 

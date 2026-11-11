@@ -935,7 +935,7 @@ def test_summary_exits_zero(postgres_dsn):
         ],
     )
     # Act
-    result = runner.invoke(main, ["summary", "--json"])
+    result = runner.invoke(main, ["show-summary", "--json"])
     # Assert
     assert result.exit_code == 0, result.output
 
@@ -956,7 +956,7 @@ def test_summary_emits_total(postgres_dsn):
             "done",
         ],
     )
-    result = runner.invoke(main, ["summary", "--json"])
+    result = runner.invoke(main, ["show-summary", "--json"])
     # Act
     info = json.loads(result.output.strip())
     # Assert
@@ -979,7 +979,7 @@ def test_summary_emits_done_count(postgres_dsn):
             "done",
         ],
     )
-    result = runner.invoke(main, ["summary", "--json"])
+    result = runner.invoke(main, ["show-summary", "--json"])
     # Act
     info = json.loads(result.output.strip())
     # Assert
@@ -1002,7 +1002,7 @@ def test_summary_emits_deferred_count(postgres_dsn):
             "done",
         ],
     )
-    result = runner.invoke(main, ["summary", "--json"])
+    result = runner.invoke(main, ["show-summary", "--json"])
     # Act
     info = json.loads(result.output.strip())
     # Assert

@@ -123,9 +123,7 @@ jobs:
         run: |
           set -euo pipefail
           uv venv --python 3.12 .venv
-          uv pip install --python .venv/bin/python -e ".[all,dev]" \
-            || uv pip install --python .venv/bin/python -e ".[dev]" \
-            || uv pip install --python .venv/bin/python -e .
+          uv pip install --python .venv/bin/python -e ".[all,dev]"
           uv pip install --python .venv/bin/python "scitex-dev[cli-audit]>=0.17.14"
 
       - name: Run scitex-dev ecosystem audit-all (full, no grandfathering)

@@ -18,12 +18,13 @@ scitex-cards --help-recursive    # flattened help for every subcommand
 |---|---|
 | `scitex-cards render-graph [-o PNG] [--tasks PATH] [--print-mermaid]` | Render the dependency graph to PNG (or print mermaid source). |
 | `scitex-cards list-tasks [--tasks PATH] [--scope X] [--assignee X] [--status X] [--json]` | List resolved tasks (filter by scope / assignee / status). |
-| `scitex-cards export --format markdown [--detail title\|summary\|full] [--group-by status\|project\|assignee\|none] [--status X] [--project X] [--assignee X] [--scope X] [--hierarchy] [--output FILE]` | Deterministic Markdown task list; stdout unless `--output` is supplied. |
+| `scitex-cards export --format markdown [--detail title\|summary\|full] [--group-by status\|project\|assignee\|none] [--status X] [--project X] [--assignee X] [--scope X] [--hierarchy] [--output FILE --yes] [--dry-run]` | Deterministic Markdown task list; stdout by default. New file output requires `--yes`; `--dry-run` previews without reading the store or writing files. Existing destinations are refused. |
 | `scitex-cards board [--port N] [--tasks PATH] [--no-browser]` | Launch the read-only web board (needs the `[web]` extra). |
 | `scitex-cards add ID TITLE [--scope X] [--status X] [--assignee X] [--priority N] [--note ...] [--repo X] [--dry-run] [-y]` | Append a new task. |
 | `scitex-cards update TASK_ID [--title X] [--status X] [--scope X] [...] [--dry-run] [-y]` | Mutate fields of an existing task. |
 | `scitex-cards done TASK_ID [--by AGENT]` | Mark done + stamp `_log_meta.completed_{at,by}`. |
-| `scitex-cards summary [--scope X] [--assignee X] [--json]` | Counts by status / scope / assignee. |
+| `scitex-cards show-summary [--scope X] [--assignee X] [--json]` | Counts by status / scope / assignee. |
+| `scitex-cards show-triage [--agent X \| --mine] [--n N] [--json]` | Read backlog candidates and expired cards without changing them. |
 | `scitex-cards resolve-store [--tasks PATH] [--json]` | Print the resolved store path + precedence chain. |
 | `scitex-cards init-store [--shared\|--project] [--dry-run] [-y]` | Materialize an empty `tasks: []` store at the chosen scope. |
 | `scitex-cards sync-store [--dry-run\|--apply] [--remote X] [-y]` | Phase-1 stub — Phase-2 will `git pull --rebase --autostash && git push` the user-scope store. |
@@ -47,3 +48,7 @@ Every command resolves the task store the same way: an explicit path →
 [20_env-vars.md](20_env-vars.md).
 
 See `general/03_interface_02_cli/` for the ecosystem-wide CLI grammar.
+
+`summary` and `triage` remain hidden compatibility aliases until 0.58. They
+forward to `show-summary` and `show-triage`, with a deprecation warning on
+stderr; JSON remains on stdout.

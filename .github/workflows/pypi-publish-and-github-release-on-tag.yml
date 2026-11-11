@@ -169,9 +169,7 @@ jobs:
         run: |
           set -euo pipefail
           uv venv --python ${{ matrix.python-version }} .venv
-          uv pip install --python .venv/bin/python -e ".[all,dev]" \
-            || uv pip install --python .venv/bin/python -e ".[dev]" \
-            || uv pip install --python .venv/bin/python -e .
+          uv pip install --python .venv/bin/python -e ".[all,dev]"
           # Keep release testing on the same proven execution path as the
           # required pytest matrix. xdist is explicit because nothing in this
           # package's runtime dependencies promises to install it.

@@ -1,9 +1,11 @@
 """Sphinx configuration for scitex-cards documentation."""
 
-import os
+import importlib
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.abspath("../../src"))
+_SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src"
+sys.path.insert(0, str(_SOURCE_ROOT))
 
 # -- Project information -----------------------------------------------------
 
@@ -11,12 +13,15 @@ project = "scitex-cards"
 copyright = "2026, Yusuke Watanabe"
 author = "Yusuke Watanabe"
 
-try:
-    from importlib.metadata import version as _get_version
-
-    release = _get_version("scitex-cards")
-except Exception:
-    release = "0.2.0"
+# The public version API follows the source tree, including editable checkouts.
+# Refuse a preloaded installed package rather than silently documenting it.
+_package = importlib.import_module("scitex_cards")
+if not Path(_package.__file__).resolve().is_relative_to(_SOURCE_ROOT):
+    raise RuntimeError(
+        "Sphinx loaded scitex_cards outside this source tree; build in a fresh "
+        "Python process with this checkout installed for documentation."
+    )
+release = _package.__version__
 
 # -- General configuration ---------------------------------------------------
 

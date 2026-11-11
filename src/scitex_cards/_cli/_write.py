@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Mutation-side CLI verbs: add, done, summary (+ registration wiring).
+"""CLI verbs: add, done, show-summary (+ registration wiring).
 
 The ``update`` verb lives in the sibling ``_update.py`` (pure move; the
 one-verb-per-file precedent) and is registered from ``register()`` below.
@@ -32,7 +32,7 @@ import click
 from .. import _store
 from .._model import VALID_BLOCKERS, VALID_KINDS, VALID_STATUSES
 from .._store_target import store_label
-from ._compat import spec_command_kwargs
+from ._compat import deprecated_alias, spec_command_kwargs
 
 # --------------------------------------------------------------------------- #
 # Shared option decorators                                                    #
@@ -399,14 +399,14 @@ def done_cmd(task_id, by, as_json) -> None:
 # summary                                                                     #
 # --------------------------------------------------------------------------- #
 @click.command(
-    "summary",
+    "show-summary",
     **spec_command_kwargs(
         summary="Print task counts by status / scope / assignee.",
         description=(
             "Numeric progress report over the resolved store, optionally "
             "restricted to one scope/assignee before counting."
         ),
-        examples=(("{prog} summary --json", "Structured counts."),),
+        examples=(("{prog} show-summary --json", "Structured counts."),),
     ),
 )
 @click.option("--scope", default=None, help="Filter to this scope before counting.")
@@ -437,7 +437,7 @@ def summary_cmd(scope, assignee, as_json) -> None:
 # Registration                                                                #
 # --------------------------------------------------------------------------- #
 def register(main: click.Group) -> None:
-    """Attach the Phase-1 mutation verbs (add / update / done / summary).
+    """Attach mutation verbs and the show-summary reader.
 
     The admin verbs (`resolve-store` / `init-store` / `sync-store`) and the
     `list_tasks_filtered` helper live in the sibling `_admin.py` module — see
@@ -449,7 +449,8 @@ def register(main: click.Group) -> None:
 
     main.add_command(add_cmd, name="add")
     main.add_command(done_cmd, name="done")
-    main.add_command(summary_cmd, name="summary")
+    main.add_command(summary_cmd)
+    deprecated_alias(main, "summary", target="show-summary", remove_in="0.58")
     _update.register(main)
     _comment.register(main)
     _close.register(main)

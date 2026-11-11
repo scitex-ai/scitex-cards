@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.56.23] - 2026-11-11
+
+- Require explicit `--yes` for Markdown `export --output`, including scripts.
+  `--dry-run` previews the action without reading the store. File output creates
+  a new file only: existing files, directories and symlinks are refused, and
+  publication cannot replace a destination created concurrently. Stdout export
+  remains available without approval. Filesystems without hard-link support
+  refuse file publication.
+
+- Correct the documentation and quick-start skill to use the public PostgreSQL
+  API, current task statuses, required creation identities and scitex-sdk.
+
 - Forward the trusted internal ledger credential separately from ordinary DM
   data stores, for persistence, retry rotation and status reads. Retain the
   canonical endpoint/options checks and global reader, refuse client RPC
@@ -15,6 +27,14 @@
 
 - Listen for native Window hash-change events so Board/DM links and browser
   Back/Forward update the visible pane and its title immediately.
+
+- Expose `show-summary`, `show-triage` and `skills show-manifest` as the
+  canonical read commands. Retain hidden deprecated aliases with argument
+  forwarding and stderr warnings through 0.58.
+
+- Ship the existing CLI vocabulary from its authoritative repository file so
+  installed audits recognize the same commands as source audits. Exclude
+  Sphinx builder caches from both distributions while retaining rendered docs.
 
 ## [0.56.22] - 2026-11-01
 
