@@ -1,17 +1,11 @@
 ---
 name: scitex-cards
 description: |
-  [WHAT] Canonical task store with pluggable adapters — validate
-  task rows (id/title/status + depends_on/blocks/priority/parent) and
-  render them as a mermaid dependency graph (PNG), a read-only React-Flow web
-  board, or a plain task listing.
-  [WHEN] **Use scitex-cards for EVERY durable / cross-session / cross-agent
-  card.** When the user wants to "track tasks as a dependency graph",
-  "render my card as a diagram", "show what blocks what", "list my
-  tasks", or "launch the card board" — AND any time YOU are
-  about to write a private CARD / FUTURE / notes file in your repo's
-  `GITIGNORED/` for something that should persist or be operator- or
-  peer-visible.
+  [WHAT] PostgreSQL task store with dependency validation, Mermaid graphs,
+  a web board and task listings.
+  [WHEN] Use for EVERY durable, cross-session or cross-agent card: task
+  tracking, dependencies, diagrams and the board. Before writing private
+  task notes in GITIGNORED, record durable or peer-visible work here.
   [HOW] `import scitex_cards as card` for the Python API; `scitex-cards --help`
   for the CLI; **or the MCP tools** (`add_task`, `update_task`,
   `comment_task`, `list_tasks` — see [05_mcp-tools.md](05_mcp-tools.md)) —
@@ -28,15 +22,11 @@ interfaces:
 
 # scitex-cards
 
-One PostgreSQL `tasks` table is authoritative; adapters render or import it.
-Set `SCITEX_STORE_DSN` to select the intended database. When no explicit target
-is supplied, Cards delegates resolution to `scitex_dev.store.host_store`,
-including its default when the variable is absent. Installation does not
-provision a database. Inspect the resolved target with `scitex-cards resolve-store`.
-YAML task exports are interchange data, not a parallel task store.
-
-The resolver is implemented in `_store_target.resolve_store_target`; backend
-selection and file-target refusal are covered by
+PostgreSQL's `tasks` table is authoritative; YAML exports are interchange data.
+Set `SCITEX_STORE_DSN` for your database; `scitex-cards resolve-store` inspects
+the target. Without an explicit target, `_store_target.resolve_store_target`
+uses `scitex_dev.store.host_store`, including its default for an absent variable.
+Installation does not provision a database. Resolution and file-target checks:
 `tests/scitex_cards/test__store_target.py` and `test__store_url.py`.
 
 ## ⚑ THE THREE MANDATES
