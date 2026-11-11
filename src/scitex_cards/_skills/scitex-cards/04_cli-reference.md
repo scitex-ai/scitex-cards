@@ -24,7 +24,7 @@ scitex-cards --help-recursive    # flattened help for every subcommand
 | `scitex-cards update TASK_ID [--title X] [--status X] [--scope X] [...] [--dry-run] [-y]` | Mutate fields of an existing task. |
 | `scitex-cards done TASK_ID [--by AGENT]` | Mark done + stamp `_log_meta.completed_{at,by}`. |
 | `scitex-cards show-summary [--scope X] [--assignee X] [--json]` | Counts by status / scope / assignee. |
-| `scitex-cards show-triage [--agent X | --mine] [--n N] [--json]` | Read backlog candidates and expired cards without changing them. |
+| `scitex-cards show-triage [--agent X \| --mine] [--n N] [--json]` | Read backlog candidates and expired cards without changing them. |
 | `scitex-cards resolve-store [--tasks PATH] [--json]` | Print the resolved store path + precedence chain. |
 | `scitex-cards init-store [--shared\|--project] [--dry-run] [-y]` | Materialize an empty `tasks: []` store at the chosen scope. |
 | `scitex-cards sync-store [--dry-run\|--apply] [--remote X] [-y]` | Phase-1 stub — Phase-2 will `git pull --rebase --autostash && git push` the user-scope store. |
