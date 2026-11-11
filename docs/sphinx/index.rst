@@ -1,17 +1,15 @@
 .. scitex-cards documentation master file
 
-scitex-cards — canonical YAML task store with pluggable adapters
-===============================================================
+scitex-cards — research tasks and agent conversations
+=====================================================
 
-**scitex-cards** keeps your tasks in one validated YAML store (a top-level
-``tasks:`` list) and renders that single source of truth through pluggable
-adapters: a mermaid dependency-graph PNG, a read-only React-Flow web board,
-and a plain task listing. Part of `SciTeX <https://scitex.ai>`_.
+**scitex-cards** manages research tasks, agent conversations and progress in
+PostgreSQL. Python, CLI, MCP and the browser application expose the same
+package-owned operations. Part of `SciTeX <https://scitex.ai>`_.
 
-The store is **PostgreSQL on 55432** and there is ONE store identity: an explicit
-``store`` argument → ``$SCITEX_STORE_DSN``. Nothing else — unset RAISES. There is
-deliberately no second-engine tier, no project scope and no bundled-example fallback: an
-unconfigured store is a configuration error, not a cue to invent a board.
+Configure ``SCITEX_STORE_DSN`` for your PostgreSQL store before running the
+examples. They read an existing store; they do not provision a database.
+YAML export is a backup/interchange format, not a second runtime backend.
 
 Interfaces
 ----------
@@ -27,7 +25,7 @@ Interfaces
    * - CLI
      - ``scitex-cards <command>`` — :doc:`cli_reference`
    * - MCP
-     - AI-agent tools via fastmcp *(on the roadmap)*
+     - AI-agent tools via FastMCP; ``scitex-cards mcp start``
    * - Skills
      - AI-agent knowledge pages bundled at ``_skills/scitex-cards/``
 
@@ -59,18 +57,16 @@ Python API:
 
     import scitex_cards as cards
 
-    tasks = cards.load_tasks("tasks.yaml")    # validates id / title / status
-    mermaid_src = cards.build_mermaid(tasks)  # YAML -> flowchart TB
-    engine = cards.render(mermaid_src, "tasks.png")
-    print(f"rendered via {engine}")
+    tasks = cards.list_tasks()  # configured PostgreSQL store
+    print(f"{len(tasks)} tasks")
 
 CLI:
 
 .. code-block:: bash
 
-    scitex-cards render-graph -o tasks.png      # YAML -> dependency PNG
+    scitex-cards render-graph -o tasks.png      # store -> dependency PNG
     scitex-cards list-tasks --json              # resolved tasks, machine-readable
-    scitex-cards board --port 8051              # read-only web board (needs [web])
+    scitex-cards board --port 8051              # browser board
 
 Four Freedoms for Research
 --------------------------

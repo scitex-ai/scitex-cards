@@ -104,7 +104,6 @@ nouns:
 # is not laziness standing in for a real fix; it is the only place the missing
 # information exists.
 verb_exceptions:
-  - export  # why: read-only store serialization; --output is only a response sink.
   - stop-hook  # why: a COMPOUND NOUN — the leaf names the Claude Code "Stop
                # hook", and `stop` is its first half, not an imperative.
                #

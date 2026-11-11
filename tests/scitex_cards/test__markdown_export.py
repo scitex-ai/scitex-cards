@@ -394,6 +394,7 @@ def test_cli_output_writes_exact_markdown_bytes_to_a_file(tmp_path):
             "none",
             "--output",
             str(output),
+            "--yes",
         ],
         obj={"task_loader": load_cards},
     )
