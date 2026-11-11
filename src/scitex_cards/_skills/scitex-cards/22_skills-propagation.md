@@ -5,7 +5,7 @@ description: |
   [WHEN] Read on every agent-container update wave + every time a new
   agent is added to the fleet. This leaf documents WHY the propagation
   exists, WHAT the manifest is, and HOW to run the propagate CLI verb.
-  [HOW] `scitex-cards skills manifest` to inspect; `scitex-cards skills
+  [HOW] `scitex-cards skills show-manifest` to inspect; `scitex-cards skills
   propagate --agents-dir <dir> --dry-run` to preview; `-y` to apply.
   [DETAILS] Propagation edits each agent's `spec.yaml` skill list in place,
   so it is a bulk write across the fleet: preview with `--dry-run` and read
@@ -43,8 +43,8 @@ skill list:
 
 ```bash
 # Inspect.
-scitex-cards skills manifest          # human view
-scitex-cards skills manifest --json   # machine view
+scitex-cards skills show-manifest          # human view
+scitex-cards skills show-manifest --json   # machine view
 ```
 
 The manifest is the **single source of truth** for the skill IDs — both
@@ -142,3 +142,7 @@ when every ID is already present.
 - ``src/scitex_cards/_cli/_skills_propagate.py`` — implementation.
 - ``src/scitex_cards/_skills/manifest.yaml`` — the manifest file
   itself.
+
+The previous `skills manifest` spelling forwards to `skills show-manifest`
+with a deprecation warning on stderr. It is scheduled for removal in 0.58;
+JSON remains on stdout for existing scripts during that transition.

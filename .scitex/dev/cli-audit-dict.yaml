@@ -25,8 +25,7 @@ intransitive_verbs:
   # runnable/blocked tasks". Whitelisted via the §1/§1d escape hatch the
   # auditor itself points to, rather than renamed, because these subcommands
   # are established + operator-facing and a rename would be worse UX.
-  # (`summary`/`manifest` are the most noun-like — flagged for the operator
-  # in the PR as optional future renames; whitelisted for now to green CI.)
+  # `summary` remains a legacy noun-like leaf requiring separate review.
   - runnable   # `scitex-cards runnable` — list dispatchable tasks
   - blocked    # `scitex-cards blocked`  — list non-dispatchable tasks + reason
   - ci-watch   # `scitex-cards ci-watch` — poll GitHub CI (decoupled poller)
@@ -34,7 +33,6 @@ intransitive_verbs:
   - close      # `scitex-cards close`    — close / resolve a task
   - watch      # `scitex-cards watch`    — follow board changes live
   - summary    # `scitex-cards summary`  — print a task-state summary
-  - manifest   # `scitex-cards skills manifest` — emit the skills manifest
 
   # ── 2026-08-23 pass. Three more leaves where the token IS the verb ───────
   # Added only where the word is a real verb in this CLI's context. The test

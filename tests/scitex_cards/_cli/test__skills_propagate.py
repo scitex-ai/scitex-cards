@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for ``scitex-cards skills manifest`` + ``skills propagate``.
+"""Tests for ``scitex-cards skills show-manifest`` + ``skills propagate``.
 
 The propagate verb is the fleet-wide ``required_skills`` enrichment surface
 (board card ``rec-propagate-scitex-cards-skill-into-every-agent-required-
@@ -11,6 +11,7 @@ spec.yaml files (no mocks — STX-NM / PA-306). One assertion per test
 
 from __future__ import annotations
 
+import json
 import textwrap
 
 import yaml
@@ -22,7 +23,6 @@ from scitex_cards._cli._skills_propagate import (
     load_manifest,
     manifest_path,
 )
-
 
 # === manifest loader ========================================================
 
@@ -59,14 +59,14 @@ def test_manifest_includes_scitex_cards_skill_id():
     assert "scitex-cards" in ids
 
 
-# === `skills manifest` CLI ==================================================
+# === `skills show-manifest` CLI ==================================================
 
 
 def test_skills_manifest_cli_exit_code_zero():
     # Arrange
     runner = CliRunner()
     # Act
-    result = runner.invoke(main, ["skills", "manifest"])
+    result = runner.invoke(main, ["skills", "show-manifest"])
     # Assert
     assert result.exit_code == 0, result.output
 
@@ -75,7 +75,7 @@ def test_skills_manifest_json_includes_scitex_cards():
     # Arrange
     runner = CliRunner()
     # Act
-    result = runner.invoke(main, ["skills", "manifest", "--json"])
+    result = runner.invoke(main, ["skills", "show-manifest", "--json"])
     # Assert
     assert "scitex-cards" in result.output
 
@@ -294,3 +294,38 @@ def test_propagate_empty_dir_prints_no_specs_marker(tmp_path):
 
 
 # EOF
+
+
+def test_canonical_manifest_action_prints_real_bundled_metadata():
+    # Arrange
+    expected = yaml.safe_load(manifest_path().read_text())
+    # Act
+    result = CliRunner().invoke(main, ["skills", "show-manifest", "--json"])
+    # Assert
+    assert (result.exit_code, json.loads(result.stdout)) == (
+        0,
+        {"path": str(manifest_path()), "manifest": expected},
+    )
+
+
+def test_legacy_manifest_forwarding_keeps_json_stdout_clean(tmp_path):
+    # Arrange
+    expected = yaml.safe_load(manifest_path().read_text())
+    # Act
+    result = CliRunner().invoke(
+        main,
+        ["skills", "manifest", "--json"],
+        env={"XDG_RUNTIME_DIR": str(tmp_path)},
+    )
+    # Assert
+    assert (
+        result.exit_code,
+        json.loads(result.stdout)["manifest"],
+        "deprecated" in result.stderr,
+        "show-manifest" in result.stderr,
+    ) == (
+        0,
+        expected,
+        True,
+        True,
+    )
