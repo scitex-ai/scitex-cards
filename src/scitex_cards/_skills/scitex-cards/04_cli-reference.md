@@ -18,7 +18,7 @@ scitex-cards --help-recursive    # flattened help for every subcommand
 |---|---|
 | `scitex-cards render-graph [-o PNG] [--tasks PATH] [--print-mermaid]` | Render the dependency graph to PNG (or print mermaid source). |
 | `scitex-cards list-tasks [--tasks PATH] [--scope X] [--assignee X] [--status X] [--json]` | List resolved tasks (filter by scope / assignee / status). |
-| `scitex-cards export --format markdown [--detail title\|summary\|full] [--group-by status\|project\|assignee\|none] [--status X] [--project X] [--assignee X] [--scope X] [--hierarchy] [--output FILE]` | Deterministic Markdown task list; stdout unless `--output` is supplied. |
+| `scitex-cards export --format markdown [--detail title\|summary\|full] [--group-by status\|project\|assignee\|none] [--status X] [--project X] [--assignee X] [--scope X] [--hierarchy] [--output FILE --yes] [--dry-run]` | Deterministic Markdown task list; stdout by default. New file output requires `--yes`; `--dry-run` previews without reading the store or writing files. Existing destinations are refused. |
 | `scitex-cards board [--port N] [--tasks PATH] [--no-browser]` | Launch the read-only web board (needs the `[web]` extra). |
 | `scitex-cards add ID TITLE [--scope X] [--status X] [--assignee X] [--priority N] [--note ...] [--repo X] [--dry-run] [-y]` | Append a new task. |
 | `scitex-cards update TASK_ID [--title X] [--status X] [--scope X] [...] [--dry-run] [-y]` | Mutate fields of an existing task. |

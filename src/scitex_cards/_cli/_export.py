@@ -11,6 +11,8 @@ import click
 from .._markdown import build_markdown
 from .._store import list_tasks
 from ._compat import spec_command_kwargs
+from ._export_file import check_new_destination, write_new_document
+from ._mutating import DRY_RUN_PREFIX, dry_run_option
 
 
 @click.command(
@@ -19,7 +21,8 @@ from ._compat import spec_command_kwargs
         summary="Export tasks as a deterministic document.",
         description=(
             "Reads the resolved store and emits stable Markdown. The export is "
-            "read-only and writes to stdout unless --output is supplied."
+            "read-only for the store. Stdout is the default; creating a new "
+            "--output file requires --yes. Existing destinations are refused."
         ),
         examples=(("{prog} export --format markdown", "Write Markdown to stdout."),),
     ),
@@ -69,7 +72,15 @@ from ._compat import spec_command_kwargs
     "--output",
     type=click.Path(dir_okay=False, path_type=Path),
     default=None,
-    help="Write the document here instead of stdout.",
+    help="Create a new file here (--yes required); existing destinations are refused.",
+)
+@dry_run_option
+@click.option(
+    "--yes",
+    "-y",
+    "assume_yes",
+    is_flag=True,
+    help="Authorize creation of a new --output file; required even off-terminal.",
 )
 @click.pass_context
 def export_cmd(
@@ -83,9 +94,25 @@ def export_cmd(
     assignee: str | None,
     scope: str | None,
     output: Path | None,
+    dry_run: bool,
+    assume_yes: bool,
 ) -> None:
     """Export cards in a stable human-readable format."""
     _ = format_name
+    if output is not None:
+        check_new_destination(output)
+        if not dry_run and not assume_yes:
+            raise click.UsageError(
+                "Creating --output requires --yes; preview with --dry-run."
+            )
+    if dry_run:
+        action = (
+            f"create new file {output}"
+            if output is not None
+            else "write Markdown to stdout"
+        )
+        click.echo(f"{DRY_RUN_PREFIX} Would {action}.")
+        return
     loader = list_tasks
     if isinstance(ctx.obj, dict) and callable(ctx.obj.get("task_loader")):
         loader = ctx.obj["task_loader"]
@@ -102,7 +129,7 @@ def export_cmd(
         hierarchy=hierarchy,
     )
     if output is not None:
-        output.write_bytes(text.encode("utf-8"))
+        write_new_document(output, text.encode("utf-8"))
         return
     click.echo(text, nl=False)
 
