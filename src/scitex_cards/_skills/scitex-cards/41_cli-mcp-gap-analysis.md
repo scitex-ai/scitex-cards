@@ -92,7 +92,7 @@ Shipped filters (was Missing — every row landed):
 
 Today: `--by`. No additions needed.
 
-### `scitex-cards summary`
+### `scitex-cards show-summary`
 
 Today: `--scope`, `--assignee` (verified 2026-10-12 against `summary --help`). Mirroring `list-tasks`' wider filters remains the follow-up now that `list-tasks` has landed.
 
