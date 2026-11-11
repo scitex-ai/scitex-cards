@@ -174,13 +174,16 @@ jobs:
           # required pytest matrix. xdist is explicit because nothing in this
           # package's runtime dependencies promises to install it.
           uv pip install --python .venv/bin/python "pytest-xdist>=3.0.0"
+          # Match the shared matrix: subprocesses must find the provisioned
+          # consoles, including scitex-dev's ecosystem registry command.
+          export PATH="$PWD/.venv/bin:$PATH"
           # xdist consults psutil before sched_getaffinity for `auto`; on the
           # Spartan runners that reports the host's CPUs rather than this
           # runner's lease. Override it with the cgroup-visible affinity count,
           # exactly as the required matrix does.
           export PYTEST_XDIST_AUTO_NUM_WORKERS="$(.venv/bin/python -c 'import os; print(len(os.sched_getaffinity(0)))')"
           PKG=$(basename "$(find src -maxdepth 1 -mindepth 1 -type d ! -name '*.egg-info' | sort | head -1)")
-          .venv/bin/python -m pytest tests/ -n auto \
+          .venv/bin/python -m pytest tests/ -n auto -ra \
             --cov="src/$PKG" --cov-report=xml --cov-report=term
 
           # Known, unchanged gap: test__pg_triggers.py selects a legacy DSN
