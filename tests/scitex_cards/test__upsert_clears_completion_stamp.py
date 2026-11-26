@@ -83,6 +83,7 @@ def test_upsert_doc_records_the_clear():
     # Arrange
     # Arrange
     from scitex_cards._store_upsert import upsert_task
+
     # Act
     doc = upsert_task.__doc__ or ""
     # Assert
@@ -93,6 +94,7 @@ def test_upsert_doc_names_the_stamp():
     # Arrange
     # Arrange
     from scitex_cards._store_upsert import upsert_task
+
     # Act
     doc = upsert_task.__doc__ or ""
     # Assert
@@ -103,7 +105,11 @@ def test_clock_drops_the_stamp_on_done_to_in_progress():
     # Arrange
     from scitex_cards._store_clocks import _clear_completion_stamp_on_leaving_done
 
-    task = {"id": "x", "status": "in_progress", "_log_meta": {"completed_at": "t", "completed_by": "a"}}
+    task = {
+        "id": "x",
+        "status": "in_progress",
+        "_log_meta": {"completed_at": "t", "completed_by": "a"},
+    }
     # Act
     cleared = _clear_completion_stamp_on_leaving_done(task, "done")
     # Assert
@@ -114,7 +120,11 @@ def test_clock_removes_both_stamp_keys():
     # Arrange
     from scitex_cards._store_clocks import _clear_completion_stamp_on_leaving_done
 
-    task = {"id": "x", "status": "in_progress", "_log_meta": {"completed_at": "t", "completed_by": "a"}}
+    task = {
+        "id": "x",
+        "status": "in_progress",
+        "_log_meta": {"completed_at": "t", "completed_by": "a"},
+    }
     # Act
     _clear_completion_stamp_on_leaving_done(task, "done")
     # Assert
@@ -132,12 +142,15 @@ def test_clock_keeps_the_stamp_when_still_done():
     assert cleared is False
 
 
-def test_clock_is_a_noop_when_never_done():
-    # Arrange
+def test_clock_heals_a_stale_stamp_even_when_prior_was_not_done():
+    # Arrange — a non-done row that already carries a stamp is the stale
+    # population the doctor's terminal_state_honest reports (2026-11-26: 11
+    # live cards). The clock enforces the invariant, not the transition, so
+    # any write heals it.
     from scitex_cards._store_clocks import _clear_completion_stamp_on_leaving_done
 
     task = {"id": "x", "status": "in_progress", "_log_meta": {"completed_at": "t"}}
     # Act
     cleared = _clear_completion_stamp_on_leaving_done(task, "deferred")
     # Assert
-    assert cleared is False
+    assert cleared is True
