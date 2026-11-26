@@ -35,7 +35,7 @@ _SRC = (
     Path(__file__).parent.parent.parent
     / "src"
     / "scitex_cards"
-    / "_store_lifecycle.py"
+    / "_store_tombstone.py"
 )
 
 

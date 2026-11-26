@@ -118,12 +118,25 @@ def _clear_completion_stamp_on_leaving_done(
     two clocks, at the one place a status change is applied, a future exit from
     ``done`` gets this without its author knowing the invariant exists.
 
+    THE RULE IS THE INVARIANT, NOT THE TRANSITION (2026-11-26). This clock
+    used to act only when ``prior_status == "done"``. That left every row
+    that ALREADY carried a stale stamp — written before this clock existed,
+    or by a path that bypassed it (``delete_task`` tombstoned a ``done`` card
+    to ``cancelled`` and kept the stamp) — unrepairable through the API: the
+    status was already non-done, so no later write was ever an "exit". The
+    ``terminal_state_honest`` doctor check measured 11 such rows on the live
+    board and its hint had no verb to point at. So the clock now enforces the
+    invariant itself: a card whose status after the write is not ``done``
+    carries no completion stamp. ``prior_status`` is kept in the signature for
+    the existing callers; it no longer gates the outcome. A plain
+    ``scitex-cards update <id> --status <its-current-status>`` therefore heals
+    a stale row.
+
     Returns True when a stamp was actually removed, so the caller can say so.
     """
     from ._store_lifecycle import COMPLETED_STATUS, clear_completion_stamp
 
-    if prior_status != COMPLETED_STATUS:
-        return False  # Never was complete; nothing to unstamp.
+    del prior_status  # kept for call-site compatibility; see docstring
     if task.get("status") == COMPLETED_STATUS:
         return False  # Still done — a passing edit, not an exit.
     return clear_completion_stamp(task)
@@ -200,7 +213,6 @@ def _stamp_cancellation_attribution(
         # Leaving cancelled: drop both, together.
         task.pop(FIELD_CANCELLED_AT, None)
         task.pop(FIELD_CANCELLED_BY, None)
-
 
 
 # EOF

@@ -180,10 +180,12 @@ def _check_terminal_state_honest(store: str | Path | None) -> dict[str, Any]:
                 f"WORK that was never delivered: {shown}{more}"
             )
             hints.append(
-                "un-completing a card must clear its stamp: use "
-                "`scitex_cards._store_lifecycle.clear_completion_stamp(task)`. "
-                "Moving the STATUS without clearing the STAMP fixes what the "
-                "sweeps read and leaves what the throughput reads still lying."
+                "a non-`done` card must not carry a completion stamp. Heal each "
+                "row with `scitex-cards update <id> --status <its-current-status>` "
+                "(update_task drops the stamp from any card that is not `done`), "
+                "or set it to `done` if the work really landed. Moving the STATUS "
+                "without clearing the STAMP fixes what the sweeps read and leaves "
+                "what the throughput reads still lying."
             )
         return {"ok": False, "detail": " | ".join(parts), "hint": " ".join(hints)}
     return {
@@ -193,9 +195,16 @@ def _check_terminal_state_honest(store: str | Path | None) -> dict[str, Any]:
     }
 
 
-
 #: A dependency in one of these states can no longer gate anything.
 _TERMINAL_STATUSES = ("done", "cancelled", "failed")
+
+#: Blockers that name a gate which is NOT a card: a compute resource, an
+#: operator decision, another agent. ``depends_on`` finishing says nothing
+#: about whether such a gate is still shut, so a card carrying one of these is
+#: never "blocked on nothing" on the evidence of its dependencies alone.
+#: Only ``dependency`` (legacy ``dep``), ``none`` and an absent blocker leave
+#: ``depends_on`` as the card's stated gate.
+_NON_CARD_BLOCKERS = frozenset({"compute", "operator-decision", "agent-wait"})
 
 
 def _check_no_falsely_blocked(store: str | Path | None) -> dict[str, Any]:
@@ -229,6 +238,15 @@ def _check_no_falsely_blocked(store: str | Path | None) -> dict[str, Any]:
     no evidence about whether that gate is still real. A DANGLING dep id is skipped
     too: treating "the gate does not exist" as "the gate is finished" would silently
     convert a data-integrity bug into an all-clear.
+
+    Cards whose ``blocker`` names a NON-CARD gate (``_NON_CARD_BLOCKERS``:
+    ``operator-decision`` / ``compute`` / ``agent-wait``) are ignored for the
+    same reason, even when they also carry ``depends_on``. A card can keep a
+    finished prerequisite in ``depends_on`` as history while its live gate is
+    the operator: measured 2026-11-26, 4 of the 6 cards this check reported
+    were ``blocked``/``operator-decision`` with comments confirming the
+    operator gate was real — the check named them "blocked on nothing" and its
+    hint told their owners to start work the operator had not authorised.
 
     Never raises: an unreadable store is reported, not thrown.
     """
@@ -273,6 +291,8 @@ def _check_no_falsely_blocked(store: str | Path | None) -> dict[str, Any]:
     for task in tasks:
         if task.get("status") != "blocked":
             continue
+        if task.get("blocker") in _NON_CARD_BLOCKERS:
+            continue
         deps = task.get("depends_on") or []
         if not deps:
             continue
@@ -315,6 +335,7 @@ __all__ = [
     "_CLOSURE_MARKERS",
     "_COMPLETED_STATUS",
     "_TERMINAL_STATUSES",
+    "_NON_CARD_BLOCKERS",
     "_check_terminal_state_honest",
     "_check_no_falsely_blocked",
 ]
